@@ -1,0 +1,216 @@
+emptyos.toml
+emptyos.toml.*bak
+!demo/emptyos.toml
+.claude/vault-connection.json
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+# Runtime telemetry (SQLite/JSON state). NOTE: this bare pattern matches ANY
+# dir named data/ at ANY depth — engine/app reference datasets must be
+# re-included below or they silently vanish from clones (bit thermal, soil,
+# overhead_line). engines/personal/ stays ignored (excluded parent wins).
+data/
+!engines/*/data/
+services/voice-api/models/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+# Where package-release.py puts the generated dictionary definition pack in the
+# englishos-cloud artifact (release.toml `definition_pack`). A copy placed in the
+# repo for local testing must never ride along in another tier's collection.
+englishos-cloud/definitions.sqlite
+# Generated PDFs/reports (report_response output dir)
+output/
+.venv/
+.DS_Store
+.obsidian/
+
+# Local binaries / outputs that should never enter the public source repo
+caddy.exe
+results/
+
+# Local AI-tool session history (aider CLI)
+.aider*
+
+# Scratch / experimental apps (not for public)
+apps/test-app/
+apps/extension/others/test-app/
+.playwright-mcp/
+*.wav
+
+# Dogfood-agent throwaway vault + config (personal, never ships).
+# The .example template IS committed so public users can bootstrap a
+# parallel daemon on :9001 from a fresh clone. `dogfood/*` (not `dogfood/`)
+# is required so the negation below can re-include a single file — git
+# won't descend into a directory wholly ignored by the directory form.
+dogfood/*
+!dogfood/emptyos.toml.example
+
+# Sandbox-pool member directories — auto-generated per pool member at
+# spawn time. Each holds an auto-rendered emptyos.toml + isolated data/
+# + throwaway vault/. Per-machine runtime state, never committed.
+# Anchor with leading `/` so this matches the project root only — apps/
+# can still have a legitimate `sandbox/` directory.
+/sandbox-*/
+# Legacy single-sandbox config dir (pre-pool); also runtime state.
+/sandbox/
+
+# Portfolio instance — Kevin-specific public-PROFESSIONAL content (name, real
+# projects). Lives local + on the VPS only, deployed out-of-band (rsync). Never
+# committed: it contains the user's name so check-personal would flag it, and
+# it must never reach the public snapshot. portfolio/emptyos.toml is also a
+# machine config. Run merged with the public demo compose (see
+# portfolio/docker-compose.portfolio.yml).
+/portfolio/
+
+# Demo/portfolio env files — hold auth tokens + the funded OPENAI_API_KEY.
+.env.demo
+.env
+
+# apps/personal/ is its OWN git repository (remote: emptyos-personal), so it
+# stays ignored here — adding it to this repo would commit a bare gitlink and
+# none of the files. Its work is versioned there, not lost. Commit inside it:
+#   git -C apps/personal commit ...
+apps/personal/
+
+# engines/personal/ and tests/personal/ are plain directories with no repo of
+# their own, so ignoring them meant the work was genuinely untracked. Tracked
+# here from 2026-08-16 (this is the private repo). They are still never shipped:
+# `release-public.py` prunes tests/personal/ via `drop_test_dirs`, the engine
+# allowlist drops engines/personal/, and it asserts both are absent from the
+# built snapshot before pushing — see NEVER_PUBLISHED_PATHS in
+# `emptyos/sdk/release_filter.py`.
+#
+# Consequence to know about: the personal-data and branding scanners SKIP these
+# paths, because a personal test is supposed to carry the owner's vault paths
+# and employer name. Credential scanning still applies everywhere — a leaked key
+# is compromised the moment it enters git history, public or not.
+
+# Marketplace-installed apps are kept out of git per-clone via .git/info/exclude
+# (the Store writes apps/<category>/<id>/ lines there on install) — not here,
+# so the tracked .gitignore stays free of per-machine install churn.
+
+# Personal skills (contain PII — names, paths, career data)
+skills/life-strategic-advisor/
+skills/life-job-evaluator/
+skills/creative-mv-generator/
+skills/dev-claude-md-optimizer/
+skills/tool-icon-creator/
+# Skill runtime artifacts
+skills/**/.env
+skills/**/cache.json
+skills/**/usage.json
+skills/**/*-memory.md
+
+# Screenshots (dev testing artifacts)
+test-*.png
+verify-*.png
+topology-*.png
+final-*.png
+
+# Machine-generated launchers + log files (contain personal paths)
+boot.vbs
+*.log
+
+
+# Loose screenshots in repo root (transient)
+/*.png
+
+# Loose scratch JS / one-off check snippets
+/vd_check.js
+
+# Playwright snapshot dumps
+rating-snapshot.yml
+
+# Claude Code worktrees (local working copies, machine-specific)
+.claude/worktrees/
+
+# Personal persona definitions for the dogfood-agent app. The app code +
+# the generic `new-user.md` persona ship; user-specific personas (with
+# real names, employers, life context) stay local. Drop additional .md
+# files into apps/dogfood-agent/personas/ — they'll be picked up by the
+# loader without being tracked.
+apps/dogfood-agent/personas/kevin-weekday.md
+
+# Local scratch dir for dogfood runs, one-off drivers, transcripts
+/tmp/
+/.tmp/
+/.tmp-*.json
+
+# Stale root-level duplicates of emptyos/ — accidental scratch
+/__init__.py
+/__main__.py
+/capabilities/
+/cli/
+/kernel/
+/runtime/
+/sdk/
+/web/
+
+# Personal one-shot scripts (contain personal data — career, finances)
+scripts/ask_openai_*.py
+
+# Scratch — screenshots, ad-hoc JSON, manual test artifacts
+_scratch/
+scratch/
+
+# Private one-off scripts (underscore prefix)
+scripts/_*.py
+# ...except shared helpers that committed scripts import (not one-offs)
+!scripts/_eos_browser.py
+
+# Cross-machine transport artifacts: format-patch exports + git bundles.
+# Keep the comment on its own line - a trailing one becomes part of the pattern.
+_*.patch
+*.bundle
+
+# Serena MCP server cache (server removed 2026-05-14; ignore stragglers if uvx re-spawns it)
+.serena/
+
+# CodeBoarding tool cache + logs (generated by scripts/run_codeboarding.py)
+.codeboarding/
+emptyos/.codeboarding/
+
+# Stale pytest temp cache (created under a restricted ACL; needs admin to delete)
+emptyostmppytest-cache/
+
+# Root-level scratch dirs from codex sessions + pytest tmp_path runs.
+# Many are created under a restricted ACL, so `git status` can't even stat them
+# and emits "could not open directory" warnings for each one. Ignoring keeps the
+# status output readable; delete them by hand once no process holds them open.
+/.tmp-*/
+/tmp*/
+# `.codex-tmp` starts with a dot, so neither pattern above catches it. It reached
+# 558 MB / 819 render-scratch binaries (mv-recut proofs, contact sheets, pytest
+# tmp dirs) while sitting untracked — one `git add -A` away from being permanent.
+/.codex-tmp/
+# `.tmp_` with an UNDERSCORE is a third spelling that `/.tmp-*/` misses, and it
+# is the one the MV sessions actually used: 63 entries / 180 MB of contact
+# sheets, clip mp4s and one-off scripts were sitting in `git status` on
+# 2026-07-31 while the rules above looked like they had scratch covered. Not
+# anchored to a trailing slash — several are loose files, not dirs.
+/.tmp_*
+
+# Vault folders must never appear at the REPO root. The vault is external
+# (`[notes] path` in emptyos.toml); a top-level `30_Resources/` here means some
+# write path resolved a vault-relative path against the process CWD instead of
+# notes_path. Anchored so the real vault-content dirs inside the tree are
+# unaffected. Keep `git status` clean so the NEXT shadow write is what stands out.
+/00_Inbox/
+/10_Projects/
+/20_Areas/
+/30_Resources/
+/40_Archive/
+/50_Journal/
+
+
+# Generated by scripts/make-windows-icon.py at build time
+brand/*/icon.ico
+brand/*/icon.icns
+
+# Standalone-published firmware: lives in its own public repo
+# (github.com/KevinBean/sticks3-standup-alarm), not this monorepo. Kept
+# present on disk here as scratch/working files, deliberately untracked -
+# see the "hardware-devices" track brief in the vault's EmptyOS session log.
+/firmware/stick_s3_standup_alarm/

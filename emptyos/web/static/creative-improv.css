@@ -1,0 +1,17 @@
+.improv-pass { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text); }
+.improv-pass summary { cursor: pointer; font-weight: 600; color: var(--text-heading); }
+.improv-pass p { margin: 8px 0; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+.improv-fields { display: grid; gap: 8px; margin-top: 12px; }
+.improv-fields label { display: grid; gap: 4px; font-size: 14px; color: var(--text-secondary); }
+.improv-fields textarea { width: 100%; box-sizing: border-box; min-height: 56px; resize: vertical; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.improv-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.improv-actions button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer; }
+.improv-actions button:first-child { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.improv-actions button:disabled { opacity: .55; cursor: wait; }
+.improv-result { margin-top: 12px; display: grid; gap: 10px; }
+.improv-path { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.improv-path.ai { background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
+.improv-path .eos-badge { float: right; }
+.improv-path h4 { margin: 0 0 8px; }
+.improv-path textarea { width: 100%; box-sizing: border-box; min-height: 176px; resize: vertical; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; line-height: 1.5; }
+.improv-status { font-size: 14px; color: var(--text-secondary); margin-top: 8px; }

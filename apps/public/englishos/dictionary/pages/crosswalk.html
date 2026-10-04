@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vowel Crosswalk</title>
+<!-- Pre-paint theme class. Secondary pages/ files are served by a plain
+     StaticFiles mount, so the kernel's _inject_theme_bootstrap never reaches
+     them — without this the page renders on whatever :root defaults to
+     instead of the user's chosen theme. eos.js self-heals a moment later. -->
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+/* Backness hue = information, not decoration. All three are theme-tuned
+   tokens (--blue→--info, --amber→--warning, --purple derives from --text),
+   so the encoding survives all ten themes. No hardcoded hex anywhere. */
+:root {
+  --vx-front:   var(--blue);
+  --vx-central: var(--purple);
+  --vx-back:    var(--amber);
+}
+
+* { margin:0; padding:0; box-sizing:border-box }
+body {
+  font-family:var(--font); background:var(--bg); color:var(--text);
+  min-height:100dvh; -webkit-font-smoothing:antialiased;
+  padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 60px);
+}
+.wrap { max-width:1280px; margin:0 auto }
+
+/* Phonetic notation is a different writing system — give it a face chosen for
+   IPA coverage, or /ɜ/ and /ɝ/ render as tofu. */
+.ipa { font-family:"Charis SIL","Doulos SIL","Segoe UI","DejaVu Sans","Noto Sans",var(--font) }
+.num { font-variant-numeric:tabular-nums }
+.lexset { font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; color:var(--text-muted) }
+
+/* ── header ─────────────────────────────────────────────── */
+.top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:18px 0 12px }
+.top h1 { font-size:1.35rem; font-weight:600; letter-spacing:-.01em }
+/* Shared by the <a> back-link and the <button> KB action, so it has to reset
+   the button defaults or the two sit side by side looking unrelated. */
+.back { color:var(--text-muted); text-decoration:none; font:inherit; font-size:.88rem;
+        padding:6px 10px; background:transparent; cursor:pointer;
+        border:1px solid var(--border); border-radius:7px }
+.back:hover { color:var(--text); border-color:var(--text-muted) }
+.back:disabled { opacity:.55; cursor:default }
+.spacer { margin-left:auto }
+
+.totals { display:flex; gap:22px; flex-wrap:wrap; padding:0 0 16px; border-bottom:1px solid var(--border) }
+.totals div { display:flex; flex-direction:column; gap:1px }
+.totals b { font-size:1.25rem; font-weight:600 }
+.totals span { font-size:.76rem; color:var(--text-muted) }
+
+/* ── the personal finding ───────────────────────────────── */
+.finding {
+  display:none; margin:16px 0 0; padding:14px 16px;
+  background:var(--bg-card); border:1px solid var(--border);
+  border-left:3px solid var(--accent); border-radius:8px;
+  font-size:.9rem; line-height:1.55;
+}
+.finding.on { display:block }
+.finding b { color:var(--text) }
+.finding .caution { display:block; margin-top:7px; font-size:.8rem; color:var(--text-muted) }
+
+/* ── controls ───────────────────────────────────────────── */
+.controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; padding:18px 0 14px }
+.ctl { display:flex; flex-direction:column; gap:6px }
+.ctl > label { font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted) }
+.seg { display:flex; border:1px solid var(--border); border-radius:7px; overflow:hidden; background:var(--bg-card) }
+.seg button { font:inherit; font-size:.84rem; padding:8px 13px; border:0; background:transparent;
+              color:var(--text-muted); cursor:pointer }
+.seg button + button { border-left:1px solid var(--border) }
+.seg button:hover { background:var(--bg); color:var(--text) }
+.seg button[aria-pressed="true"] { background:var(--accent); color:var(--ink-on-vivid) }
+.chk { display:flex; align-items:center; gap:8px; font-size:.84rem; color:var(--text-muted); cursor:pointer; padding:8px 0 }
+.chk input { accent-color:var(--accent); width:15px; height:15px; cursor:pointer }
+.chk[hidden] { display:none }
+.legend { display:flex; gap:16px; flex-wrap:wrap; margin-left:auto; padding:8px 0 }
+.legend span { display:flex; align-items:center; gap:6px; font-size:.78rem; color:var(--text-muted) }
+.legend i { width:10px; height:10px; border-radius:50%; display:block }
+
+/* ── stage ──────────────────────────────────────────────── */
+.stage { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:28px; align-items:start; padding-top:8px }
+.canvas { position:relative; min-width:0 }
+#graph { width:100%; height:auto; display:block; overflow:visible }
+#graph.dimmed .edge:not(.on) { opacity:.05 }
+#graph.dimmed .node:not(.on) { opacity:.13 }
+.edge { fill:none; stroke-linecap:round; transition:opacity .2s }
+.edge.on { stroke-width:2.1 }
+.node { cursor:pointer; transition:opacity .2s }
+.node .hit { fill:transparent }
+.node:hover .disc { stroke-width:2.4 }
+.node text { pointer-events:none }
+.node .glyph { font-family:"Charis SIL","Doulos SIL","Segoe UI","DejaVu Sans",var(--font); font-size:15px; font-weight:600 }
+.node .kw { font-size:10px; letter-spacing:.08em; fill:var(--text-muted) }
+.node .ct { font-size:10px; fill:var(--text-muted) }
+.node:focus-visible { outline:none }
+.node:focus-visible .disc { stroke:var(--text); stroke-width:3 }
+.errring { fill:none; stroke-dasharray:2 3; opacity:.9 }
+.axis { font-size:9.5px; letter-spacing:.12em; fill:var(--text-muted); text-transform:uppercase }
+.quadline { stroke:var(--border); stroke-width:1; fill:none; stroke-dasharray:3 4 }
+.bandline { stroke:var(--border); stroke-width:1; stroke-dasharray:2 5 }
+
+.tip { position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-100%) translateY(-10px);
+       background:var(--text); color:var(--bg); padding:6px 10px; border-radius:6px;
+       font-size:.78rem; white-space:nowrap; transition:opacity .12s; z-index:6 }
+.tip.show { opacity:1 }
+
+/* ── inspector ──────────────────────────────────────────── */
+.panel { position:sticky; top:16px; background:var(--bg-card); border:1px solid var(--border);
+         border-radius:10px; padding:18px }
+.p-empty { font-size:.86rem; color:var(--text-muted) }
+.p-empty b { display:block; color:var(--text); font-size:.98rem; margin-bottom:6px }
+.p-head { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; padding-bottom:11px; border-bottom:1px solid var(--border) }
+.p-head .big { font-size:1.7rem; font-weight:600; line-height:1 }
+.p-note { margin-top:10px; font-size:.82rem; color:var(--text-muted); line-height:1.5 }
+.p-err { margin-top:9px; font-size:.8rem; padding:7px 9px; border-radius:6px;
+         background:var(--bg); border:1px solid var(--border) }
+.p-list { list-style:none; margin:12px 0 0; padding:0 }
+.p-list li { display:grid; grid-template-columns:58px 1fr; gap:9px; align-items:baseline;
+             padding:6px 0; border-top:1px solid var(--border) }
+.p-list li:first-child { border-top:0 }
+.p-key { font-weight:600; font-size:.94rem }
+.p-ex { font-size:.83rem; color:var(--text-muted); font-style:italic }
+.p-ex .cav { font-style:normal; font-size:.72rem; display:block; margin-top:2px; opacity:.85 }
+.p-list li.rare .p-key { opacity:.6; font-weight:500 }
+.p-close { margin-top:14px; font:inherit; font-size:.79rem; padding:6px 11px; background:transparent;
+           color:var(--text-muted); border:1px solid var(--border); border-radius:6px; cursor:pointer }
+.p-close:hover { color:var(--text) }
+
+/* ── accordion (narrow) ─────────────────────────────────── */
+.acc { display:none; flex-direction:column; gap:7px }
+.acc details { background:var(--bg-card); border:1px solid var(--border); border-radius:8px }
+.acc summary { padding:11px 14px; cursor:pointer; display:flex; align-items:baseline; gap:9px; list-style:none }
+.acc summary::-webkit-details-marker { display:none }
+.acc summary .sg { font-weight:600; font-size:1.02rem }
+.acc summary .sn { margin-left:auto; font-size:.76rem; color:var(--text-muted) }
+.acc .body { padding:0 14px 12px; display:flex; flex-direction:column; gap:7px }
+.acc .row { display:grid; grid-template-columns:58px 1fr; gap:9px; align-items:baseline }
+
+@media (max-width:1060px) { .stage { grid-template-columns:1fr } .panel { position:static } }
+@media (max-width:720px) {
+  .stage { display:block }
+  .canvas { display:none !important }
+  .panel { display:none }
+  .acc { display:flex }
+  .legend { margin-left:0 }
+  .controls { gap:14px }
+  .ctl { width:100% }
+  .seg { flex-direction:column }
+  .seg button + button { border-left:0; border-top:1px solid var(--border) }
+}
+@media (prefers-reduced-motion:reduce) { * { transition-duration:.001ms !important } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>Vowel Crosswalk</h1>
+    <span class="lexset" id="sub">General American · sound ↔ spelling</span>
+    <span class="spacer"></span>
+    <button class="back" type="button" id="kb-btn"
+            title="Write one knowledge-base note per vowel listing its spellings">Save to knowledge base</button>
+    <a class="back" href="/dictionary/">← Dictionary</a>
+  </div>
+
+  <div class="totals" id="totals"></div>
+
+  <div class="finding" id="finding"></div>
+
+  <div class="controls">
+    <div class="ctl">
+      <label>Reading direction</label>
+      <div class="seg" id="dir-seg">
+        <button data-dir="spell" aria-pressed="true">Sound → how to write it</button>
+        <button data-dir="read" aria-pressed="false">Letters → how to say it</button>
+      </div>
+    </div>
+    <label class="chk" id="err-wrap" hidden>
+      <input type="checkbox" id="err-toggle">
+      <span>Highlight my trouble spots</span>
+    </label>
+    <label class="chk">
+      <input type="checkbox" id="hide-singles">
+      <span>Hide spellings that make only one sound (<span class="num" id="sc">0</span>)</span>
+    </label>
+    <div class="legend">
+      <span><i style="background:var(--vx-front)"></i>Front</span>
+      <span><i style="background:var(--vx-central)"></i>Central</span>
+      <span><i style="background:var(--vx-back)"></i>Back</span>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div>
+      <div class="canvas">
+        <svg id="graph" role="img" aria-label="Graph linking General American vowel sounds to the letter groups that spell them"></svg>
+        <div class="tip" id="tip"></div>
+      </div>
+      <div class="acc" id="acc"></div>
+    </div>
+    <aside class="panel" id="panel">
+      <div class="p-empty"><b>Nothing selected</b>Tap any sound or spelling to trace it.</div>
+    </aside>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+"use strict";
+
+var NS = "http://www.w3.org/2000/svg";
+var DATA = null;
+var state = { dir:"spell", hideSingles:false, showErrors:false, focus:null };
+
+var svg = document.getElementById("graph");
+var tip = document.getElementById("tip");
+var panel = document.getElementById("panel");
+
+/* esc / escAttr are globals from eos.js — do not re-roll them here. */
+function el(n, a) {
+  var x = document.createElementNS(NS, n);
+  for (var k in (a || {})) x.setAttribute(k, a[k]);
+  return x;
+}
+function hue(g) {
+  return g === "front" ? "var(--vx-front)" : g === "central" ? "var(--vx-central)" : "var(--vx-back)";
+}
+var V = {}, G = {};
+
+/* ── load ─────────────────────────────────────────────────── */
+async function load() {
+  DATA = await (window.EOS && EOS.api
+    ? EOS.api("/dictionary/api/crosswalk")
+    : fetch("/dictionary/api/crosswalk").then(function (r) { return r.json(); }));
+
+  DATA.vowels.forEach(function (v) { V[v.id] = v; });
+  DATA.graphemes.forEach(function (g) { G[g.id] = g; });
+  DATA.vowels.forEach(function (v) {
+    v.edges = DATA.edges.filter(function (e) { return e.vowel === v.id; });
+  });
+
+  var t = DATA.totals;
+  document.getElementById("sc").textContent = t.unambiguous_spellings;
+  document.getElementById("totals").innerHTML =
+    tile(t.vowels, "vowel sounds charted") +
+    tile(t.graphemes, "ways to spell them") +
+    tile(t.edges, "correspondences") +
+    tile(worstSpelled(), "spellings for the worst-spelled sound") +
+    tile(mostAmbiguous(), "sounds the most ambiguous spelling makes");
+
+  renderFinding();
+  draw();
+  drawAcc();
+  openFromHash();
+}
+function tile(n, label) {
+  return '<div><b class="num">' + esc(n) + "</b><span>" + esc(label) + "</span></div>";
+}
+function worstSpelled() {
+  return DATA.vowels.reduce(function (m, v) { return Math.max(m, v.spellings); }, 0);
+}
+function mostAmbiguous() { return DATA.graphemes.length ? DATA.graphemes[0].fan : 0; }
+
+/* ── the personal finding: what the error join actually buys ── */
+function renderFinding() {
+  var hits = DATA.vowels.filter(function (v) { return v.errors > 0; });
+  if (!hits.length) return;
+
+  document.getElementById("err-wrap").hidden = false;
+  document.getElementById("err-toggle").checked = true;
+  state.showErrors = true;
+
+  hits.sort(function (a, b) { return b.errors - a.errors; });
+  var top = hits.slice(0, 3);
+  /* Count each spelling once even when two weak vowels share it — otherwise
+     the headline inflates itself by double-counting ⟨ou⟩ and friends. */
+  var spellings = {};
+  top.forEach(function (v) {
+    v.edges.forEach(function (e) { spellings[e.grapheme] = 1; });
+  });
+  var n = Object.keys(spellings).length;
+  var names = top.map(function (v) {
+    return '<span class="ipa" style="color:' + hue(v.group) + '">/' + esc(v.ipa) + "/</span>";
+  }).join(", ");
+
+  var shared = top.some(function (v) { return v.arpa_shared; });
+  document.getElementById("finding").innerHTML =
+    "Your three weakest vowels — " + names + " — are written <b>" + n +
+    " different ways</b> between them. Those spellings are where practice pays off." +
+    (shared
+      ? '<span class="caution">One caveat: ARPABET has no separate symbol for schwa, so ' +
+        'the error counts for <span class="ipa">/ə/</span> and <span class="ipa">/ʌ/</span> ' +
+        "come from the same bucket and can't be told apart.</span>"
+      : "");
+  document.getElementById("finding").classList.add("on");
+}
+
+/* ── layout + draw ────────────────────────────────────────── */
+function visibleGraphemes() {
+  var list = DATA.graphemes.filter(function (g) { return !state.hideSingles || g.fan > 1; });
+  return state.dir === "read"
+    ? list.slice().sort(function (a, b) { return b.fan - a.fan || (a.id < b.id ? -1 : 1); })
+    : list.slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+}
+
+var W = 1000, GX = 742, PAD = 54, INSET = 48;
+
+function draw() {
+  var gs = visibleGraphemes(), step = 20.5;
+  var H = Math.max(1150, PAD * 2 + (gs.length - 1) * step);
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.innerHTML = "";
+
+  var qTop = 96, qH = H * 0.50, bTop = qTop + qH + 118;
+  var rhotic = DATA.vowels.filter(function (v) { return v.rhotic; });
+  var main = DATA.vowels.filter(function (v) { return !v.rhotic; });
+  var bStep = Math.min(96, (H - bTop - 60) / Math.max(1, rhotic.length - 1));
+
+  /* Namespaced — five r-coloured sounds share ids with r-spellings (ar, or,
+     ur, ir, air, er); one flat map lets the spelling column overwrite them. */
+  var pos = {};
+  main.forEach(function (v) {
+    var left = 176 + INSET * v.y;
+    pos["p:" + v.id] = { x: left + v.x * (176 - INSET * v.y), y: qTop + v.y * qH };
+  });
+  rhotic.forEach(function (v, i) {
+    pos["p:" + v.id] = { x: 214 + (v.group === "front" ? 0 : 104), y: bTop + i * bStep };
+  });
+  gs.forEach(function (g, i) { pos["g:" + g.id] = { x: GX, y: PAD + i * step }; });
+
+  var gE = el("g"), gN = el("g");
+
+  gE.appendChild(el("path", { "class":"quadline",
+    d:"M176," + qTop + " L352," + qTop + " L352," + (qTop + qH) + " L" + (176 + INSET) + "," + (qTop + qH) + " Z" }));
+  function ax(x, y, t, a) {
+    var n = el("text", { "class":"axis", x:x, y:y, "text-anchor":a || "middle" });
+    n.textContent = t; gE.appendChild(n);
+  }
+  ax(176, qTop - 32, "Front", "start");
+  ax(352, qTop - 32, "Back", "end");
+  ax(150, qTop - 10, "Close", "end");
+  ax(150, qTop + qH + 6, "Open", "end");
+  ax(GX, PAD - 26, state.dir === "read" ? "Spellings — most ambiguous first" : "Spellings — A to Z", "start");
+  gE.appendChild(el("line", { "class":"bandline", x1:120, y1:bTop - 52, x2:400, y2:bTop - 52 }));
+  ax(120, bTop - 62, "R-coloured — vowel + /r/", "start");
+
+  var shown = {};
+  gs.forEach(function (g) { shown[g.id] = 1; });
+
+  DATA.edges.forEach(function (e) {
+    if (!shown[e.grapheme]) return;
+    var a = pos["p:" + e.vowel], b = pos["g:" + e.grapheme];
+    if (!a || !b) return;
+    var v = V[e.vowel];
+    var hot = state.showErrors && v.errors > 0;
+    var p = el("path", {
+      "class":"edge",
+      d:"M" + (a.x + 21) + "," + a.y + " C" + (a.x + 190) + "," + a.y + " " +
+        (b.x - 240) + "," + b.y + " " + (b.x - 13) + "," + b.y,
+      stroke:hue(v.group),
+      "stroke-width": e.strength === "core" ? 1.25 : e.strength === "common" ? 0.9 : 0.55,
+      /* Dimmed context stays readable at .14 — at .09 the graph read as
+         broken rather than filtered on first paint. */
+      "stroke-opacity": state.showErrors
+        ? (hot ? 0.62 : 0.14)
+        : (e.strength === "core" ? 0.5 : e.strength === "common" ? 0.36 : 0.22)
+    });
+    p.dataset.p = e.vowel; p.dataset.g = e.grapheme;
+    gE.appendChild(p);
+  });
+
+  DATA.vowels.forEach(function (v) {
+    var c = pos["p:" + v.id]; if (!c) return;
+    var n = el("g", { "class":"node", tabindex:"0", role:"button",
+      "aria-label": v.ipa + ", as in " + v.key + ". " + v.spellings + " spellings." +
+                    (v.errors ? " " + v.errors + " logged slips." : "") });
+    n.dataset.type = "p"; n.dataset.id = v.id;
+    var r = state.dir === "spell" ? 15 + Math.min(9, v.spellings * 0.62) : 15;
+    n.appendChild(el("circle", { "class":"disc", cx:c.x, cy:c.y, r:r,
+      fill:"color-mix(in srgb, " + hue(v.group) + " 16%, transparent)",
+      stroke:hue(v.group), "stroke-width":1.5 }));
+    if (state.showErrors && v.errors > 0) {
+      n.appendChild(el("circle", { "class":"errring", cx:c.x, cy:c.y, r:r + 5,
+        stroke:"var(--accent)", "stroke-width":2 }));
+    }
+    var t = el("text", { "class":"glyph", x:c.x, y:c.y + 5, "text-anchor":"middle", fill:hue(v.group) });
+    t.textContent = v.ipa; n.appendChild(t);
+    var k = el("text", { "class":"kw", x:c.x - r - 9, y:c.y + 3.5, "text-anchor":"end" });
+    k.textContent = v.key.toUpperCase(); n.appendChild(k);
+    if (v.di) {
+      var d = el("text", { "class":"ct", x:c.x, y:c.y - r - 5, "text-anchor":"middle" });
+      d.textContent = "↗"; n.appendChild(d);
+    }
+    n.appendChild(el("circle", { "class":"hit", cx:c.x, cy:c.y, r:r + 8 }));
+    gN.appendChild(n);
+  });
+
+  gs.forEach(function (g) {
+    var c = pos["g:" + g.id];
+    var n = el("g", { "class":"node", tabindex:"0", role:"button",
+      "aria-label":"Spelling " + g.label + ". " + g.fan + " sound" + (g.fan > 1 ? "s" : "") + "." });
+    n.dataset.type = "g"; n.dataset.id = g.id;
+    var w = state.dir === "read" ? 3 + Math.min(7, g.fan * 0.85) : 4;
+    n.appendChild(el("circle", { "class":"disc", cx:c.x, cy:c.y, r:w,
+      fill: state.showErrors && g.error_weight > 0 ? "var(--accent)" : "var(--text-muted)" }));
+    /* Count rides as a tspan so it flows after the label — estimating the
+       label width collided on the wider ones (⟨ew⟩2 sounds). */
+    var t = el("text", { "class":"glyph", x:c.x + 13, y:c.y + 5, fill:"var(--text)" });
+    var lab = el("tspan");
+    lab.textContent = "⟨" + g.label + "⟩";
+    t.appendChild(lab);
+    if (g.fan > 1) {
+      var ct = el("tspan", { "class":"ct", dx:"7" });
+      ct.textContent = g.fan + " sounds";
+      t.appendChild(ct);
+    }
+    n.appendChild(t);
+    n.appendChild(el("rect", { "class":"hit", x:c.x - 11, y:c.y - 10, width:250, height:20 }));
+    gN.appendChild(n);
+  });
+
+  svg.appendChild(gE); svg.appendChild(gN);
+  applyFocus();
+}
+
+/* ── focus ────────────────────────────────────────────────── */
+function applyFocus() {
+  var f = state.focus;
+  svg.classList.toggle("dimmed", !!f);
+  Array.prototype.forEach.call(svg.querySelectorAll(".edge,.node"), function (n) {
+    n.classList.remove("on");
+  });
+  if (!f) { renderPanel(null); return; }
+
+  var isP = f.type === "p";
+  var rows = DATA.edges.filter(function (e) { return isP ? e.vowel === f.id : e.grapheme === f.id; });
+  var partners = {};
+  rows.forEach(function (e) { partners[isP ? e.grapheme : e.vowel] = 1; });
+
+  Array.prototype.forEach.call(svg.querySelectorAll(".edge"), function (p) {
+    if ((isP ? p.dataset.p : p.dataset.g) === f.id) p.classList.add("on");
+  });
+  Array.prototype.forEach.call(svg.querySelectorAll(".node"), function (n) {
+    var me = n.dataset.type === f.type && n.dataset.id === f.id;
+    if (me || (n.dataset.type !== f.type && partners[n.dataset.id])) n.classList.add("on");
+  });
+  renderPanel(f);
+}
+
+var ORDER = { core:0, common:1, rare:2 };
+
+function renderPanel(f) {
+  if (!f) {
+    panel.innerHTML = '<div class="p-empty"><b>Nothing selected</b>Tap any sound or spelling to trace it.</div>';
+    return;
+  }
+  var isP = f.type === "p";
+  var rows = DATA.edges.filter(function (e) { return isP ? e.vowel === f.id : e.grapheme === f.id; })
+                       .sort(function (a, b) { return ORDER[a.strength] - ORDER[b.strength]; });
+  var head, note, err = "";
+
+  if (isP) {
+    var v = V[f.id];
+    head = '<span class="big ipa" style="color:' + hue(v.group) + '">/' + esc(v.ipa) + "/</span>" +
+           '<span class="lexset">' + esc(v.key) + "</span>" +
+           '<span class="num" style="margin-left:auto;font-size:.78rem;color:var(--text-muted)">' +
+           rows.length + " spellings</span>";
+    note = v.note;
+    if (v.errors > 0) {
+      err = '<div class="p-err">You have <b>' + v.errors + "</b> logged slip" +
+            (v.errors === 1 ? "" : "s") + " on this sound" +
+            (v.arpa_shared ? " — shared with its /ə/–/ʌ/ partner, so it can't be split further" : "") +
+            ". Its " + rows.length + " spellings are listed below.</div>";
+    } else if (v.rhotic) {
+      err = '<div class="p-err">R-coloured vowels are vowel + /r/ sequences, so the ' +
+            "pronunciation scorer has no single phone to log against them.</div>";
+    }
+  } else {
+    var g = G[f.id];
+    head = '<span class="big ipa">⟨' + esc(g.label) + "⟩</span>" +
+           '<span class="num" style="margin-left:auto;font-size:.78rem;color:var(--text-muted)">' +
+           g.fan + " sound" + (g.fan > 1 ? "s" : "") + "</span>";
+    note = g.fan === 1
+      ? "Unambiguous when reading — this spelling makes exactly one vowel sound."
+      : "Seeing these letters, you cannot tell which of " + g.fan +
+        " sounds is meant without knowing the word.";
+    if (g.error_weight > 0) {
+      err = '<div class="p-err">Weighted <b>' + g.error_weight +
+            "</b> against your logged slips — these letters lead into sounds you get wrong.</div>";
+    }
+  }
+
+  panel.innerHTML =
+    '<div class="p-head">' + head + "</div>" +
+    '<p class="p-note">' + esc(note) + "</p>" + err +
+    '<ul class="p-list">' + rows.map(function (e) {
+      var other = isP
+        ? '<span class="ipa">⟨' + esc(G[e.grapheme] ? G[e.grapheme].label : e.grapheme) + "⟩</span>"
+        : '<span class="ipa" style="color:' + hue(V[e.vowel].group) + '">/' + esc(V[e.vowel].ipa) + "/</span>";
+      return '<li class="' + e.strength + '"><span class="p-key">' + other + "</span>" +
+             '<span class="p-ex">' + esc(e.examples) +
+             (e.caveat ? '<span class="cav">' + esc(e.caveat) + "</span>" : "") + "</span></li>";
+    }).join("") + "</ul>" +
+    '<button class="p-close" id="p-close">Clear selection</button>';
+
+  var b = document.getElementById("p-close");
+  if (b) b.addEventListener("click", function () { state.focus = null; setHash(""); applyFocus(); });
+}
+
+/* ── accordion ────────────────────────────────────────────── */
+function drawAcc() {
+  document.getElementById("acc").innerHTML = DATA.vowels.map(function (v) {
+    return '<details id="acc-' + escAttr(v.id) + '"><summary>' +
+      '<span class="sg ipa" style="color:' + hue(v.group) + '">/' + esc(v.ipa) + "/</span>" +
+      '<span class="lexset">' + esc(v.key) + "</span>" +
+      '<span class="sn num">' + v.spellings + " spellings" +
+      (v.errors ? " · " + v.errors + " slips" : "") + "</span></summary>" +
+      '<div class="body"><p class="p-note" style="margin:0 0 4px">' + esc(v.note) + "</p>" +
+      v.edges.map(function (e) {
+        return '<div class="row"><span class="p-key ipa">⟨' +
+          esc(G[e.grapheme] ? G[e.grapheme].label : e.grapheme) + "⟩</span>" +
+          '<span class="p-ex">' + esc(e.examples) +
+          (e.caveat ? '<span class="cav">' + esc(e.caveat) + "</span>" : "") + "</span></div>";
+      }).join("") + "</div></details>";
+  }).join("");
+}
+
+/* ── interaction ──────────────────────────────────────────── */
+function setHash(id) {
+  try { history.replaceState(null, "", id ? "#" + id : location.pathname); } catch (e) {}
+}
+function openFromHash() {
+  var id = (location.hash || "").replace(/^#/, "");
+  if (id && V[id]) { state.focus = { type:"p", id:id }; applyFocus(); }
+}
+
+svg.addEventListener("click", function (ev) {
+  var n = ev.target.closest(".node");
+  if (!n) { state.focus = null; setHash(""); applyFocus(); return; }
+  var same = state.focus && state.focus.type === n.dataset.type && state.focus.id === n.dataset.id;
+  state.focus = same ? null : { type:n.dataset.type, id:n.dataset.id };
+  setHash(state.focus && state.focus.type === "p" ? state.focus.id : "");
+  applyFocus();
+});
+svg.addEventListener("keydown", function (ev) {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  var n = ev.target.closest(".node"); if (!n) return;
+  ev.preventDefault();
+  state.focus = { type:n.dataset.type, id:n.dataset.id };
+  applyFocus();
+});
+document.addEventListener("keydown", function (ev) {
+  if (ev.key === "Escape" && state.focus) { state.focus = null; setHash(""); applyFocus(); }
+});
+svg.addEventListener("mouseover", function (ev) {
+  var n = ev.target.closest(".node"); if (!n) return;
+  var r = svg.getBoundingClientRect(), b = n.getBoundingClientRect();
+  if (n.dataset.type === "p") {
+    var v = V[n.dataset.id];
+    tip.innerHTML = '<span class="ipa">/' + esc(v.ipa) + "/</span> as in " + esc(v.key) +
+                    " · " + v.spellings + " spellings" + (v.errors ? " · " + v.errors + " slips" : "");
+  } else {
+    var g = G[n.dataset.id];
+    tip.innerHTML = '<span class="ipa">⟨' + esc(g.label) + "⟩</span> · " + g.fan +
+                    " sound" + (g.fan > 1 ? "s" : "");
+  }
+  tip.style.left = (b.left - r.left + b.width / 2) + "px";
+  tip.style.top = (b.top - r.top) + "px";
+  tip.classList.add("show");
+});
+svg.addEventListener("mouseout", function (ev) {
+  if (ev.target.closest(".node")) tip.classList.remove("show");
+});
+
+document.getElementById("dir-seg").addEventListener("click", function (ev) {
+  var b = ev.target.closest("button"); if (!b) return;
+  state.dir = b.dataset.dir;
+  Array.prototype.forEach.call(this.children, function (x) {
+    x.setAttribute("aria-pressed", String(x === b));
+  });
+  draw();
+});
+document.getElementById("hide-singles").addEventListener("change", function (ev) {
+  state.hideSingles = ev.target.checked; draw();
+});
+document.getElementById("err-toggle").addEventListener("change", function (ev) {
+  state.showErrors = ev.target.checked; draw();
+});
+
+document.getElementById("kb-btn").addEventListener("click", async function () {
+  var btn = this, was = btn.textContent;
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    var r = await (window.EOS && EOS.api
+      ? EOS.api("/dictionary/api/crosswalk/kb", { method:"POST" })
+      : fetch("/dictionary/api/crosswalk/kb", { method:"POST" }).then(function (x) { return x.json(); }));
+    var n = r.written || 0, bad = (r.failed || []).length;
+    /* A partial write is reported as a failure — silently rounding it up to
+       "saved" is how a half-published set reads as complete. */
+    EOS_UI.toast(
+      bad ? n + " saved, " + bad + " failed — is the knowledge-base app installed?"
+          : n + " vowel note" + (n === 1 ? "" : "s") + " saved to the knowledge base",
+      !bad);
+  } catch (e) {
+    EOS_UI.toast("Couldn't save: " + ((e && e.message) || e), false);
+  } finally {
+    btn.disabled = false; btn.textContent = was;
+  }
+});
+
+load().catch(function (err) {
+  var m = document.querySelector(".stage");
+  if (window.EOS_UI && EOS_UI.errorState) {
+    m.innerHTML = EOS_UI.errorState({
+      message: "Couldn't load the crosswalk — " + ((err && err.message) || String(err)),
+      onRetry: "location.reload()"
+    });
+  } else {
+    m.innerHTML = '<p style="color:var(--danger)">Couldn\'t load the crosswalk: ' +
+                  esc((err && err.message) || err) + "</p>";
+  }
+});
+</script>
+</body>
+</html>

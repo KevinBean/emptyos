@@ -1,0 +1,83 @@
+{
+  "id": "scene-street",
+  "groups": [
+    {
+      "id": "road",
+      "label": "Road and traffic",
+      "members": [
+        "road",
+        "footpath",
+        "kerb",
+        "pedestrian-crossing",
+        "traffic-lights",
+        "road-sign",
+        "stop-sign",
+        "roundabout",
+        "intersection",
+        "speed-bump",
+        "parking-meter",
+        "car-park",
+        "bridge",
+        "tunnel"
+      ]
+    },
+    {
+      "id": "street-things",
+      "label": "Street furniture",
+      "members": [
+        "streetlight",
+        "bench",
+        "bin",
+        "post-box",
+        "phone-box",
+        "fire-hydrant",
+        "bus-stop",
+        "fountain",
+        "statue",
+        "billboard",
+        "traffic-cone",
+        "manhole",
+        "drain",
+        "fence",
+        "gate"
+      ]
+    },
+    {
+      "id": "places",
+      "label": "Places",
+      "members": [
+        "cafe",
+        "restaurant",
+        "bank",
+        "atm",
+        "pharmacy",
+        "post-office",
+        "petrol-station",
+        "train-station",
+        "school",
+        "park",
+        "playground",
+        "apartment-building",
+        "house",
+        "skyscraper"
+      ]
+    },
+    {
+      "id": "on-wheels",
+      "label": "On wheels",
+      "members": [
+        "car",
+        "bus",
+        "taxi",
+        "bicycle",
+        "motorcycle",
+        "tram",
+        "ambulance",
+        "garbage-truck",
+        "pram",
+        "e-scooter",
+        "skateboard"
+      ]
+    }
+  ]
+}

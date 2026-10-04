@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Writing Editor - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+  .we-wrap { max-width: 980px; margin: 0 auto; padding: 24px 24px; }
+  .we-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+  .we-title { font-size: 22px; font-weight: 700; }
+  .we-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .we-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .we-tab { padding: 12px 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 15px; cursor: pointer; }
+  /* --accent-text does not exist (it was a typo for --accent-ink), so this fell
+     back to `white` — 1.68:1 on warm-dark's amber accent. */
+  .we-tab.active { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+  .we-pickers { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 16px; }
+  .we-picker-group { display: flex; flex-direction: column; gap: 8px; }
+  .we-picker-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .we-chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .we-chip { padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text); font-size: 13px; cursor: pointer; transition: all 0.12s; }
+  .we-chip:hover { border-color: var(--accent); }
+  .we-chip.active { background: var(--accent); color: var(--ink-on-vivid); border-color: var(--accent); }
+  .we-draft { width: 100%; min-height: 180px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font: inherit; resize: vertical; }
+  .we-actions { display: flex; gap: 12px; align-items: center; margin-top: 12px; margin-bottom: 24px; }
+  .we-status { font-size: 12px; color: var(--text-muted); }
+  .we-result { display: none; flex-direction: column; gap: 16px; }
+  .we-result.show { display: flex; }
+  .we-section-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .we-revised { width: 100%; min-height: 180px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font: inherit; }
+  .we-edits { display: flex; flex-direction: column; gap: 8px; }
+  .we-edit { padding: 12px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); font-size: 13px; }
+  .we-edit-strike { color: var(--text-muted); text-decoration: line-through; }
+  .we-edit-add { color: var(--text); }
+  .we-edit-rationale { color: var(--text-muted); margin-top: 4px; font-style: italic; }
+  .we-edit-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .we-edit-body { flex: 1; min-width: 0; }
+  .we-edit-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .we-edit-chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text-muted); font-size: 12px; cursor: pointer; line-height: 1.2; }
+  .we-edit-chip.on-accept { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+  .we-edit-chip.on-reject { background: var(--danger); color: var(--ink-on-vivid); border-color: var(--danger); }
+  .we-edit.rejected .we-edit-body { opacity: 0.45; }
+  .we-edit.notfound { opacity: 0.6; }
+  .we-edit-note { color: var(--danger); font-size: 12px; margin-top: 6px; }
+  .we-edit-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .we-edit-count { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+  .we-pattern { padding: 12px 16px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg); font-size: 13px; }
+  .we-pattern-title { font-weight: 600; margin-bottom: 4px; }
+  .we-lint { display: none; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+  .we-lint.show { display: flex; }
+  .we-finding { padding: 12px 12px; border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; background: var(--bg-card); font-size: 13px; }
+  .we-finding.sev-hard-banned { border-left-color: var(--danger); }
+  .we-finding.sev-warn { border-left-color: var(--accent); }
+  .we-finding.sev-style { border-left-color: var(--border-strong); }
+  .we-finding-head { display: flex; gap: 8px; align-items: baseline; }
+  .we-finding-sev { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+  .we-finding-rule { color: var(--text-muted); font-size: 12px; }
+  .we-finding-span { margin-top: 4px; font-family: var(--font-mono); color: var(--text); }
+  .we-finding-fix { margin-top: 4px; color: var(--text-muted); font-style: italic; }
+
+  /* ── Documents mode (large-print, built for non-technical users) ── */
+  .doc-new-btn { width: 100%; padding: 16px; font-size: 18px; border: 2px dashed var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text); cursor: pointer; margin-bottom: 16px; }
+  .doc-new-btn:hover { border-color: var(--accent); }
+  .doc-cards { display: flex; flex-direction: column; gap: 12px; }
+  .doc-card { padding: 16px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); cursor: pointer; }
+  .doc-card:hover { border-color: var(--accent); }
+  .doc-card-title { font-size: 22px; font-weight: 600; }
+  .doc-card-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .doc-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0; }
+  .doc-btn { min-height: 48px; padding: 12px 16px; font-size: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer; }
+  .doc-btn:hover { border-color: var(--accent); }
+  .doc-btn.primary { background: var(--accent); color: var(--ink-on-vivid); border-color: var(--accent); }
+  .doc-btn:disabled { opacity: 0.5; cursor: default; }
+  .doc-title-input { width: 100%; padding: 12px 16px; font-size: 22px; font-weight: 600; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); }
+  .doc-body { width: 100%; min-height: 50vh; padding: 16px; margin-top: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text); line-height: 1.7; resize: vertical; font-family: inherit; }
+  .doc-save-chip { font-size: 13px; color: var(--text-muted); }
+  .rec-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--border); vertical-align: middle; }
+  .rec-dot.on { background: var(--danger); animation: doc-pulse 1s infinite; }
+  @keyframes doc-pulse { 50% { opacity: 0.3; } }
+  .doc-focus-toggle { margin-left: auto; }
+  /* Focus mode: a distraction-free overlay with a centred column. The lower
+     toolbar and page chrome fall away; the caret is kept vertically centred
+     (typewriter scroll) by JS. A plain textarea can't dim paragraphs, so this
+     is scope-honest — chrome removal + typewriter scroll, not per-line dim. */
+  body.we-focus #doc-editor {
+    position: fixed; inset: 0; z-index: 500; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center;
+    padding: max(4vh, env(safe-area-inset-top)) 24px env(safe-area-inset-bottom);
+    overflow: hidden;
+  }
+  body.we-focus #doc-editor > * { width: 100%; max-width: 720px; }
+  body.we-focus .doc-title-input { border: none; background: transparent; padding: 8px 0; }
+  body.we-focus .doc-body {
+    flex: 1; min-height: 0; border: none; background: transparent;
+    font-size: 19px; line-height: 2.0; resize: none; padding: 8px 0 40vh;
+  }
+  body.we-focus .doc-toolbar:last-of-type { display: none; }
+  body.we-focus .doc-toolbar:first-of-type {
+    max-width: 720px; opacity: 0.35; transition: opacity 0.2s;
+  }
+  body.we-focus #doc-editor:hover .doc-toolbar:first-of-type { opacity: 1; }
+  .doc-focus-toggle.active { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="we-wrap">
+  <div class="we-header">
+    <div>
+      <div class="we-title">Writing Editor</div>
+      <div class="we-meta" id="we-subtitle">Write articles with your voice, or revise a draft for a workplace audience.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="eos-btn eos-btn-sm" onclick="openCompose()" title="Draft a new message from scratch">&#9993; Draft</button>
+      <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openWESettings()" title="Settings" aria-label="Settings">&#9881;</button>
+    </div>
+  </div>
+
+  <div class="we-tabs">
+    <button class="we-tab active" id="tab-btn-docs" onclick="switchTab('docs')">Documents</button>
+    <button class="we-tab" id="tab-btn-revise" onclick="switchTab('revise')">Revise</button>
+  </div>
+
+  <!-- ── Documents tab ── -->
+  <div id="tab-docs">
+    <div id="docs-list">
+      <button class="doc-new-btn" onclick="createArticle()">+ New Article</button>
+      <div class="doc-cards" id="doc-cards"></div>
+    </div>
+
+    <div id="doc-editor" style="display:none">
+      <div class="doc-toolbar">
+        <button class="doc-btn" onclick="closeArticle()">&larr; Back</button>
+        <span class="doc-save-chip" id="doc-save-chip"></span>
+        <button class="doc-btn doc-focus-toggle" id="doc-focus-btn" onclick="toggleFocus()" title="Distraction-free writing (Esc to exit)">&#9673; Focus</button>
+      </div>
+      <input class="doc-title-input" id="doc-title" placeholder="Title">
+      <textarea class="doc-body" id="doc-body" placeholder="Write here, or press Dictate and speak…"></textarea>
+      <div class="doc-toolbar">
+        <button class="doc-btn primary" id="doc-rec-btn" onclick="toggleRec()">
+          <span class="rec-dot" id="rec-dot"></span> &nbsp;Dictate
+        </button>
+        <span class="doc-save-chip" id="rec-time"></span>
+        <button class="doc-btn" id="doc-polish-btn" onclick="polishArticle()">&#10024; Polish</button>
+        <button class="doc-btn" id="doc-pdf-btn" onclick="exportPdf()">&#128196; Export PDF</button>
+        <button class="doc-btn" onclick="deleteArticle()" title="Delete this article">&#128465; Delete</button>
+        <span class="doc-save-chip" id="doc-words"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Revise tab (one-shot draft revision) ── -->
+  <div id="tab-revise" style="display:none">
+  <div class="we-pickers">
+    <div class="we-picker-group">
+      <div class="we-picker-label">Audience</div>
+      <div class="we-chip-row" id="we-audience"></div>
+    </div>
+    <div class="we-picker-group">
+      <div class="we-picker-label">Tone</div>
+      <div class="we-chip-row" id="we-tone"></div>
+    </div>
+  </div>
+
+  <textarea id="we-draft" class="we-draft" placeholder="Paste your draft — email, Slack message, doc paragraph, anything written for a workplace audience…"></textarea>
+
+  <div class="we-actions">
+    <button class="eos-btn" id="we-submit">Revise</button>
+    <button class="eos-btn eos-btn-ghost" id="we-lint-btn" title="Flag slop spans without rewriting">Lint</button>
+    <span class="we-status" id="we-status"></span>
+  </div>
+
+  <div class="we-lint" id="we-lint">
+    <div class="we-section-label">Lint findings (<span id="we-lint-count">0</span>)</div>
+    <div id="we-findings"></div>
+  </div>
+
+  <div class="we-result" id="we-result">
+    <div>
+      <div class="we-section-label" style="display:flex;align-items:center;gap:8px">
+        <span>Revised</span>
+        <span class="eos-badge eos-badge-provenance eos-badge-provenance-cloud" title="AI-revised; review before sending"><span class="eos-badge-provenance-icon">&#10024;</span> AI</span>
+      </div>
+      <textarea class="we-revised" id="we-revised" readonly></textarea>
+      <button class="eos-btn eos-btn-sm eos-btn-ghost" id="we-copy" style="margin-top:6px">Copy revised</button>
+    </div>
+    <div>
+      <div class="we-section-label">Edits (<span id="we-edit-count">0</span>)</div>
+      <div class="we-edits" id="we-edits"></div>
+    </div>
+    <div id="we-pattern-wrap"></div>
+  </div>
+  </div><!-- /tab-revise -->
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-compose.js"></script>
+<script>
+// Generate a message from scratch (vs Revise, which edits text you pasted).
+// Ungrounded — no vault note, no log surface; the user copies the result.
+function openCompose() {
+  if (!window.EOS_COMPOSE) { EOS_UI.toast('Compose unavailable', false); return; }
+  EOS_COMPOSE.open({ prefix: '/writing-editor', title: 'Draft a message' });
+}
+
+var STATE = {
+  audiences: [],
+  tones: [],
+  audience: 'peer',
+  tone: 'default',
+  max: 5000,
+  // Documents
+  tab: 'docs',
+  articles: [],
+  file: null,          // open article filename
+  dirty: false,
+  focusMode: false,
+  saveTimer: null,
+  fontSize: 26,
+  rec: null, chunks: [], recStart: 0, recTimer: null,
+};
+
+// ── Tabs ──
+function switchTab(tab) {
+  STATE.tab = tab;
+  document.getElementById('tab-docs').style.display = tab === 'docs' ? '' : 'none';
+  document.getElementById('tab-revise').style.display = tab === 'revise' ? '' : 'none';
+  document.getElementById('tab-btn-docs').classList.toggle('active', tab === 'docs');
+  document.getElementById('tab-btn-revise').classList.toggle('active', tab === 'revise');
+}
+
+// ── Documents: list ──
+async function loadArticles() {
+  var res = await EOS.api('/writing-editor/api/articles');
+  STATE.articles = (res && res.articles) || [];
+  renderArticles();
+}
+
+function renderArticles() {
+  var el = document.getElementById('doc-cards');
+  if (!STATE.articles.length) {
+    el.innerHTML = '<div class="doc-card-meta" style="padding:8px 4px">No articles yet — press "+ New Article" to start.</div>';
+    return;
+  }
+  el.innerHTML = STATE.articles.map(function(a){
+    return '<div class="doc-card" onclick="openArticle(' + escAttr(JSON.stringify(a.file)) + ')">'
+      + '<div class="doc-card-title">' + esc(a.title || a.file) + '</div>'
+      + '<div class="doc-card-meta">' + esc(a.updated || '') + (a.words ? ' &middot; ' + a.words + ' words' : '') + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function createArticle() {
+  // Offer typed-document archetypes (doc_archetypes): picking one seeds a
+  // profile-valid scaffold + pins the matching PDF theme. "Blank document" =
+  // the original behaviour (empty body).
+  var opts = ['Blank document'];
+  var labelToId = { 'Blank document': '' };
+  try {
+    var a = await EOS.api('/writing-editor/api/archetypes');
+    (a && a.archetypes || []).forEach(function(x) {
+      opts.push(x.title);
+      labelToId[x.title] = x.id;
+    });
+  } catch (e) { /* archetypes optional — fall back to blank-only */ }
+
+  EOS_UI.formModal({
+    title: 'New Article',
+    fields: [
+      { key: 'title', label: 'Title', type: 'text' },
+      { key: 'archetype', label: 'Type', type: 'select', options: opts, default: 'Blank document' },
+    ],
+    onSubmit: async function(vals) {
+      var title = (vals.title || '').trim();
+      if (!title) return;
+      EOS_UI.closeModal();
+      var payload = { title: title };
+      var arch = labelToId[vals.archetype] || '';
+      if (arch) payload.archetype = arch;
+      var res = await EOS.post('/writing-editor/api/articles', payload);
+      if (res && res.ok) { await loadArticles(); openArticle(res.file); }
+      else EOS_UI.toast((res && res.error) || 'Create failed', false);
+    },
+  });
+}
+
+// ── Documents: editor ──
+var _route = EOS_UI.hashRoute({
+  onShow: function(id) { showArticle(id); },
+  onHide: function() { hideArticleDom(); },
+});
+
+function openArticle(file) { showArticle(file); _route.set(file); }
+
+async function showArticle(file) {
+  switchTab('docs');
+  var res = await EOS.api('/writing-editor/api/articles/' + encodeURIComponent(file));
+  if (!res || res.error) { EOS_UI.toast((res && res.error) || 'Not found', false); return; }
+  STATE.file = res.file || file;
+  document.getElementById('doc-title').value = res.title || '';
+  document.getElementById('doc-body').value = res.body || '';
+  document.getElementById('doc-words').textContent = res.words ? res.words + ' words' : '';
+  document.getElementById('doc-save-chip').textContent = '';
+  STATE.dirty = false;
+  document.getElementById('docs-list').style.display = 'none';
+  document.getElementById('doc-editor').style.display = '';
+}
+
+function hideArticleDom() {
+  if (STATE.rec && STATE.rec.state === 'recording') stopRec();
+  flushSave();
+  if (STATE.focusMode) toggleFocus(false);  // don't leave the overlay over the list
+  STATE.file = null;
+  document.getElementById('doc-editor').style.display = 'none';
+  document.getElementById('docs-list').style.display = '';
+  loadArticles();
+}
+
+function closeArticle() { _route.clear(); }
+
+// ── Autosave (debounced 2s + flush on blur/leave) ──
+function markDirty() {
+  if (!STATE.file) return;
+  STATE.dirty = true;
+  document.getElementById('doc-save-chip').textContent = '…';
+  clearTimeout(STATE.saveTimer);
+  STATE.saveTimer = setTimeout(flushSave, 2000);
+}
+
+async function flushSave() {
+  clearTimeout(STATE.saveTimer);
+  if (!STATE.dirty || !STATE.file) return;
+  STATE.dirty = false;
+  try {
+    var res = await EOS.post('/writing-editor/api/articles/' + encodeURIComponent(STATE.file), {
+      body: document.getElementById('doc-body').value,
+      title: document.getElementById('doc-title').value.trim(),
+    });
+    if (res && res.ok) {
+      document.getElementById('doc-save-chip').textContent = 'Saved ✓';
+      if (res.words != null) document.getElementById('doc-words').textContent = res.words + ' words';
+    } else {
+      document.getElementById('doc-save-chip').textContent = 'Save failed';
+      STATE.dirty = true;
+    }
+  } catch (e) {
+    document.getElementById('doc-save-chip').textContent = 'Save failed';
+    STATE.dirty = true;
+  }
+}
+
+// ── Dictation (MediaRecorder → /api/transcribe → insert at cursor) ──
+async function toggleRec() {
+  if (STATE.rec && STATE.rec.state === 'recording') { stopRec(); return; }
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true } });
+    STATE.chunks = [];
+    STATE.rec = new MediaRecorder(stream);
+    STATE.rec.ondataavailable = function(e){ if (e.data.size) STATE.chunks.push(e.data); };
+    STATE.rec.onstop = function(){ stream.getTracks().forEach(function(t){ t.stop(); }); sendAudio(); };
+    STATE.rec.start();
+    STATE.recStart = Date.now();
+    STATE.recTimer = setInterval(tickTime, 500);
+    document.getElementById('rec-dot').classList.add('on');
+    document.getElementById('doc-rec-btn').innerHTML = '<span class="rec-dot on" id="rec-dot"></span> &nbsp;Stop';
+  } catch (e) { EOS_UI.toast('Microphone unavailable: ' + e.message, false); }
+}
+
+function stopRec() {
+  if (STATE.rec && STATE.rec.state === 'recording') STATE.rec.stop();
+  clearInterval(STATE.recTimer);
+  document.getElementById('rec-time').textContent = '';
+  document.getElementById('doc-rec-btn').innerHTML = '<span class="rec-dot" id="rec-dot"></span> &nbsp;Dictate';
+}
+
+function tickTime() {
+  var s = Math.floor((Date.now() - STATE.recStart) / 1000);
+  document.getElementById('rec-time').textContent =
+    Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+async function sendAudio() {
+  if (!STATE.chunks.length) return;
+  var chip = document.getElementById('doc-save-chip');
+  chip.textContent = 'Transcribing…';
+  var blob = new Blob(STATE.chunks, { type: 'audio/webm' });
+  var fd = new FormData();
+  fd.append('audio', blob, 'dictation.webm');
+  try {
+    var res = await fetch('/writing-editor/api/transcribe', { method: 'POST', body: fd });
+    var json = await res.json();
+    if (json.error) { EOS_UI.toast(json.error, false); chip.textContent = ''; return; }
+    insertAtCursor(document.getElementById('doc-body'), json.text || '');
+    chip.textContent = '';
+    markDirty();
+  } catch (e) {
+    EOS_UI.toast('Transcription failed: ' + e.message, false);
+    chip.textContent = '';
+  }
+}
+
+function insertAtCursor(ta, text) {
+  if (!text) return;
+  var start = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
+  var before = ta.value.slice(0, start);
+  // Add a space/newline joint when gluing onto existing text.
+  var joint = before && !/\s$/.test(before) ? ' ' : '';
+  ta.setRangeText(joint + text, start, ta.selectionEnd != null ? ta.selectionEnd : start, 'end');
+  ta.focus();
+}
+
+// ── Polish — reuses the existing /api/revise verb ──
+async function polishArticle() {
+  var body = document.getElementById('doc-body').value.trim();
+  if (!body) { EOS_UI.toast('Nothing to polish yet', false); return; }
+  var btn = document.getElementById('doc-polish-btn');
+  btn.disabled = true; btn.textContent = 'Polishing…';
+  try {
+    var res = await EOS.post('/writing-editor/api/revise', {
+      draft: body.slice(0, STATE.max), audience: 'external', tone: 'default',
+    });
+    if (!res || res.ok === false) { EOS_UI.toast((res && res.error) || 'Polish failed', false); return; }
+    var html = ''
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+      +   '<span class="eos-badge eos-badge-provenance eos-badge-provenance-cloud"><span class="eos-badge-provenance-icon">&#10024;</span> AI</span>'
+      +   '<span style="font-size:13px;color:var(--text-muted)">Take the whole rewrite, or accept edits one at a time.</span>'
+      + '</div>'
+      + '<textarea id="polish-preview" style="width:100%;min-height:32vh;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);line-height:1.7;font-family:inherit;font-size:' + STATE.fontSize + 'px"></textarea>'
+      + '<div class="we-edits" id="polish-edits" style="margin-top:12px"></div>'
+      + '<div style="display:flex;gap:10px;margin-top:12px">'
+      +   '<button class="doc-btn primary" id="polish-use">Use full rewrite</button>'
+      +   '<button class="doc-btn" id="polish-keep">Keep mine</button>'
+      + '</div>';
+    EOS_UI.modal({ title: 'Polished version', body: html });
+    document.getElementById('polish-preview').value = res.revised || '';
+
+    // The model only saw the first STATE.max chars; anything past that must
+    // survive a per-edit apply untouched.
+    var snapshot = body.slice(0, STATE.max);
+    var tail = body.slice(STATE.max);
+    weRenderEditReview({
+      draft: snapshot,
+      edits: res.edits || [],
+      mount: document.getElementById('polish-edits'),
+      applyLabel: 'Apply {n} selected edit(s)',
+      onApply: function(text, n) {
+        document.getElementById('doc-body').value = text + tail;
+        markDirty();
+        EOS_UI.closeModal();
+        EOS_UI.toast('Applied ' + n + ' edit' + (n === 1 ? '' : 's'), true);
+      },
+    });
+
+    document.getElementById('polish-use').onclick = function() {
+      document.getElementById('doc-body').value = document.getElementById('polish-preview').value + tail;
+      markDirty();
+      EOS_UI.closeModal();
+    };
+    document.getElementById('polish-keep').onclick = function() { EOS_UI.closeModal(); };
+  } catch (e) {
+    EOS_UI.toast('Polish failed: ' + e.message, false);
+  } finally {
+    btn.disabled = false; btn.innerHTML = '&#10024; Polish';
+  }
+}
+
+// ── PDF export ──
+async function exportPdf() {
+  if (!STATE.file) return;
+  await flushSave();
+  var btn = document.getElementById('doc-pdf-btn');
+  btn.disabled = true; btn.textContent = 'Exporting…';
+  try {
+    var res = await EOS.post('/writing-editor/api/articles/' + encodeURIComponent(STATE.file) + '/pdf', {});
+    if (res && res.ok) EOS_UI.toast('PDF saved: ' + res.path, true);
+    else EOS_UI.toast((res && res.error) || 'Export failed', false);
+  } catch (e) {
+    EOS_UI.toast('Export failed: ' + e.message, false);
+  } finally {
+    btn.disabled = false; btn.innerHTML = '&#128196; Export PDF';
+  }
+}
+
+async function deleteArticle() {
+  if (!STATE.file) return;
+  var ok = await EOS_UI.confirm('Delete this article? This cannot be undone.');
+  if (!ok) return;
+  var res = await EOS.api('/writing-editor/api/articles/' + encodeURIComponent(STATE.file), { method: 'DELETE' });
+  if (res && res.ok) { STATE.dirty = false; closeArticle(); EOS_UI.toast('Deleted', true); }
+  else EOS_UI.toast((res && res.error) || 'Delete failed', false);
+}
+
+// ── Font size from settings ──
+async function applyDocSettings() {
+  try {
+    var r = await EOS.api('/settings/api/config');
+    var s = (r && r.settings) || {};
+    STATE.fontSize = parseInt(s['writing-editor.font_size'], 10) || 26;
+    // Seed the default; the toolbar button still toggles at runtime.
+    if (String(s['writing-editor.focus_mode']) === 'true' && !STATE.focusMode) toggleFocus(true);
+  } catch (e) { /* default stands */ }
+  if (!STATE.focusMode) document.getElementById('doc-body').style.fontSize = STATE.fontSize + 'px';
+}
+
+// ── Focus mode: distraction-free overlay + typewriter scroll ──
+function toggleFocus(on) {
+  STATE.focusMode = (on === true || on === false) ? on : !STATE.focusMode;
+  document.body.classList.toggle('we-focus', STATE.focusMode);
+  var btn = document.getElementById('doc-focus-btn');
+  if (btn) btn.classList.toggle('active', STATE.focusMode);
+  var ta = document.getElementById('doc-body');
+  if (STATE.focusMode) { ta.style.fontSize = ''; centerCaret(); ta.focus(); }
+  else { ta.style.fontSize = STATE.fontSize + 'px'; }
+}
+
+// Keep the caret vertically centred. Reads scrollTop only — never touches the
+// text or the autosave path.
+function centerCaret() {
+  if (!STATE.focusMode) return;
+  var ta = document.getElementById('doc-body');
+  var lh = parseFloat(getComputedStyle(ta).lineHeight) || 24;
+  var before = ta.value.slice(0, ta.selectionStart);
+  var line = before.split('\n').length - 1;
+  var target = (line * lh) - (ta.clientHeight / 2) + lh;
+  ta.scrollTop = Math.max(0, target);
+}
+
+document.getElementById('doc-body').addEventListener('input', markDirty);
+document.getElementById('doc-body').addEventListener('input', centerCaret);
+document.getElementById('doc-body').addEventListener('keyup', centerCaret);
+document.getElementById('doc-body').addEventListener('click', centerCaret);
+document.getElementById('doc-title').addEventListener('input', markDirty);
+document.getElementById('doc-body').addEventListener('blur', flushSave);
+document.getElementById('doc-title').addEventListener('blur', flushSave);
+window.addEventListener('visibilitychange', function(){ if (document.hidden) flushSave(); });
+window.addEventListener('keydown', function(e){ if (e.key === 'Escape' && STATE.focusMode) toggleFocus(false); });
+
+// ── Revise tab (unchanged one-shot revision UI) ──
+async function loadOptions() {
+  var opts = await EOS.api('/writing-editor/api/options');
+  STATE.audiences = opts.audiences || [];
+  STATE.tones = opts.tones || [];
+  STATE.audience = opts.default_audience || 'peer';
+  STATE.tone = opts.default_tone || 'default';
+  STATE.max = opts.max_draft_len || 5000;
+  renderPickers();
+}
+
+function renderPickers() {
+  var aRow = document.getElementById('we-audience');
+  var tRow = document.getElementById('we-tone');
+  aRow.innerHTML = '';
+  tRow.innerHTML = '';
+  STATE.audiences.forEach(function(a){
+    var chip = document.createElement('button');
+    chip.className = 'we-chip' + (a.id === STATE.audience ? ' active' : '');
+    chip.textContent = a.id;
+    chip.title = a.desc;
+    chip.onclick = function(){ STATE.audience = a.id; renderPickers(); };
+    aRow.appendChild(chip);
+  });
+  STATE.tones.forEach(function(t){
+    var chip = document.createElement('button');
+    chip.className = 'we-chip' + (t.id === STATE.tone ? ' active' : '');
+    chip.textContent = t.id;
+    chip.title = t.desc;
+    chip.onclick = function(){ STATE.tone = t.id; renderPickers(); };
+    tRow.appendChild(chip);
+  });
+}
+
+// ─── Per-edit review ─────────────────────────────────────────
+// The model returns a full rewrite AND the individual edits behind it. Rather
+// than swallow the rewrite whole, we let the writer accept or reject each edit
+// and splice only the accepted ones back into their own draft.
+
+// Locate `original` in `draft` at or after `from`. Falls back to a
+// whitespace-tolerant match, because the model reflows line breaks.
+function weFuzzyFind(draft, original, from) {
+  if (!original) return null;
+  var i = draft.indexOf(original, from || 0);
+  if (i < 0 && from) i = draft.indexOf(original, 0);
+  if (i >= 0) return { start: i, end: i + original.length };
+
+  var pattern = original.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  if (!pattern) return null;
+  var re = new RegExp(pattern, 'g');
+  re.lastIndex = from || 0;
+  var m = re.exec(draft);
+  if (!m && from) { re.lastIndex = 0; m = re.exec(draft); }
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+}
+
+// Resolve every edit to a character span in the *snapshot* the edits were
+// computed against. Un-locatable and overlapping edits are disabled, never
+// applied — a bad splice would corrupt the draft silently.
+function weResolveEdits(draft, edits) {
+  var cursor = 0;
+  var rows = (edits || []).map(function(e) {
+    var hit = weFuzzyFind(draft, e.original, cursor);
+    if (hit) cursor = hit.end;
+    return {
+      original: e.original, replacement: e.replacement, rationale: e.rationale,
+      start: hit ? hit.start : -1, end: hit ? hit.end : -1,
+      found: !!hit, overlap: false, decision: hit ? 'accept' : 'off',
+    };
+  });
+  // First edit by position wins; anything straddling it can't be spliced.
+  var kept = rows.filter(function(r){ return r.found; }).sort(function(a, b){ return a.start - b.start; });
+  var lastEnd = -1;
+  kept.forEach(function(r) {
+    if (r.start < lastEnd) { r.overlap = true; r.decision = 'off'; }
+    else { lastEnd = r.end; }
+  });
+  return rows;
+}
+
+// Splice accepted edits into the snapshot. Descending order means each splice
+// leaves earlier offsets untouched, so no offset arithmetic is needed.
+function weApplyEdits(draft, resolved) {
+  var usable = resolved.filter(function(r){ return r.decision === 'accept' && r.found && !r.overlap; });
+  usable.sort(function(a, b){ return b.start - a.start; });
+  var text = draft;
+  usable.forEach(function(r) {
+    text = text.slice(0, r.start) + r.replacement + text.slice(r.end);
+  });
+  return { text: text, applied: usable.length };
+}
+
+// Shared renderer for the Revise tab and the Documents polish modal.
+// opts: {draft, edits, mount, applyLabel, onApply}. `onApply(text, n)` may
+// return false (or a promise of false) to veto — e.g. a cancelled confirm.
+function weRenderEditReview(opts) {
+  var mount = opts.mount;
+  if (!mount) return;
+  mount.innerHTML = '';
+  var resolved = weResolveEdits(opts.draft, opts.edits);
+  if (!resolved.length) return;
+
+  var usableCount = resolved.filter(function(r){ return r.found && !r.overlap; }).length;
+  var frozen = false;
+
+  var controls = document.createElement('div');
+  controls.className = 'we-edit-controls';
+  var acceptAll = document.createElement('button');
+  acceptAll.className = 'eos-btn-sm';
+  acceptAll.textContent = 'Accept all';
+  var rejectAll = document.createElement('button');
+  rejectAll.className = 'eos-btn-sm';
+  rejectAll.textContent = 'Reject all';
+  var count = document.createElement('span');
+  count.className = 'we-edit-count';
+  controls.appendChild(acceptAll);
+  controls.appendChild(rejectAll);
+  controls.appendChild(count);
+  mount.appendChild(controls);
+
+  var applyBtn = document.createElement('button');
+  applyBtn.className = 'eos-btn eos-btn-primary';
+  applyBtn.style.marginTop = '8px';
+
+  var rows = resolved.map(function(r) {
+    var row = document.createElement('div');
+    row.className = 'we-edit';
+    var actions = '';
+    var note = '';
+    if (!r.found) {
+      row.classList.add('notfound');
+      note = '<div class="we-edit-note">Couldn\'t locate this text in your draft — apply it by hand if you want it.</div>';
+    } else if (r.overlap) {
+      row.classList.add('notfound');
+      note = '<div class="we-edit-note">Overlaps an earlier edit — skipped.</div>';
+    } else {
+      actions = '<div class="we-edit-actions">'
+        + '<button class="we-edit-chip js-accept" title="Accept">&#10003;</button>'
+        + '<button class="we-edit-chip js-reject" title="Reject">&#10007;</button>'
+        + '</div>';
+    }
+    row.innerHTML = ''
+      + '<div class="we-edit-head">'
+      +   '<div class="we-edit-body">'
+      +     '<div><span class="we-edit-strike">' + esc(r.original) + '</span> &rarr; <span class="we-edit-add">' + esc(r.replacement) + '</span></div>'
+      +     '<div class="we-edit-rationale">' + esc(r.rationale) + '</div>'
+      +     note
+      +   '</div>'
+      +   actions
+      + '</div>';
+    mount.appendChild(row);
+    return { el: row, edit: r };
+  });
+
+  function paint() {
+    rows.forEach(function(item) {
+      var accepted = item.edit.decision === 'accept';
+      item.el.classList.toggle('rejected', item.edit.found && !item.edit.overlap && !accepted);
+      var a = item.el.querySelector('.js-accept');
+      var j = item.el.querySelector('.js-reject');
+      if (a) a.classList.toggle('on-accept', accepted);
+      if (j) j.classList.toggle('on-reject', !accepted);
+    });
+    var n = resolved.filter(function(r){ return r.decision === 'accept'; }).length;
+    count.textContent = n + ' of ' + usableCount + ' accepted';
+    applyBtn.textContent = (opts.applyLabel || 'Apply {n} edit(s)').replace('{n}', n);
+    applyBtn.disabled = frozen || n === 0;
+    acceptAll.disabled = rejectAll.disabled = frozen;
+  }
+
+  rows.forEach(function(item) {
+    var a = item.el.querySelector('.js-accept');
+    var j = item.el.querySelector('.js-reject');
+    if (a) a.onclick = function(){ if (!frozen) { item.edit.decision = 'accept'; paint(); } };
+    if (j) j.onclick = function(){ if (!frozen) { item.edit.decision = 'off'; paint(); } };
+  });
+  acceptAll.onclick = function() {
+    resolved.forEach(function(r){ if (r.found && !r.overlap) r.decision = 'accept'; });
+    paint();
+  };
+  rejectAll.onclick = function() {
+    resolved.forEach(function(r){ r.decision = 'off'; });
+    paint();
+  };
+
+  applyBtn.onclick = async function() {
+    if (frozen) return;
+    var out = weApplyEdits(opts.draft, resolved);
+    var ok = await opts.onApply(out.text, out.applied);
+    if (ok === false) return;   // vetoed — leave the review live
+    frozen = true;
+    paint();
+    applyBtn.textContent = 'Applied ✓';
+    applyBtn.disabled = true;
+  };
+  mount.appendChild(applyBtn);
+  paint();
+}
+
+async function revise() {
+  var draft = (document.getElementById('we-draft').value || '').trim();
+  if (!draft) { document.getElementById('we-draft').focus(); return; }
+  var btn = document.getElementById('we-submit');
+  var status = document.getElementById('we-status');
+  var result = document.getElementById('we-result');
+  btn.disabled = true;
+  status.textContent = 'Revising…';
+  result.classList.remove('show');
+  try {
+    var res = await EOS.post('/writing-editor/api/revise', {
+      draft: draft, audience: STATE.audience, tone: STATE.tone,
+    });
+    if (!res || res.ok === false) {
+      status.textContent = (res && res.error) || 'failed';
+      return;
+    }
+    document.getElementById('we-revised').value = res.revised || '';
+    // The edits were computed against exactly this text — splice against it,
+    // not against whatever the textarea holds when Apply is finally clicked.
+    var snapshot = draft;
+    weRenderEditReview({
+      draft: snapshot,
+      edits: res.edits || [],
+      mount: document.getElementById('we-edits'),
+      applyLabel: 'Apply {n} edit(s) to draft',
+      onApply: async function(text, n) {
+        var ta = document.getElementById('we-draft');
+        if ((ta.value || '').trim() !== snapshot) {
+          var go = await EOS_UI.confirm('Your draft changed since you hit Revise — applying will overwrite those changes. Continue?');
+          if (!go) return false;
+        }
+        ta.value = text;
+        status.textContent = n + ' edit' + (n === 1 ? '' : 's') + ' applied to your draft';
+        EOS_UI.toast('Applied ' + n + ' edit' + (n === 1 ? '' : 's'), true);
+      },
+    });
+    document.getElementById('we-edit-count').textContent = (res.edits || []).length;
+    var patternWrap = document.getElementById('we-pattern-wrap');
+    patternWrap.innerHTML = '';
+    if (res.pattern && res.pattern.title) {
+      var p = document.createElement('div');
+      p.className = 'we-pattern';
+      p.innerHTML = ''
+        + '<div class="we-section-label">Recurring pattern spotted</div>'
+        + '<div class="we-pattern-title">' + esc(res.pattern.title) + '</div>'
+        + '<div>' + esc(res.pattern.note || '') + '</div>';
+      patternWrap.appendChild(p);
+    }
+    result.classList.add('show');
+    status.textContent = (res.edits || []).length + ' edit' + ((res.edits || []).length === 1 ? '' : 's');
+  } catch (e) {
+    status.textContent = 'failed: ' + (e && e.message ? e.message : e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function lint() {
+  var draft = (document.getElementById('we-draft').value || '').trim();
+  if (!draft) { document.getElementById('we-draft').focus(); return; }
+  var btn = document.getElementById('we-lint-btn');
+  var status = document.getElementById('we-status');
+  var lintWrap = document.getElementById('we-lint');
+  btn.disabled = true;
+  status.textContent = 'Linting…';
+  lintWrap.classList.remove('show');
+  try {
+    var res = await EOS.post('/writing-editor/api/lint', { draft: draft });
+    if (!res || res.ok === false) {
+      status.textContent = (res && res.error) || 'failed';
+      return;
+    }
+    var findings = res.findings || [];
+    var el = document.getElementById('we-findings');
+    el.innerHTML = '';
+    findings.forEach(function(f){
+      var row = document.createElement('div');
+      row.className = 'we-finding sev-' + (f.severity || 'style');
+      row.innerHTML = ''
+        + '<div class="we-finding-head">'
+        +   '<span class="we-finding-sev">' + esc(f.severity || '') + '</span>'
+        +   '<span class="we-finding-rule">' + esc(f.rule || '') + '</span>'
+        + '</div>'
+        + '<div class="we-finding-span">' + esc(f.span || '') + '</div>'
+        + (f.fix ? '<div class="we-finding-fix">&rarr; ' + esc(f.fix) + '</div>' : '');
+      el.appendChild(row);
+    });
+    document.getElementById('we-lint-count').textContent = findings.length;
+    lintWrap.classList.add('show');
+    status.textContent = findings.length === 0
+      ? 'clean — no slop found'
+      : findings.length + ' finding' + (findings.length === 1 ? '' : 's');
+  } catch (e) {
+    status.textContent = 'failed: ' + (e && e.message ? e.message : e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('we-submit').addEventListener('click', revise);
+document.getElementById('we-lint-btn').addEventListener('click', lint);
+document.getElementById('we-draft').addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); revise(); }
+});
+document.getElementById('we-copy').addEventListener('click', async function(){
+  var ta = document.getElementById('we-revised');
+  ta.select();
+  try { await navigator.clipboard.writeText(ta.value); EOS_UI.toast('Copied', true); }
+  catch (e) { EOS_UI.toast('Copy failed', false); }
+});
+
+var _weSettings = EOS_UI.settingsPanel({
+  id: 'writing-editor-settings-panel',
+  title: 'Writing Editor Settings',
+  fields: [
+    {key: 'writing-editor.default_audience', label: 'Default audience', type: 'select', default: 'peer',
+     options: ['peer', 'manager', 'external', 'report']},
+    {key: 'writing-editor.default_tone', label: 'Default tone', type: 'select', default: 'default',
+     options: ['default', 'direct', 'diplomatic', 'shorter']},
+    {key: 'writing-editor.font_size', label: 'Document font size (px)', type: 'number', default: 26,
+     hint: 'Editing text size in the Documents tab.'},
+    {key: 'writing-editor.focus_mode', label: 'Start in focus mode', type: 'boolean', default: false,
+     hint: 'Open documents distraction-free (centred column, typewriter scroll). Toggle anytime with the Focus button or Esc.'},
+    {key: 'writing-editor.dictation_language', label: 'Dictation language code', type: 'text', default: 'zh',
+     hint: 'e.g. zh for Chinese, en for English. Used by the Dictate button.'},
+    {key: 'writing-editor.pdf_theme', label: 'PDF theme', type: 'select', default: 'default',
+     options: ['default', 'slate', 'mono', 'forest']},
+  ],
+  onSave: function(){ applyDocSettings(); },
+});
+function openWESettings() { _weSettings.open(); }
+
+// ── Boot ──
+loadOptions();
+applyDocSettings();
+loadArticles().then(function(){ _route.init(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+{
+  "id": "food",
+  "groups": [
+    {
+      "id": "vegetables",
+      "label": "Vegetables",
+      "members": [
+        "carrot",
+        "potato",
+        "sweet-potato",
+        "onion",
+        "garlic",
+        "ginger",
+        "beetroot",
+        "radish",
+        "turnip",
+        "leek",
+        "cabbage",
+        "lettuce",
+        "spinach",
+        "broccoli",
+        "cauliflower",
+        "celery",
+        "asparagus",
+        "tomato",
+        "cucumber",
+        "eggplant",
+        "pumpkin",
+        "zucchini",
+        "bell-pepper",
+        "chili-pepper",
+        "mushroom",
+        "corn",
+        "pea",
+        "green-bean"
+      ]
+    },
+    {
+      "id": "fruit",
+      "label": "Fruit",
+      "members": [
+        "apple",
+        "banana",
+        "orange",
+        "lemon",
+        "grape",
+        "strawberry",
+        "blueberry",
+        "watermelon",
+        "pineapple",
+        "mango",
+        "pear",
+        "peach",
+        "cherry",
+        "avocado",
+        "kiwifruit"
+      ]
+    },
+    {
+      "id": "seafood",
+      "label": "Seafood",
+      "members": [
+        "crab",
+        "lobster",
+        "shrimp",
+        "squid",
+        "octopus",
+        "salmon"
+      ]
+    }
+  ]
+}

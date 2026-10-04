@@ -1,0 +1,75 @@
+# docker-compose.yml — EmptyOS reference deployment
+#
+# Quick start (zero config):
+#   docker compose up -d
+#   The entrypoint generates a default emptyos.toml on first boot, seeds the
+#   vault with PARA folders, and prints a generated auth token to the logs.
+#
+# Bring your own config:
+#   1. Copy emptyos.example.toml to emptyos.toml and edit it
+#   2. Uncomment the bind-mount line below
+#   3. docker compose up -d
+#
+# Environment variables (optional, override emptyos.toml field-by-field):
+#   EOS_NETWORK_MODE       - local | private | public (default: private inside Docker)
+#   EOS_NETWORK_AUTH_TOKEN - required in public mode; auto-generated otherwise
+#   EOS_CLOUD_CONSENT      - ask | always | never
+#   EOS_DEMO_ENABLED       - true | false
+
+services:
+  emptyos:
+    build: .
+    image: emptyos:latest
+    container_name: emptyos
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      # Your markdown vault — EmptyOS treats this as its hard drive.
+      # Created on the host on first `up` if it doesn't exist.
+      - ./vault:/vault
+      # Optional: bring your own config. With this commented out, the
+      # entrypoint writes a sensible default emptyos.toml to the data volume.
+      # - ./emptyos.toml:/app/emptyos.toml:ro
+      # Runtime state — persists events, syslog, generated auth token across
+      # restarts. Don't delete this volume unless you want a fresh install.
+      - emptyos-data:/app/data
+    environment:
+      # Uncomment and set for public mode:
+      # - EOS_NETWORK_MODE=public
+      # - EOS_NETWORK_AUTH_TOKEN=change-me-to-a-long-random-token
+      - EOS_CLOUD_CONSENT=ask
+    # If you uncomment the `ollama` service below, also uncomment this
+    # depends_on block so the Ollama sidecar boots before EmptyOS:
+    # depends_on:
+    #   - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # --- Optional local LLM sidecar ---
+  # Uncomment to run Ollama alongside EmptyOS for a self-contained deployment.
+  # Point capabilities.think.ollama.host at http://ollama:11434 in emptyos.toml.
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: emptyos-ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama-models:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   # GPU (Linux + NVIDIA Container Toolkit):
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+
+volumes:
+  emptyos-data:
+  # ollama-models:

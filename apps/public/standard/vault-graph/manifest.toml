@@ -1,0 +1,36 @@
+[app]
+id = "vault-graph"
+name = "Vault Topology"
+version = "0.2.0"
+description = "Force-directed graph of vault notes, links, and references"
+store_category = "core"
+leaf = true
+
+[app.entry]
+module = "app"
+class = "VaultGraphApp"
+
+[requires]
+capabilities = ["read"]
+apps = ["kb"]
+# `link` owns the vault-wide link index the orphan panel renders. Optional, not
+# required: without it the panel says so and the graph is otherwise unaffected.
+optional_apps = ["link"]
+
+[provides.web]
+prefix = "/vault-graph"
+
+[[contributes.tour.step]]
+id = "vault-graph.explore"
+group = "core"
+priority = 320
+route = "/vault-graph/"
+spotlight = "#vault-graph-canvas"
+title = "See your vault as a graph"
+body = "Every note, every link, every reference. Click any node to see its full 4D timeline."
+
+[provides.welcome]
+title = "Vault Knowledge Graph"
+tagline = "The knowledge base as a live graph — wikilinks, citations, and entity relationships."
+href = "/vault-graph/"
+order = 55

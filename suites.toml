@@ -1,0 +1,204 @@
+# suites.toml — the EmptyOS suite catalog (single source of truth)
+#
+# THE EMPTYOS STACK
+#   Distributions  — the boxes that ship (release.toml tiers + targets)
+#   Suites         — named product chapters users digest (THIS FILE)
+#   Apps           — surface apps (one per suite, compose, own no data)
+#                    + atom apps (single-purpose, own their data + verbs)
+#   Engines        — pure math libraries
+#   Platform       — kernel · capabilities · EventBus · vault · plugins · SDK
+#
+# A *distribution* is the box that ships; a *suite* is a named chapter inside
+# the box, reused across distributions. This file is DESCRIPTIVE ONLY:
+# - the kernel never reads it (all apps stay equal at runtime);
+# - release tiers stay literal app lists (no component resolution);
+# - docs / brand copy / launcher presentation derive from it, never the reverse.
+#
+# Fields per [[suite]]:
+#   id       — stable slug (also the contribution-slot namespace for its surface
+#              app, e.g. [[contributes.life.timeline]])
+#   name     — user-facing name (descriptive, per brand voice: specific over grand)
+#   line     — "consumer" | "engineer" | "builder" (who the chapter is for;
+#              descriptive metadata, read by no code today)
+#   private  — true when every member is pruned from the public snapshot, so
+#              shipping the catalog would advertise uninstallable software.
+#              LOAD-BEARING: filter_suites_toml (scripts/release-public.py)
+#              keys on exactly this field. A suite over a held track without it
+#              leaks the member ids. NOT SUFFICIENT for a MIXED suite: the flag
+#              is per-suite, membership is per-app, so a public suite still
+#              ships its held members' ids (studio, automation).
+#              check_suites.py reports each one as an advisory.
+#   NOTE       a suite id doubles as a contribution-slot namespace, so it can
+#              collide with an app id — `english` and `life` both do. Latent:
+#              no call_contributions("english", ...) exists. Prefer a suite id
+#              that is not also an app id unless the app IS the surface.
+#   pitch    — one line, EN;  pitch_zh — one line, 中文 (never mixed on a surface)
+#   surface  — app id of the suite's front door ("" until one exists; prefer
+#              promoting an existing member over creating a new app)
+#   apps     — member atom-app ids (public/tracked only; apps/personal/ never
+#              appears here). An app MAY belong to more than one suite (kb).
+#
+# chrome = platform/meta/utility apps that are deliberately in NO suite —
+# suites market features, not plumbing. scripts/check_suites.py validates that
+# every listed id resolves to a real manifest and reports tracked public apps
+# that are neither in a suite nor in chrome.
+
+version = 1
+
+chrome = [
+    "hub",
+    "settings",
+    "store",
+    "providers",
+    "system-log",
+    "billing",
+    "tour",
+    "app-analytics",
+    "vault-backup",
+    "run",
+    "weather",
+    "geocode",
+    "routing",
+    "workspaces",
+    "model-serving",
+    "feedback",
+    "gesture",
+    "engagements",
+]
+
+[[suite]]
+id = "tasks"
+name = "Tasks & Projects"
+line = "consumer"
+pitch = "Get things out of your head, into projects, and done."
+pitch_zh = "把事情从脑子里拿出来，放进项目，做完。"
+surface = ""   # candidate: promote `projects` (already the write endpoint task aggregates)
+apps = [
+    "task",
+    "projects",
+    "calendar",
+    "boards",
+    "focus",
+    "quick-action",
+    "bookme",
+]
+
+[[suite]]
+id = "knowledge"
+name = "Knowledge"
+line = "consumer"
+pitch = "A second brain in plain markdown — notes, knowledge base, search, connections."
+pitch_zh = "纯 markdown 的第二大脑——笔记、知识库、搜索、关联。"
+surface = ""
+apps = [
+    "note",
+    "notebook",
+    "link",
+    "kb",
+    "search",
+    "vault-graph",
+    "learn",
+    "reader",
+    "scroll",
+    "garden",
+    "commons",
+    "library",
+    "conversation-ingest",
+    # The open EnglishOS edition (editions M10). Also in the held `english`
+    # suite; this entry is what gives them a chapter in the public snapshot.
+    "dictionary",
+    "soundcheck",
+    # Both are knowledge-integrity apps rather than project trackers:
+    # `requirements` traces to the standards that live in kb as `clause` notes,
+    # and `trust-loop` gates a live calculation against an openly-published
+    # worked example. They are siblings of the assurance discipline in
+    # docs/TRUST-LOOP.md, and both ship publicly — so neither can go in the
+    # private `engineer` suite without vanishing from the public catalog.
+    "requirements",
+    "trust-loop",
+]
+
+[[suite]]
+id = "life"
+name = "Life"
+line = "consumer"
+pitch = "One timeline of your days — journal, spending, people, work log."
+pitch_zh = "把每一天连成一条时间线——日记、开销、人物、工作记录。"
+surface = "life"   # pilot surface app, dark by default ([apps.life] feature.enabled)
+apps = [
+    "journal",
+    "daily-brief",
+    "expense",
+    "people",
+    "quotes",
+    "worklog",
+    "worklog-capture",
+    "countdown",
+]
+
+[[suite]]
+id = "companion"
+name = "Companion"
+line = "consumer"
+pitch = "The AI you talk to — chat, voice, rooms, agents — with you, not for you."
+pitch_zh = "可以对话的 AI——聊天、语音、房间、Agent——与你一起，而不是替你。"
+surface = "portal"   # the one conversation door: rooms / assistant / agent / code modes
+apps = [
+    "assistant",
+    "voice-assistant",
+    "agent",
+    "rooms",
+    "braindump",
+    "dictation",
+    "hands-free",
+    "proactive",
+    "portal",
+    "company",
+]
+
+[[suite]]
+id = "studio"
+name = "Studio"
+line = "consumer"
+pitch = "Write, design, visualize, publish — creative work from draft to shipped."
+pitch_zh = "写作、设计、可视化、发布——从草稿到成品。"
+surface = ""
+apps = [
+    "writing-editor",
+    "designer",
+    "markitup",
+    "viz",
+    "ppt",
+    "publish",
+    "vlog",
+    "video-digest",
+    "codoc",
+    "sheet",
+    "music-library",
+    "radio",
+    "jianpu",
+    "canvas",
+    "synth",
+    "reports",
+    "business-case",
+    "work",
+    "nature-math-simulation",
+]
+
+[[suite]]
+id = "automation"
+name = "Automation"
+line = "consumer"
+pitch = "The loops that run for you — events ripple, schedules fire, everything is audited and undoable."
+pitch_zh = "替你转起来的循环——事件联动、定时任务，全程可审计、可撤销。"
+surface = ""
+apps = [
+    "reactor",
+    "replay",
+    "workflows",
+    "runbook",
+    "git",
+    "github-connector",
+    "forge",
+    "operate",
+]

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animated scene — Anime.js Three.js adapter + restrained bloom</title>
+<style>
+  :root { --accent: #ffd27d; --muted: #8a97a7; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #05070f; }
+  #app { position: fixed; inset: 0; /* eos-ios-ok: N H — full-bleed WebGL canvas; insetting it would letterbox the render. Overlay chrome carries its own safe-area. */ }
+  canvas { display: block; }
+  .title {
+    position: fixed; left: 18px; top: 16px; z-index: 2;
+    font: 600 15px/1.2 "Archivo", system-ui, sans-serif;
+    color: #e6edf3; letter-spacing: .04em; text-transform: uppercase;
+  }
+  .hud {
+    position: fixed; left: 18px; bottom: 16px; z-index: 2;
+    font: 12px/1.5 "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--muted); letter-spacing: .02em; pointer-events: none;
+  }
+  .hud b { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="title">Animated scene</div>
+<div class="hud">Three.js r160 · <b>Anime.js v4.5 Three adapter</b> · restrained <b>UnrealBloom</b> · drag to orbit</div>
+
+<!--
+  Mesh/material animation via the Anime.js v4.5 first-party Three.js adapter —
+  the viz-preset-preferred alternative to hand-rolled lerps in the render loop.
+
+  The two traps this file exists to demonstrate around:
+
+  1. Importmap pin. `animejs` MUST map to the module tree
+     (dist/modules/index.js), NEVER the anime.esm.js bundle. The adapter
+     imports the module tree internally, so a bundle mapping registers the
+     adapter onto a SECOND engine instance and silently does nothing.
+
+  2. Bloom + emissive discipline. UnrealBloom with emissive materials blows
+     out to a white wash unless: threshold stays high (~0.8+), strength stays
+     modest (~0.5), emissiveIntensity stays <= ~1.3, and only SMALL surfaces
+     glow. If the whole frame washes white, the threshold is too low, the
+     emissive too hot, or the glowing surfaces too large — the scene must
+     stay mostly dark, with bloom catching highlights only.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "animejs": "https://cdn.jsdelivr.net/npm/animejs@4.5.0/dist/modules/index.js",
+    "animejs/adapters/three": "https://cdn.jsdelivr.net/npm/animejs@4.5.0/dist/modules/adapters/three/index.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+// Alias the import — a bare `animate` collides with the render-loop function
+// below and throws a redeclaration SyntaxError.
+import { animate as tween, stagger } from 'animejs';
+import 'animejs/adapters/three';   // side-effect: registers the Three adapter
+
+const mount = document.getElementById('app');
+
+// ── Renderer ─────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+mount.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070f);
+scene.fog = new THREE.FogExp2(0x05070f, 0.045);
+
+const camera = new THREE.PerspectiveCamera(
+  50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 2.2, 9);
+
+// PBR lighting without an HDR fetch.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const key = new THREE.DirectionalLight(0xbfd4ff, 1.4);
+key.position.set(4, 6, 3);
+scene.add(key);
+
+// ── Ground: dark, matte — the scene stays mostly dark so bloom reads ──────
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(14, 48),
+  new THREE.MeshStandardMaterial({ color: 0x0a0f1c, roughness: 0.95 }));
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -1.2;
+scene.add(ground);
+
+// ── Floating lanterns: SMALL emissive cores, intensity capped ~1.2 ─────────
+const lanterns = [];
+for (let i = 0; i < 6; i++) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x1a1408,
+    emissive: new THREE.Color().setHSL(0.09 + i * 0.015, 0.85, 0.55),
+    emissiveIntensity: 0.7,          // pulsed up to 1.25 below — never higher
+    roughness: 0.6,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 32, 32), mat);
+  const a = (i / 6) * Math.PI * 2;
+  m.position.set(Math.cos(a) * 3.2, 0.4 + (i % 3) * 0.7, Math.sin(a) * 3.2);
+  scene.add(m);
+  lanterns.push(m);
+}
+
+// ── Motion via the adapter — position/rotation flattened onto the mesh. ────
+// Degrees (not radians), per-property durations, stagger for phase offsets.
+lanterns.forEach((m, i) => {
+  tween(m, {
+    y: m.position.y + 0.9,
+    rotateY: 360,
+    duration: 3600 + i * 500,
+    loop: true,
+    alternate: true,          // rotateY alternates too; fine for a lantern sway
+    ease: 'inOutSine',
+    delay: stagger(220)(m, i, lanterns.length),
+  });
+  // Material props are plain numeric targets — tween the material directly.
+  tween(m.material, {
+    emissiveIntensity: 1.25,   // the pulse ceiling; higher blows the bloom out
+    duration: 1800 + i * 300,
+    loop: true,
+    alternate: true,
+    ease: 'inOutQuad',
+  });
+});
+
+// Slow group drift for the whole ring, also through the adapter.
+const ring = new THREE.Group();
+scene.add(ring);
+lanterns.forEach((m) => ring.add(m));
+tween(ring, { rotateY: 360, duration: 60000, loop: true, ease: 'linear' });
+
+// ── Controls ───────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0.6, 0);
+
+// ── Bloom, restrained: HIGH threshold, modest strength ─────────────────────
+// With emissive materials in frame these numbers are load-bearing: a low
+// threshold (e.g. 0.18, fine for a non-emissive PBR scene) washes the whole
+// frame white here.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.55,   // strength — modest
+  0.4,    // radius
+  0.82);  // threshold — HIGH: only the lantern cores glow
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+composer.setSize(window.innerWidth, window.innerHeight);
+
+addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+});
+
+// ── ONE render loop; the adapter runs its own engine loop and composes
+//    with it — the loop only renders, it never hand-lerps motion. ──────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  composer.render();
+}
+animate();
+</script>
+</body>
+</html>

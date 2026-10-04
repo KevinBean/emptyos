@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Dictionary - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
+
+/* Hero */
+.dict-hero { padding:32px 0 8px; animation:fadeDown 0.4s ease }
+.dict-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.dict-hero .desc { font-size:14px; color:var(--text-secondary) }
+
+/* Tabs override */
+.eos-tabs { margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+
+/* Search area */
+.lookup-wrap { position:relative; margin-bottom:16px; animation:fadeDown 0.4s ease 0.1s both }
+.lookup-icon { position:absolute; left:18px; top:50%; transform:translateY(-50%); width:18px; height:18px; color:var(--text-muted); pointer-events:none; transition:color 0.2s; display:flex; align-items:center; justify-content:center }
+.lookup-icon svg { width:18px; height:18px; display:block }
+.lookup-wrap:focus-within .lookup-icon { color:var(--accent) }
+.lookup-input { width:100%; font-size:18px; padding:16px 90px 16px 48px; background:var(--bg-card); border:1.5px solid var(--border); border-radius:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
+.lookup-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 10%,transparent) }
+.lookup-input::placeholder { color:var(--text-muted) }
+.lookup-btn { position:absolute; right:8px; top:50%; transform:translateY(-50%); padding:8px 16px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s }
+.lookup-btn:active { transform:translateY(-50%) scale(0.95) }
+.lookup-btn:disabled { opacity:0.5; pointer-events:none }
+
+/* Autocomplete */
+.ac-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; z-index:50; overflow:hidden; display:none; box-shadow:0 8px 24px rgba(0,0,0,0.12) }
+.ac-dropdown.show { display:block }
+.ac-item { padding:12px 16px; font-size:14px; color:var(--text); cursor:pointer; transition:background 0.1s }
+.ac-item:hover, .ac-item.active { background:color-mix(in srgb,var(--accent) 10%,var(--bg-card)); color:var(--accent) }
+
+/* Result card */
+.result-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px; margin-bottom:16px; animation:cardIn 0.35s ease both }
+.result-word { font-size:22px; font-weight:700; color:var(--text-heading); display:flex; align-items:center; gap:12px; flex-wrap:wrap }
+.result-phonetic { font-size:14px; color:var(--text-muted); font-weight:400 }
+.result-pos { display:inline-block; background:color-mix(in srgb,var(--accent) 15%,var(--bg)); padding:4px 12px; border-radius:6px; font-size:12px; font-weight:600; color:var(--accent); margin-top:8px }
+.result-section { margin-top:16px }
+.result-label { font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:4px }
+.result-text { font-size:15px; line-height:1.6; color:var(--text) }
+.result-example { font-style:italic; color:var(--text-secondary); border-left:3px solid var(--accent); padding-left:12px; margin-top:4px }
+.result-tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px }
+.result-tag { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:4px 8px; font-size:12px; color:var(--text-secondary) }
+.result-chinese { font-size:16px; color:var(--text-heading); margin-top:2px }
+.result-actions { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap }
+.save-btn { padding:12px 24px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s; display:flex; align-items:center; gap:8px }
+.save-btn:active { transform:scale(0.95) }
+.save-btn:disabled { opacity:0.5; pointer-events:none }
+.saved-badge { display:inline-flex; align-items:center; gap:4px; background:color-mix(in srgb,var(--success) 15%,var(--bg)); color:var(--success); padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600 }
+.examples-btn { padding:12px 16px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.15s }
+.examples-btn:active { transform:scale(0.95); border-color:var(--accent) }
+.pronounce-btn { background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:50%; width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; padding:0; transition:all 0.15s }
+.pronounce-btn:hover { border-color:var(--accent); color:var(--accent) }
+.pronounce-btn:active { transform:scale(0.9) }
+.pronounce-btn.playing { border-color:var(--accent); color:var(--accent); animation:pulse 1s ease infinite }
+.pronounce-btn.disabled { opacity:0.35; cursor:default }
+.pronounce-btn-small { width:28px; height:28px; font-size:14px }
+
+/* Etymology block */
+.etymology-block { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:8px; font-size:13px; line-height:1.5; color:var(--text-secondary) }
+
+/* Extra examples */
+.extra-examples { margin-top:12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; animation:cardIn 0.25s ease both }
+.extra-examples li { margin:8px 0; font-size:14px; line-height:1.5; color:var(--text) }
+
+/* Loading */
+.loading-pulse { text-align:center; padding:48px; color:var(--text-muted); font-size:14px; animation:pulse 1.5s ease infinite }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Vocab list */
+/* Holds four shared .eos-stat-card children. The component styles the card but
+   ships no container grid, so the row is the caller's job (same as #cal-stats
+   in calendar) — without it the cards stack full-width. */
+.vocab-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px }
+.vocab-list { display:flex; flex-direction:column; gap:8px }
+.vocab-item { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; cursor:pointer; transition:border-color 0.15s; animation:cardIn 0.35s ease both }
+.vocab-item:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.vocab-header { display:flex; align-items:center; gap:12px; cursor:pointer }
+.vocab-word { font-size:16px; font-weight:600; color:var(--text-heading); flex:1 }
+.vocab-star { background:none; border:none; font-size:18px; cursor:pointer; padding:2px; transition:transform 0.15s; color:var(--text-muted) }
+.vocab-star:active { transform:scale(1.3) }
+.vocab-star.on { color:var(--red) }
+/* Difficulty — the reader's own 1-5 "how hard is this for me". Stars are the
+   difficulty idiom here; Favorite is the heart, so the two never read alike. */
+.diff-stars { display:inline-flex; gap:1px; align-items:center; white-space:nowrap }
+.diff-star { background:none; border:none; padding:1px; font-size:15px; line-height:1;
+             cursor:pointer; color:var(--text-muted); transition:transform 0.12s, color 0.12s }
+.diff-star:hover { transform:scale(1.2) }
+.diff-star:focus-visible { outline:2px solid var(--accent); outline-offset:1px; border-radius:4px }
+.diff-star.on { color:var(--amber) }
+/* An unrated word must still be reachable and legible at REST. --border measured
+   1.12-1.45:1 against the card across the nine themes — under the readability
+   audit's 2.5:1 fail floor everywhere — so the row read as "nothing here" rather
+   than "nothing rated yet". Only the vocabulary list had a hover ancestor to lift
+   it; the lookup card and the review flashcard had none, so their stars were
+   unreachable: you cannot hover a target you cannot see. --text-muted at full
+   opacity measures 3.26-5.22 and stays subordinate to the amber .on state by hue
+   rather than by being too faint to find. 45% opacity was measured first and
+   rejected — it lands at 1.60-2.05, still under the floor on every theme. Hover
+   now lifts the colour to --text. */
+.vocab-item:hover .diff-star, .diff-stars:hover .diff-star { color:var(--text) }
+.vocab-item:hover .diff-star.on, .diff-stars:hover .diff-star.on { color:var(--amber) }
+.diff-label { font-size:11px; color:var(--text-muted); margin-left:4px }
+.vocab-filters { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap }
+/* The cuts are one-of-N; the sort is an independent toggle. Both can read as
+   "active" at once, so separate them rather than letting them look like one
+   group with two selections. */
+#vocab-sort { margin-left:10px; padding-left:10px; border-left:1px solid var(--border) }
+.vocab-filters .eos-filter-bar { margin-bottom:0 }
+.vocab-level { display:flex; gap:4px; align-items:center }
+.level-dot { width:8px; height:8px; border-radius:50%; background:var(--border); transition:background 0.2s }
+.level-dot.filled { background:var(--accent) }
+.level-dot.mastered { background:var(--success) }
+.vocab-meta { display:flex; gap:12px; margin-top:8px; font-size:12px; color:var(--text-muted) }
+.vocab-detail { padding:12px 0 0; border-top:1px solid var(--border); margin-top:12px; display:none; animation:fadeDown 0.2s ease }
+.vocab-detail.show { display:block }
+.vocab-delete { padding:8px 12px; background:none; border:1px solid color-mix(in srgb,red 40%,var(--border)); color:color-mix(in srgb,red 70%,var(--text)); border-radius:8px; font-size:12px; cursor:pointer; margin-top:8px; transition:all 0.15s }
+.vocab-delete:hover { background:color-mix(in srgb,red 10%,var(--bg)); border-color:red }
+.vocab-empty { text-align:center; padding:60px 24px; color:var(--text-muted); font-size:15px }
+
+/* SRS Review */
+.srs-progress { display:flex; align-items:center; gap:12px; margin-bottom:16px; font-size:13px; color:var(--text-secondary); animation:fadeDown 0.3s ease }
+.srs-bar { flex:1; height:6px; background:var(--border); border-radius:4px; overflow:hidden }
+.srs-bar-fill { height:100%; background:var(--accent); border-radius:4px }
+.flashcard { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:32px 24px; text-align:center; min-height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center; animation:cardIn 0.35s ease both; position:relative }
+.flashcard-word { font-size:32px; font-weight:700; color:var(--text-heading); margin-bottom:8px }
+.flashcard-hint { font-size:13px; color:var(--text-muted); margin-top:12px }
+.flashcard-reveal { margin-top:16px; text-align:left; width:100%; animation:fadeDown 0.25s ease }
+.flashcard-def { font-size:16px; line-height:1.6; color:var(--text); margin-bottom:8px }
+.flashcard-chinese { font-size:15px; color:var(--text-secondary) }
+.flashcard-example { font-size:14px; font-style:italic; color:var(--text-muted); margin-top:8px; border-left:3px solid var(--accent); padding-left:12px }
+.flashcard-context { font-size:17px; line-height:1.7; color:var(--text); margin:10px auto 4px; max-width:44ch; text-align:center }
+.flashcard-context b { color:var(--accent); font-weight:700 }
+.flashcard-moment { display:inline-block; margin-top:6px; font-size:13px; color:var(--accent); text-decoration:none }
+.flashcard-moment:hover { text-decoration:underline }
+.thread-group { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; background:var(--bg-card) }
+.thread-head { display:flex; align-items:baseline; gap:8px; margin-bottom:8px }
+.thread-name { font-weight:600; color:var(--text-heading) }
+.thread-kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted) }
+.thread-words { display:flex; flex-wrap:wrap; gap:6px }
+.thread-word { font-size:13px; padding:3px 9px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--text); cursor:pointer }
+.thread-word:hover { border-color:var(--accent); color:var(--accent) }
+.reveal-btn { padding:12px 32px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; margin-top:16px; transition:transform 0.1s }
+.reveal-btn:active { transform:scale(0.95) }
+.rating-row { display:flex; gap:8px; margin-top:24px; justify-content:center; flex-wrap:wrap }
+.rate-btn { padding:12px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.15s; border:1.5px solid var(--border); background:var(--bg-card); color:var(--text) }
+.rate-btn:active { transform:scale(0.93) }
+.rate-btn[data-q="1"] { border-color:color-mix(in srgb,red 40%,var(--border)); color:color-mix(in srgb,red 60%,var(--text)) }
+.rate-btn[data-q="1"]:hover { background:color-mix(in srgb,red 8%,var(--bg-card)) }
+.rate-btn[data-q="2"] { border-color:color-mix(in srgb,orange 40%,var(--border)); color:color-mix(in srgb,orange 60%,var(--text)) }
+.rate-btn[data-q="2"]:hover { background:color-mix(in srgb,orange 8%,var(--bg-card)) }
+.rate-btn[data-q="3"] { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); color:var(--accent) }
+.rate-btn[data-q="3"]:hover { background:color-mix(in srgb,var(--accent) 8%,var(--bg-card)) }
+.rate-btn[data-q="4"] { border-color:color-mix(in srgb,var(--success) 40%,var(--border)); color:var(--success) }
+.rate-btn[data-q="4"]:hover { background:color-mix(in srgb,var(--success) 8%,var(--bg-card)) }
+.rate-key { display:inline-block; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:2px 4px; font-size:11px; margin-left:4px; font-family:var(--mono) }
+.srs-done { text-align:center; padding:48px 24px; animation:cardIn 0.35s ease both }
+.srs-done h2 { font-size:22px; color:var(--text-heading); margin-bottom:8px }
+.srs-done p { font-size:15px; color:var(--text-secondary); margin-bottom:4px }
+.srs-empty { text-align:center; padding:60px 24px; color:var(--text-muted) }
+.srs-empty p { font-size:15px; margin-bottom:12px }
+
+/* Quiz */
+.quiz-progress { font-size:13px; color:var(--text-secondary); margin-bottom:12px; animation:fadeDown 0.3s }
+.quiz-question { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px 24px; margin-bottom:16px; animation:cardIn 0.35s ease both }
+.quiz-prompt { font-size:16px; line-height:1.5; color:var(--text); margin-bottom:8px }
+.quiz-chinese { font-size:14px; color:var(--text-secondary); margin-bottom:16px }
+.quiz-options { display:flex; flex-direction:column; gap:8px }
+.quiz-opt { padding:16px 16px; background:var(--bg); border:1.5px solid var(--border); border-radius:8px; font-size:15px; color:var(--text); cursor:pointer; transition:all 0.15s; text-align:left }
+.quiz-opt:hover { border-color:color-mix(in srgb,var(--accent) 50%,var(--border)) }
+.quiz-opt:active { transform:scale(0.98) }
+.quiz-opt.correct { border-color:var(--success); background:color-mix(in srgb,var(--success) 10%,var(--bg)); color:var(--success); font-weight:600 }
+.quiz-opt.wrong { border-color:red; background:color-mix(in srgb,red 8%,var(--bg)); color:color-mix(in srgb,red 70%,var(--text)) }
+.quiz-opt.disabled { pointer-events:none }
+.quiz-next { margin-top:16px; padding:12px 24px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; display:none }
+.quiz-next:active { transform:scale(0.95) }
+.quiz-score { text-align:center; padding:48px 24px; animation:cardIn 0.35s ease both }
+.quiz-score h2 { font-size:22px; color:var(--text-heading); margin-bottom:8px }
+.quiz-score .big-score { font-size:64px; font-weight:800; color:var(--accent); margin:16px 0 }
+.quiz-score p { font-size:15px; color:var(--text-secondary) }
+.quiz-start { text-align:center; padding:48px 24px }
+.quiz-start p { font-size:15px; color:var(--text-secondary); margin-bottom:16px }
+.start-btn { padding:12px 32px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer }
+.start-btn:active { transform:scale(0.95) }
+
+/* Word of day banner */
+.wotd-banner { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px; animation:cardIn 0.35s ease 0.15s both; cursor:pointer; transition:border-color 0.15s }
+.wotd-banner:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.wotd-label { font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px }
+.wotd-word { font-size:16px; font-weight:600; color:var(--text-heading) }
+.wotd-def { font-size:13px; color:var(--text-secondary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+.feed-word { cursor:pointer; border-bottom:1px dotted color-mix(in srgb,var(--accent) 50%,transparent); transition:color 0.15s }
+.feed-word:hover { color:var(--accent) }
+
+@keyframes fadeDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+@keyframes cardIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+
+/* ── Picture packs (folded in from the standalone page, 2026-08-19) ──
+   Namespaced .pd-* so it cannot reach the rest of the page. */
+/* Tokens only — scripts/check-text-tokens.py fails the build on a hardcoded hex. */
+.pd-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.pd-head h1 { margin: 0; font-size: 1.5rem; color: var(--text-heading); }
+.pd-head .sub { color: var(--text-muted); font-size: .85rem; margin-top: 2px; }
+.pd-head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.pd-packs { margin-bottom: 6px; }
+.pc-open { border-style: dashed; }
+.pc-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.pc-head h3 { margin: 0; flex: 1; }
+.pc-desc { margin-bottom: 8px; }
+.pc-summary { margin-bottom: 10px; }
+.pc-note { color: var(--text-muted); font-size: .85rem; margin-top: 4px; }
+.pc-note.pc-bad { color: var(--red); }
+/* The merge control sits inside the red warning; its own text stays body-colour
+   so the select and button read as an action rather than more warning prose. */
+.pc-merge { color: var(--text); display: flex; align-items: center;
+            flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pc-target { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pc-resume { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 10px;
+             font-size: .9rem; }
+.pc-resume-row { display: flex; align-items: center; justify-content: space-between;
+                 gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.pc-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.pc-table td { border-top: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
+.pc-mark { width: 2.2em; text-align: center; font-weight: 600; }
+.pc-ok .pc-mark { color: var(--green); }
+.pc-warn .pc-mark { color: var(--amber); }
+.pc-bad .pc-mark { color: var(--red); }
+.pc-act { white-space: nowrap; }
+.pc-fix { width: 150px; margin-right: 6px; }
+.pc-actions { margin-top: 12px; }
+.pd-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
+.pd-tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted);
+          padding: 9px 14px; cursor: pointer; font-size: .92rem; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.pd-tab:hover { color: var(--text); background: var(--bg-card-hover); }
+.pd-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.pd-banner { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 12px;
+             background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); font-size: .85rem; }
+.pd-banner progress { flex: 1; height: 6px; }
+.pd-banner .pd-b-txt { color: var(--text-muted); white-space: nowrap; }
+
+.pd-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+.pd-chip { border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+           border-radius: var(--radius-pill); padding: 5px 12px; cursor: pointer; font-size: .82rem; }
+.pd-chip:hover { background: var(--bg-card-hover); }
+.pd-chip[aria-pressed="true"] { background: var(--accent); color: var(--ink-on-vivid); border-color: var(--accent); }
+/* The count inside a chip is muted against the PAGE, and a selected chip is
+   filled with the accent — so the page-muted grey lands on the accent and is
+   barely readable. Keep the hierarchy by fading the on-vivid ink instead. */
+.pd-chip[aria-pressed="true"] .pd-muted { color: var(--ink-on-vivid); opacity: .78; }
+.pd-search { flex: 1; min-width: 160px; padding: 6px 10px; border: 1px solid var(--border);
+             border-radius: var(--radius); background: var(--bg-card); color: var(--text); }
+
+.pd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.pd-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card);
+           overflow: hidden; cursor: pointer; text-align: left; padding: 0; color: var(--text); }
+.pd-card:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+.pd-thumb { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--bg-surface); }
+.pd-thumb-fallback { width: 100%; aspect-ratio: 4 / 3; display: flex; align-items: center;
+                     justify-content: center; font-size: 2.6rem; background: var(--bg-surface); }
+.pd-card-body { padding: 8px 10px 10px; }
+.pd-name { font-weight: 600; color: var(--text-heading); font-size: .95rem; }
+.pd-zh { color: var(--text-muted); font-size: .82rem; }
+.pd-star { color: var(--accent); }
+
+.pd-detail { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.pd-detail img { width: 100%; border-radius: var(--radius); background: var(--bg-surface); }
+.pd-detail .pd-big-emoji { font-size: 6rem; text-align: center; padding: 48px 0; background: var(--bg-surface);
+                           border-radius: var(--radius); }
+.pd-detail h2 { margin: 0 0 2px; color: var(--text-heading); }
+.pd-credit { font-size: .74rem; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+.pd-credit a { color: var(--text-muted); }
+.pd-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+
+.pd-q-photo { width: 100%; max-height: 340px; object-fit: contain; border-radius: var(--radius);
+              background: var(--bg-surface); }
+.pd-q-emoji { font-size: 6rem; text-align: center; padding: 60px 0; background: var(--bg-surface);
+              border-radius: var(--radius); }
+.pd-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+.pd-opt { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card);
+          cursor: pointer; font-size: 1rem; color: var(--text); }
+.pd-opt:hover:not(:disabled) { background: var(--bg-card-hover); border-color: var(--accent); }
+.pd-opt.is-right { background: var(--success); color: var(--ink-on-vivid); border-color: var(--success); }
+.pd-opt.is-wrong { background: var(--danger); color: var(--ink-on-vivid); border-color: var(--danger); }
+.pd-q-feedback { margin-top: 12px; font-size: .9rem; color: var(--text-muted); min-height: 1.4em; }
+
+.pd-score { font-size: 2.4rem; font-weight: 700; color: var(--text-heading); }
+.pd-phone { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: var(--radius-pill);
+            background: var(--bg-surface); border: 1px solid var(--border); font-size: .8rem; }
+.pd-note { font-size: .8rem; color: var(--text-muted); margin-top: 6px; }
+.pd-muted { color: var(--text-muted); }
+.pd-center { text-align: center; }
+.pd-panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); padding: 16px; }
+.pd-rev-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+
+@media (max-width: 720px) {
+  .pd-detail { grid-template-columns: 1fr; }
+  .pd-rev-grades { grid-template-columns: repeat(2, 1fr); }
+  .vocab-stats { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('dictionary');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Word lookup, vault storage, SRS flashcards and quizzes.",quickActions:[{label:"Due reviews",msg:"How many flashcards do I have due for review right now?"},{label:"Explain word",msg:"Explain the last word I looked up in simpler terms."},{label:"Weakest words",msg:"Which words am I struggling with most based on review history?"}]});}
+</script>
+
+<div class="page">
+    <div class="dict-hero" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div>
+            <h1>Dictionary</h1>
+            <div class="desc">Look up words, build vocabulary, review with SRS</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+            <span id="model-pill"></span>
+            <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+        </div>
+    </div>
+
+    <div id="wotd"></div>
+
+    <div class="eos-tabs" role="tablist">
+        <div class="eos-tab" id="tab-btn-today" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-today" onclick="switchTab('today')" onkeydown="tabKey(event,'today')" style="display:none">Today</div>
+        <div class="eos-tab active" id="tab-btn-lookup" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-lookup" onclick="switchTab('lookup')" onkeydown="tabKey(event,'lookup')">Look up</div>
+        <div class="eos-tab" id="tab-btn-words" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-words" onclick="switchTab('words')" onkeydown="tabKey(event,'words')">My words</div>
+        <div class="eos-tab" id="tab-btn-pictures" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-pictures" onclick="switchTab('pictures')" onkeydown="tabKey(event,'pictures')">Pictures</div>
+        <div class="eos-tab" id="tab-btn-practice" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-practice" onclick="switchTab('practice')" onkeydown="tabKey(event,'practice')">Practice</div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-today" role="tabpanel" aria-labelledby="tab-btn-today">
+        <div id="loop-area"></div>
+    </div>
+
+    <div class="eos-tab-content active" id="tab-lookup" role="tabpanel" aria-labelledby="tab-btn-lookup">
+        <div class="lookup-wrap">
+            <span class="lookup-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
+            <input class="lookup-input" id="lookup-input" type="text" placeholder="Type a word..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+            <button class="lookup-btn" id="lookup-btn" onclick="doLookup()">Look up</button>
+            <div class="ac-dropdown" id="ac-dropdown"></div>
+        </div>
+        <div id="lookup-result"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-words" role="tabpanel" aria-labelledby="tab-btn-words">
+        <div id="progress-area"></div>
+        <div class="vocab-stats" id="vocab-stats"></div>
+        <div id="threads-area"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px">
+            <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openVocabImportPicker()" title="Import a word list — word/definition/chinese/phonetic/example columns">⬆ Import CSV</button>
+            <input type="file" id="vocab-import-file-input" accept=".csv,text/csv" style="display:none" onchange="handleVocabImportFile(event)">
+            <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="exportVocabCsv()" title="Anki CSV import — front/back/tags">⬇ Export to Anki (CSV)</button>
+        </div>
+        <div class="vocab-filters"><div id="vocab-cuts" class="eos-filter-bar"></div><div id="vocab-sort"></div></div>
+        <div id="vocab-list"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-practice" role="tabpanel" aria-labelledby="tab-btn-practice">
+        <div class="practice-subnav" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+            <button class="eos-btn-sm practice-mode active" data-mode="flashcards" onclick="practiceMode('flashcards')">🃏 Flashcards</button>
+            <button class="eos-btn-sm practice-mode" data-mode="quiz" onclick="practiceMode('quiz')">❓ Quiz</button>
+            <button class="eos-btn-sm practice-mode" data-mode="writing" onclick="practiceMode('writing')">✍️ Writing rep</button>
+            <!-- Pushed right on purpose: the three buttons above swap panels in
+                 place, this one leaves the page, so it should not read as a
+                 fourth mode. (Pictures used to sit here too; it is a top-level
+                 tab now, so it no longer leaves the page.) -->
+            <a class="eos-btn eos-btn-sm eos-btn-ghost" href="/dictionary/pages/crosswalk.html"
+               style="margin-left:auto;text-decoration:none"
+               title="Every vowel sound and the letters English uses to spell it">🔤 Vowel crosswalk</a>
+        </div>
+        <div id="practice-flashcards"><div id="review-area"></div></div>
+        <div id="practice-quiz" style="display:none"><div id="quiz-area"></div></div>
+        <div id="practice-writing" style="display:none"><div id="writing-area"></div></div>
+    </div>
+
+    <!-- Picture packs. Folded in from the standalone page 2026-08-19; the
+         four sub-tabs are the page's own, kept as a second-level control the
+         same way Practice has one. Everything inside is driven by pictures.js,
+         which is booted lazily on first open (initPictures) — the status call
+         is what triggers the photo prefetch, and someone who never opens this
+         tab should never pay for it. -->
+    <div class="eos-tab-content" id="tab-pictures" role="tabpanel" aria-labelledby="tab-btn-pictures">
+        <div class="pd-head">
+            <div>
+                <div class="sub" id="pd-sub">Loading…</div>
+            </div>
+            <div class="pd-head-right">
+                <button class="eos-btn eos-btn-sm" id="pd-fetch-btn" title="Download the pack's photographs in the background" onclick="startFetch()">Fetch photos</button>
+            </div>
+        </div>
+
+        <div id="pd-banner-slot"></div>
+
+        <div class="pd-tabs" role="tablist">
+            <button class="pd-tab" role="tab" id="tab-browse" title="Browse every animal with its photograph" onclick="showTab('browse')">Browse</button>
+            <button class="pd-tab" role="tab" id="tab-quiz" title="Test yourself: see a photo, pick the English name" onclick="showTab('quiz')">Quiz</button>
+            <button class="pd-tab" role="tab" id="tab-review" title="Review the picture cards that are due today" onclick="showTab('review')">Review</button>
+            <button class="pd-tab" role="tab" id="tab-speak" title="Say an animal's name aloud and get it scored" onclick="showTab('speak')">Speak</button>
+        </div>
+
+        <div id="pd-view"></div>
+        <!-- Composer mount. Its own host, not a branch inside #pd-view:
+             a learner with the flag off never loads any of its DOM. -->
+        <div id="pd-compose" hidden></div>
+    </div>
+</div>
+
+<script src="/dictionary/pages/dictionary.js"></script>
+<!-- Picture packs. Loaded here rather than inlined: 542 lines with its own
+     state store, and it was already a separate file before the fold
+     (.claude/rules/multi-module-apps.md § frontend). Same global scope as
+     the inline script above — the two were checked for collisions. -->
+<script src="/dictionary/pages/speed-round.js"></script>
+<script src="/dictionary/pages/talk-about.js"></script>
+<script src="/dictionary/pages/pictures.js"></script>
+<script src="/dictionary/pages/pictures-compose.js"></script>
+</body>
+</html>

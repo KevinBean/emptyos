@@ -1,0 +1,60 @@
+[app]
+id = "library"
+store_category = "productivity"
+name = "Library"
+version = "1.0.0"
+description = "Reference library — papers and PDFs with citation metadata, full-text search, annotation, and BibTeX/CSL export"
+dimensions = ["intellectual"]
+user_intent = [
+    "save this paper to my library",
+    "look up this DOI",
+    "find that paper about ...",
+    "export my bibliography",
+    "highlight this passage",
+]
+
+[app.entry]
+module = "app"
+class = "LibraryApp"
+
+[requires]
+capabilities = ["read", "write", "search", "think"]
+apps = ["kb"]
+
+[provides.cli]
+commands = ["library"]
+
+[provides.web]
+prefix = "/library"
+
+[provides.events]
+emits = ["library:paper_added", "library:paper_updated", "library:paper_deleted", "library:highlight_added", "library:sent_to_kb", "library:highlight_reviewed"]
+
+[provides.settings]
+schema = [
+    {key = "library.export_format", label = "Default Export Format", type = "select", options = ["bibtex", "csl-json"], default = "bibtex"},
+    {key = "library.crossref_mailto", label = "CrossRef contact email (polite pool)", type = "text", default = ""},
+]
+
+[[provides.verbs]]
+verb = "library.add_paper"
+method = "add_paper"
+summary = "Add a paper to the library by DOI, URL, or title"
+args = { doi = "string?", url = "string?", title = "string?" }
+eligibility = "gated"
+surfaces = ["assistant", "agent", "mcp"]
+assistant = { slash = "/library-add", method = "add_paper", arg = "doi" }
+
+[[contributes.proactive.source]]
+id = "library-srs-review"
+method = "proactive_source_reviews"
+
+[[provides.verbs]]
+verb = "library.search"
+method = "search"
+summary = "Search papers in the library by keyword"
+args = { query = "string" }
+eligibility = "stable"
+surfaces = ["assistant", "voice", "agent", "mcp"]
+voice = { method = "voice_search", example = "find papers about power system stability", description = "Search the paper library", always = false, card = "task-list" }
+assistant = { slash = "/library", method = "search", arg = "query" }

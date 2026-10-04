@@ -1,0 +1,26 @@
+services:
+  chatbot:
+    build:
+      context: ../..
+      dockerfile: services/chatbot/Dockerfile
+    container_name: emptyos-chatbot
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9100:8000"
+    env_file: .env
+    volumes:
+      - chatbot-data:/data
+      # Bind-mount writable so the publish app can sync per-site config via
+      # /admin/sites/{id} (rewrites this file). Atomic-rename fails on a
+      # single-file bind mount; the writer falls back to direct overwrite —
+      # see services/chatbot/config.py:write_config_atomic.
+      - ./sites.toml:/app/sites.toml
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  chatbot-data:

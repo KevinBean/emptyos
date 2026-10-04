@@ -1,0 +1,83 @@
+{
+  "_comment": "ACE-Step section-repaint API workflow: regenerate seconds [repaint_start, repaint_end] of an EXISTING take and keep the rest. Verified against the installed ComfyUI_ACE-Step (MW) pack on 2026-08-15 by reading ace_step_nodes.py + pipeline_ace_step.py and the pack's own ACE-rapainting.json example. THE MODEL IS NOT THE ONE COMPOSE USES, and that is the single most important fact about this file: acestep15_audio.json runs ACE-Step *1.5 turbo* through core ComfyUI (UNETLoader + TextEncodeAceStepAudio1.5 + KSampler), while every studio verb (ACEStepEdit/Extend/Repainting) belongs to the MW custom-node pack, which loads ACE-Step *1.0* 3.5B from models/TTS/ACE-Step-v1-3.5B as an ACE_MODELS bundle. There is no 1.5 repaint node on this install. So the repainted window is voiced by a different model than the surrounding track, and matching the seam is a listening judgement, not a parameter. WHAT IS DELIBERATELY NOT TEMPLATED: (1) node 5 audio_duration is INERT - ACEStepRepainting overwrites parameters['audio_duration'] with librosa.get_duration(src_audio) before calling the pipeline, so the value here can never take effect; it is left at the pack's own default rather than templated, so nobody tunes a dead knob. (2) node 5 seed must stay NONZERO. GenerationParameters only pops 'seed' into 'manual_seeds' when seed != 0; at zero it leaves a literal seed= in the kwargs that reach pipeline.__call__, which has no seed parameter, and the run dies with a TypeError after the models are already loaded. The plugin enforces this rather than trusting the template. (3) node 6 overlapped_decode stays false - it is a decode-memory tradeoff, not a quality control. (4) repaint_start/repaint_end are SECONDS (ints): the pipeline converts them at 44100/512/8 = 10.766 latent frames per second, and clamps repaint_end to the source duration. (5) repaint_variance is the one knob that decides whether this does anything at all: the pipeline sets n_min = int(infer_step * (1 - retake_variance)) and skips every step before n_min, so the pack's own default of 0.01 denoises the last 1% of steps and returns a near-copy. The pack's shipped example uses 0.49. A repaint that changes nothing and a repaint that changes everything are the two failure modes, and this is the dial between them.",
+  "_requires": [
+    "models/TTS/ACE-Step-v1-3.5B/ace_step_transformer",
+    "models/TTS/ACE-Step-v1-3.5B/music_dcae_f8c8",
+    "models/TTS/ACE-Step-v1-3.5B/music_vocoder",
+    "models/TTS/ACE-Step-v1-3.5B/umt5-base",
+    "custom_nodes/ComfyUI_ACE-Step"
+  ],
+  "1": {
+    "class_type": "ACEModelLoader",
+    "inputs": {
+      "dcae_checkpoint": "music_dcae_f8c8",
+      "vocoder_checkpoint": "music_vocoder",
+      "ace_step_checkpoint": "ace_step_transformer",
+      "text_encoder_checkpoint": "umt5-base",
+      "cpu_offload": "{cpu_offload}",
+      "torch_compile": false
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {
+      "audio": "{src_audio}"
+    }
+  },
+  "3": {
+    "class_type": "MultiLinePromptACES",
+    "inputs": {
+      "multi_line_prompt": "{prompt}"
+    }
+  },
+  "4": {
+    "class_type": "MultiLineLyrics",
+    "inputs": {
+      "multi_line_prompt": "{lyrics}"
+    }
+  },
+  "5": {
+    "class_type": "GenerationParameters",
+    "inputs": {
+      "audio_duration": 60.0,
+      "infer_step": "{steps}",
+      "guidance_scale": "{guidance_scale}",
+      "scheduler_type": "euler",
+      "cfg_type": "apg",
+      "omega_scale": 10.0,
+      "seed": "{param_seed}",
+      "guidance_interval": 0.5,
+      "guidance_interval_decay": 0.0,
+      "min_guidance_scale": 3,
+      "use_erg_tag": true,
+      "use_erg_lyric": true,
+      "use_erg_diffusion": true,
+      "oss_steps": "",
+      "guidance_scale_text": 0.0,
+      "guidance_scale_lyric": 0.0
+    }
+  },
+  "6": {
+    "class_type": "ACEStepRepainting",
+    "inputs": {
+      "models": ["1", 0],
+      "src_audio": ["2", 0],
+      "prompt": ["3", 0],
+      "lyrics": ["4", 0],
+      "parameters": ["5", 0],
+      "negative_prompt": "{negative_prompt}",
+      "repaint_start": "{repaint_start}",
+      "repaint_end": "{repaint_end}",
+      "repaint_variance": "{repaint_variance}",
+      "seed": "{seed}",
+      "overlapped_decode": false
+    }
+  },
+  "7": {
+    "class_type": "SaveAudio",
+    "inputs": {
+      "audio": ["6", 0],
+      "filename_prefix": "eos-repaint/%year%-%month%/repaint"
+    }
+  }
+}

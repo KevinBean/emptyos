@@ -1,0 +1,17 @@
+# WriteDesk config — lives next to WriteDesk.exe.
+# 写作台配置 — 和 WriteDesk.exe 放在同一个文件夹。
+
+# OpenAI API key — needed for voice dictation (语音输入) and AI polish (润色).
+# Leave empty to disable those features; writing + jianpu still work fully.
+openai_api_key = ""
+
+# UI language. "zh" = Simplified Chinese (translated automatically on first
+# run, cached next to the exe). "en" = English, no translation.
+language = "zh"
+
+# Where articles + scores are saved. Default: Documents\WriteDesk\
+# 文章和简谱保存的位置。默认在“文档”里的 WriteDesk 文件夹。
+# data_dir = 'C:\Users\Mom\Documents\WriteDesk'
+
+# Pin the server port (default: random free port).
+# port = 9180

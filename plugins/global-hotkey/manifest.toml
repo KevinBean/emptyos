@@ -1,0 +1,21 @@
+[plugin]
+id = "global-hotkey"
+name = "Global Hotkey"
+version = "1.1.0"
+description = "Registers owner-scoped global OS shortcuts and emits them to the EventBus without unhooking unrelated bindings"
+# Off on a fresh install: it binds a system-wide shortcut.
+default_enabled = false
+
+[plugin.entry]
+module = "plugin"
+class = "GlobalHotkeyPlugin"
+
+[provides]
+services = ["global-hotkey"]
+tags = ["desktop", "input"]
+
+# The OS-level hotkey is a real cross-app trigger — braindump arms a capture
+# on it and command-launcher toggles its window. Declared so those edges are
+# visible in /api/topology, which builds event edges from manifests.
+[provides.events]
+emits = ["hotkey:pressed"]

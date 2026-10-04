@@ -1,0 +1,13 @@
+[plugin]
+id = "hello-eos-connector"
+name = "Hello Connector"
+version = "1.0.0"
+description = "The smallest installable example plugin — registers a no-op service and carries the connector tag so it appears in the Store's Connections lens. Copy this folder as the starting point for a plugin or connection."
+
+[plugin.entry]
+module = "plugin"
+class = "HelloConnectorPlugin"
+
+[provides]
+services = ["hello-eos-connector"]
+tags = ["example", "connector"]

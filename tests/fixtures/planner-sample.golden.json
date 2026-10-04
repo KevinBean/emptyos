@@ -1,0 +1,115 @@
+{
+  "headerIndex": 4,
+  "mappedFields": [
+    "assigned",
+    "bucket",
+    "checklist",
+    "checklist_done",
+    "completed_by",
+    "completed_date",
+    "created_by",
+    "created_date",
+    "description",
+    "due_date",
+    "labels",
+    "late",
+    "planner_id",
+    "priority",
+    "progress",
+    "start_date",
+    "task_name"
+  ],
+  "records": [
+    {
+      "body": "First pass of the homepage copy, tone: confident.",
+      "planner_id": "t-001",
+      "name": "Draft homepage copy",
+      "bucket": "Content",
+      "status": "In progress",
+      "priority": "Important",
+      "assigned": [
+        "Alice Smith",
+        "Bob Jones"
+      ],
+      "created_by": "Alice Smith",
+      "created": "2026-06-01",
+      "start_date": "2026-06-10",
+      "due_date": "2026-07-10",
+      "late": "false",
+      "completed_date": "",
+      "completed_by": "",
+      "checklist": [
+        {
+          "text": "Outline sections",
+          "done": true
+        },
+        {
+          "text": "Write hero text",
+          "done": false
+        },
+        {
+          "text": "Review with team",
+          "done": false
+        }
+      ],
+      "labels": [
+        "Copy",
+        "Q3"
+      ]
+    },
+    {
+      "body": "Staging mirrors production config.",
+      "planner_id": "t-002",
+      "name": "Set up staging server",
+      "bucket": "Infrastructure",
+      "status": "Completed",
+      "priority": "Urgent",
+      "assigned": [
+        "Carol White"
+      ],
+      "created_by": "Bob Jones",
+      "created": "2026-06-02",
+      "start_date": "2026-06-03",
+      "due_date": "2026-06-20",
+      "late": "false",
+      "completed_date": "2026-06-18",
+      "completed_by": "Carol White",
+      "checklist": [
+        {
+          "text": "Provision VM",
+          "done": true
+        },
+        {
+          "text": "Install nginx",
+          "done": true
+        }
+      ],
+      "labels": [
+        "Infra"
+      ]
+    },
+    {
+      "body": "",
+      "planner_id": "t-003",
+      "name": "Design system audit",
+      "bucket": "Design",
+      "status": "Not started",
+      "priority": "Medium",
+      "assigned": [],
+      "created_by": "Alice Smith",
+      "created": "2026-06-05",
+      "start_date": "",
+      "due_date": "2026-08-01",
+      "late": "false",
+      "completed_date": "",
+      "completed_by": "",
+      "checklist": [],
+      "labels": []
+    }
+  ],
+  "idempotence": {
+    "new": 0,
+    "updated": 0,
+    "unchanged": 3
+  }
+}

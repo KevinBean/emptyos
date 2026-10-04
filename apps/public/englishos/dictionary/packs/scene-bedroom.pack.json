@@ -1,0 +1,77 @@
+{
+  "id": "scene-bedroom",
+  "groups": [
+    {
+      "id": "furniture",
+      "label": "Furniture",
+      "members": [
+        "bed",
+        "mattress",
+        "wardrobe",
+        "chest-of-drawers",
+        "bedside-table",
+        "dressing-table",
+        "bookcase",
+        "desk",
+        "chair",
+        "bunk-bed",
+        "cot"
+      ]
+    },
+    {
+      "id": "bedding",
+      "label": "Bedding",
+      "members": [
+        "pillow",
+        "duvet",
+        "blanket",
+        "bed-sheet",
+        "quilt",
+        "hot-water-bottle"
+      ]
+    },
+    {
+      "id": "room",
+      "label": "Around the room",
+      "members": [
+        "alarm-clock",
+        "curtain",
+        "blind",
+        "carpet",
+        "mirror",
+        "coat-hanger",
+        "power-point",
+        "light-switch",
+        "light-bulb",
+        "lamp",
+        "air-conditioner",
+        "fan",
+        "heater",
+        "window",
+        "door",
+        "door-handle"
+      ]
+    },
+    {
+      "id": "belongings",
+      "label": "Your things",
+      "members": [
+        "key",
+        "charger",
+        "headphones",
+        "glasses",
+        "wallet",
+        "watch",
+        "backpack",
+        "suitcase",
+        "umbrella",
+        "slippers",
+        "pyjamas",
+        "laptop",
+        "book",
+        "picture-frame",
+        "teddy-bear"
+      ]
+    }
+  ]
+}

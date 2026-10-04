@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blender × ComfyUI Video"
+  short_description: "Build and review hybrid Blender × ComfyUI video shots"
+  default_prompt: "Use $tool-blender-comfyui-video to design, render, and QA a bounded Blender × ComfyUI hybrid proof for this video."

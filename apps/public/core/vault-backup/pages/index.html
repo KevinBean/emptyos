@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vault Backup</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<script>
+// Theme bootstrap — apply saved theme class before paint so tokens resolve.
+(function(){try{var t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(t))t='eos';document.documentElement.className='theme-'+t;}catch(e){}})();
+</script>
+<style>
+  .vb-shell { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+  .vb-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+  .vb-header h1 { font-size: 22px; margin: 0; }
+  .vb-hero { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; margin-bottom: 16px; }
+  .vb-hero.stale { border-color: var(--danger); }
+  .vb-status-line { font-size: 28px; font-weight: 600; margin: 0 0 8px; }
+  .vb-sub { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+  .vb-actions { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .vb-meta { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 12px; margin-top: 16px; }
+  .vb-meta .cell { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 12px; }
+  .vb-meta .cell .k { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+  .vb-meta .cell .v { font-size: 15px; margin-top: 2px; }
+  .vb-snaps { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 16px; }
+  .vb-snaps h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 0 0 12px; }
+  .vb-snap-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .vb-snap-row:last-child { border-bottom: none; }
+  .vb-snap-row .name { font-variant-numeric: tabular-nums; }
+  .vb-snap-right { display: flex; align-items: center; gap: 12px; }
+  .vb-warn { color: var(--danger); }
+  .vb-banner-warn { background: color-mix(in srgb, var(--danger) 12%, var(--bg-card)); border: 1px solid var(--danger); color: var(--text); border-radius: 14px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="vb-shell">
+  <div class="vb-header">
+    <h1>💾 Vault Backup</h1>
+    <button class="btn-settings" onclick="openAppSettings()">&#9881; Settings</button>
+  </div>
+
+  <div id="hardlink-warn" class="vb-banner-warn" style="display:none"></div>
+
+  <div id="hero" class="vb-hero">
+    <p class="vb-status-line" id="status-line">Loading…</p>
+    <div class="vb-sub" id="status-sub"></div>
+    <div class="vb-meta" id="meta"></div>
+    <div class="vb-actions">
+      <button class="eos-btn eos-btn-primary" id="backup-now" onclick="backupNow()">Back up now</button>
+      <button class="eos-btn" onclick="refresh()">Refresh</button>
+    </div>
+  </div>
+
+  <div class="vb-snaps">
+    <h2>Snapshots</h2>
+    <div id="snaps"><div class="vb-sub">Loading…</div></div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+// Fields derive from manifest.toml [provides.settings] schema — one source of
+// truth, so a new setting can never be visible in /settings but missing here.
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'vault-backup-settings-panel',
+  title: 'Vault Backup Settings',
+  app: 'vault-backup',
+  onSave: async function(){ await fetch('/vault-backup/api/reschedule', {method:'POST'}); refresh(); },
+});
+function openAppSettings(){ _appSettings.open(); }
+
+// esc() is provided globally by eos.js (window.esc).
+function fmtBytes(n){ if(!n) return '0 B'; var u=['B','KB','MB','GB','TB']; var i=Math.floor(Math.log(n)/Math.log(1024)); return (n/Math.pow(1024,i)).toFixed(i?1:0)+' '+u[i]; }
+
+async function refresh(){
+  var s = await fetch('/vault-backup/api/status').then(function(r){return r.json();});
+  var hero = document.getElementById('hero');
+  var line = document.getElementById('status-line');
+  var sub = document.getElementById('status-sub');
+  hero.classList.toggle('stale', !!s.stale && !s.never_run);
+  if (s.never_run){
+    line.textContent = 'No backup yet';
+    line.className = 'vb-status-line vb-warn';
+    sub.innerHTML = 'Click <b>Back up now</b> to create the first snapshot.';
+  } else {
+    var lr = s.last_run || {};
+    var ageTxt = s.age_hours != null ? (s.age_hours >= 1 ? Math.round(s.age_hours)+'h ago' : 'just now') : 'unknown';
+    line.textContent = (lr.ok === false ? 'Last backup FAILED' : 'Backed up ' + ageTxt);
+    line.className = 'vb-status-line' + ((s.stale || lr.ok===false) ? ' vb-warn' : '');
+    if (lr.ok === false){
+      sub.innerHTML = 'Error: ' + esc(lr.error || 'unknown');
+    } else {
+      var sizeTxt = fmtBytes(lr.bytes);
+      if (lr.mode === 'incremental'){
+        sizeTxt = fmtBytes(lr.bytes) + ' total · +' + fmtBytes(lr.added_bytes||0) + ' new' +
+          ' (' + (lr.copied||0) + ' copied, ' + (lr.linked||0) + ' linked)';
+      } else if (lr.compressed && lr.compressed_bytes){
+        var ratio = lr.bytes ? (lr.bytes / lr.compressed_bytes) : 0;
+        sizeTxt = fmtBytes(lr.bytes) + ' → ' + fmtBytes(lr.compressed_bytes) + ' zip' +
+          (ratio >= 1.5 ? ' (' + ratio.toFixed(1) + '×)' : '');
+      }
+      var extra = '';
+      if (lr.offsite){ extra += ' · ' + (lr.offsite.ok ? 'off-site ✓' : '<span class="vb-warn">off-site failed</span>'); }
+      sub.innerHTML = esc((lr.files||0).toLocaleString()) + ' files · ' + sizeTxt +
+        ' · ' + esc(lr.duration_s) + 's' +
+        (s.stale ? ' · <span class="vb-warn">stale (&gt;'+s.stale_hours+'h)</span>' : '') + extra;
+    }
+  }
+  var warnEl = document.getElementById('hardlink-warn');
+  if (warnEl){
+    if (s.hardlink_warning){
+      warnEl.style.display = '';
+      warnEl.innerHTML = '⚠ This destination can’t create hardlinks (FAT/exFAT/network drive) — incremental snapshots are silently full copies, no dedup. Use a different drive, or switch mode to <b>zip</b> in Settings.';
+    } else { warnEl.style.display = 'none'; }
+  }
+  document.getElementById('meta').innerHTML =
+    cell('Destination', s.dest_root) +
+    cell('Retention', s.retention_days + ' days') +
+    cell('Media', s.include_media ? 'included' : 'excluded') +
+    cell('Scheduled', s.enabled ? 'on' : 'off') +
+    cell('Next run', s.next_run ? new Date(s.next_run).toLocaleString() : '—');
+  loadSnaps();
+}
+function cell(k,v){ return '<div class="cell"><div class="k">'+esc(k)+'</div><div class="v">'+esc(v)+'</div></div>'; }
+
+async function loadSnaps(){
+  var d = await fetch('/vault-backup/api/snapshots').then(function(r){return r.json();});
+  var el = document.getElementById('snaps');
+  if (!d.snapshots || !d.snapshots.length){ el.innerHTML = '<div class="vb-sub">No snapshots yet.</div>'; return; }
+  el.innerHTML = d.snapshots.map(function(s){
+    var meta = (s.compressed && s.size ? fmtBytes(s.size) + ' · ' : '') +
+      (s.mtime ? new Date(s.mtime).toLocaleString() : '');
+    return '<div class="vb-snap-row"><span class="name">'+esc(s.name)+'</span>'+
+      '<span class="vb-snap-right"><span class="vb-sub">'+esc(meta)+'</span>'+
+      '<button class="eos-btn eos-btn-sm" onclick="restoreSnapshot('+EOS_UI.jsArg(s.name)+')">Restore</button></span></div>';
+  }).join('');
+}
+
+async function restoreSnapshot(name){
+  var ok = await EOS_UI.confirm({
+    title: 'Restore snapshot ' + name,
+    body: 'Restores into a NEW folder next to your vault (it never overwrites the live vault). You inspect the result and copy back by hand. Continue?',
+    okText: 'Restore',
+  });
+  if (!ok) return;
+  EOS_UI && EOS_UI.toast && EOS_UI.toast('Restoring ' + name + '…');
+  try {
+    var r = await fetch('/vault-backup/api/restore', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({snapshot: name})
+    }).then(function(r){return r.json();});
+    if (r.ok){
+      EOS_UI && EOS_UI.modal && EOS_UI.modal({title:'Restored', body:
+        '<p>'+esc((r.files||0).toLocaleString())+' files ('+fmtBytes(r.bytes)+') restored to:</p>'+
+        '<p><code>'+esc(r.target)+'</code></p>'+
+        '<p class="vb-sub">Inspect it, then copy what you need back into your vault by hand.</p>'});
+    } else {
+      EOS_UI && EOS_UI.toast && EOS_UI.toast('Restore failed: '+(r.error||'error'), 'error');
+    }
+  } catch(e){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Restore error', 'error'); }
+}
+
+async function backupNow(){
+  var btn = document.getElementById('backup-now');
+  btn.disabled = true; btn.textContent = 'Backing up…';
+  try {
+    var r = await fetch('/vault-backup/api/backup-now', {method:'POST'}).then(function(r){return r.json();});
+    if (r.ok){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Backup complete — '+(r.files||0)+' files'); }
+    else { EOS_UI && EOS_UI.toast && EOS_UI.toast('Backup failed: '+(r.error||'error'), 'error'); }
+  } catch(e){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Backup error', 'error'); }
+  btn.disabled = false; btn.textContent = 'Back up now';
+  refresh();
+}
+
+refresh();
+</script>
+</body>
+</html>

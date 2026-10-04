@@ -1,0 +1,86 @@
+[app]
+id = "video-digest"
+name = "Video Digest"
+version = "0.1.0"
+description = "Queue YouTube or web URLs and turn them into vault Web-Clip digests with AI-distilled summaries"
+store_category = "ai"
+dimensions = ["intellectual"]
+user_intent = [
+    "digest a YouTube video for me",
+    "summarise this talk",
+    "save this video to my notes",
+    "把这个视频整理成笔记",
+    "I want to remember what was in that conference talk",
+    "save this link as a reusable note",
+    "把这个链接整理成笔记",
+]
+
+[app.entry]
+module = "app"
+class = "VideoDigestApp"
+
+[requires]
+# browse — generic-URL web-clip path (dark behind feature.web-clip.enabled);
+#          provider-missing degrades to a per-item fetch failure, never a crash.
+capabilities = ["think", "read", "write", "browse"]
+# rooms — for the pending-action review gate (propose_kb_note → save_pending_action)
+# kb    — for create_note applied on user click of pending action
+apps = ["rooms", "kb"]
+services = []
+
+[provides.cli]
+commands = ["video-digest"]
+
+[provides.web]
+prefix = "/video-digest"
+
+[provides.events]
+emits = [
+    "video-digest:queued",
+    "video-digest:digested",
+    "video-digest:failed",
+    "video-digest:kb_proposed",
+    "video-digest:kb_extraction_failed",
+    "video-digest:categorized",
+    # Step 5 Listen mode: emitted on session end so apps/personal/english
+    # can advance the daily `listening` counter.
+    "english:active_listening",
+]
+
+internal = [
+    "video-digest:queued",
+    # Lifecycle/failure observability — UI consumes directly.
+    "video-digest:digested",
+    "video-digest:failed",
+    "video-digest:kb_extraction_failed",
+    "video-digest:categorized",
+    "video-digest:kb_proposed",
+]
+
+[provides.settings]
+schema = [
+    {key = "video-digest.auto_run", label = "Auto-process queue on schedule", type = "boolean", default = false, hint = "When true, the queue is drained every 5 minutes via the scheduler. Default off — manual fire from the UI."},
+    {key = "video-digest.max_concurrent", label = "Max concurrent digests", type = "number", default = 1, hint = "Keep at 1 — running multiple yt-dlp processes against the same daemon adds little throughput and risks rate-limiting."},
+    {key = "video-digest.summary_words", label = "Target summary length (words)", type = "number", default = 600},
+    {key = "video-digest.domains", label = "Category vocabulary (comma-separated)", type = "textarea", default = "", hint = "Override the default domain list. Leave blank to use the built-in vocabulary. Always ends with `other` regardless of what you enter."},
+]
+
+[[contributes.hub.panel]]
+id = "video-digest-inbox"
+method = "panel_inbox"
+renderer = "stat-tile"
+title = "Video digest queue"
+priority = 180
+group = "dashboard"
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# Voice-only verb; method IS the voice handler. eligibility=stable feeds the
+# autopilot floor. Voice surface now sourced here (Phase 3 done).
+[[provides.verbs]]
+verb = "video-digest.queue"
+method = "voice_queue_video"
+summary = "Add a YouTube URL to the video-digest queue"
+args = { url = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "digest this youtube video https://...", description = "Add a YouTube URL to the video-digest queue.", always = false }

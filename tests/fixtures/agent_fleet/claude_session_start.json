@@ -1,0 +1,11 @@
+{
+  "_fixture_kind": "synthetic — replace with a captured Claude hook payload",
+  "source": "claude",
+  "session_id": "claude-synthetic-001",
+  "event": "SessionStart",
+  "ts": "2026-07-17T09:41:02Z",
+  "cwd": "D:/emptyos",
+  "turn_id": "turn-1",
+  "agent_id": "claude-sonnet-4",
+  "prompt": "must be dropped at the boundary"
+}

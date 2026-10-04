@@ -1,0 +1,16 @@
+[plugin]
+id = "footage"
+name = "Stock Footage (Pexels/Pixabay)"
+version = "1.0.0"
+description = "Injects royalty-free stock-video providers into the `footage` capability — keyword → downloaded clip"
+
+[plugin.entry]
+module = "plugin"
+class = "FootagePlugin"
+
+[provides]
+services = []
+tags = ["footage", "video", "stock", "draw", "connector"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

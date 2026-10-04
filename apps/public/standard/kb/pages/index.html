@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Knowledge Base — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.hero { padding:32px 0 16px }
+.hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.hero .desc { font-size:14px; color:var(--text-secondary) }
+/* Sticky hero search — the primary surface */
+.kb-search-wrap { position:sticky; top:0; z-index:20; background:var(--bg); padding:8px 0 12px; margin-bottom:4px }
+.kb-search { display:flex; align-items:center; gap:12px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px }
+.kb-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent) }
+.kb-search .kb-search-icon { color:var(--text-muted); font-size:15px; flex:0 0 auto }
+.kb-search input { flex:1; border:0; background:transparent; color:var(--text); font-size:15px; font-family:inherit; outline:none; min-width:0 }
+.kb-search .kb-search-clear { flex:0 0 auto; background:transparent; border:0; color:var(--text-muted); cursor:pointer; font-size:16px; padding:2px 8px; border-radius:6px; display:none }
+.kb-search .kb-search-clear:hover { color:var(--danger) }
+.kb-search.has-q .kb-search-clear { display:inline-block }
+/* Home: search + actions header */
+.kb-home-top { display:flex; gap:12px; align-items:center; margin:8px 0 18px }
+.kb-home-top .kb-search { flex:1 1 auto }
+.kb-actions { flex:0 0 auto; display:flex; gap:8px; align-items:center }
+.kb-action { display:inline-flex; align-items:center; padding:9px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; font-family:inherit; text-decoration:none; white-space:nowrap; transition:border-color .12s,color .12s }
+.kb-action:hover { border-color:var(--accent); color:var(--accent) }
+/* Launchpad tiles */
+.kb-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px }
+.kb-tile { display:flex; flex-direction:column; gap:6px; padding:14px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; cursor:pointer; text-align:left; font-family:inherit; transition:border-color .12s,background .12s }
+.kb-tile:hover { border-color:var(--accent) }
+.kb-tile.active { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--bg-card)) }
+.kb-tile-n { font-size:24px; font-weight:700; color:var(--text-heading); line-height:1 }
+.kb-tile.warn .kb-tile-n { color:var(--warning) }
+.kb-tile-label { font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px }
+.kb-tile-icon { font-size:13px }
+/* Result bar — which view is active + kind/sort + count */
+.kb-resultbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px }
+.kb-result-title { font-size:13px; font-weight:600; color:var(--text); text-transform:capitalize }
+.kb-result-controls { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+.kb-result-controls select { padding:7px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; font-family:inherit }
+.kb-result-controls .count { font-size:12px; color:var(--text-muted); white-space:nowrap }
+@media (max-width:640px){
+  .kb-home-top { flex-wrap:wrap }
+  .kb-actions { width:100%; justify-content:flex-start; flex-wrap:wrap; row-gap:8px }
+  .kb-tiles { gap:8px }
+  .kb-tile { padding:10px 12px; border-radius:12px }
+  .kb-tile-n { font-size:22px }
+  .kb-result-controls { width:100%; margin-left:0 }
+  .kb-result-controls select { flex:1 1 auto }
+}
+
+/* Toolbar — secondary filters + sort + actions */
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center }
+.toolbar > select { flex:0 0 170px; min-width:0; padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; font-family:inherit }
+.toolbar .toolbar-actions { flex:0 0 auto; margin-left:auto; display:flex; gap:8px; align-items:center }
+.toolbar .count { font-size:13px; color:var(--text-muted); white-space:nowrap }
+
+/* Domain chips (compacted from cards) — collapsible on mobile */
+.kb-domains { margin-bottom:16px }
+.kb-domains > summary { display:none; list-style:none; cursor:pointer; font-size:13px; color:var(--text-secondary); padding:8px 0 }
+.kb-domains > summary::-webkit-details-marker { display:none }
+.kb-domain-chips { display:flex; gap:8px; flex-wrap:wrap }
+.kb-domain-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:13px; color:var(--text-secondary); transition:border-color 0.12s,color 0.12s; text-transform:capitalize }
+.kb-domain-chip:hover { border-color:var(--accent); color:var(--text) }
+.kb-domain-chip.active { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent); font-weight:600 }
+.kb-domain-chip .kb-chip-n { font-size:11px; color:var(--text-muted) }
+.kb-domain-chip.active .kb-chip-n { color:var(--accent) }
+
+/* Windowed list — load-more sentinel + per-note health dot */
+.kb-load-more { text-align:center; padding:16px; color:var(--text-muted); font-size:13px }
+.note-flag { flex:0 0 auto; width:7px; height:7px; border-radius:999px; background:transparent }
+.note-flag.error { background:var(--danger) }
+.note-flag.warn { background:var(--warning) }
+.kb-superseded-banner { margin:8px 0; padding:8px 12px; border-radius:8px; background:color-mix(in srgb,var(--warning) 12%,transparent); border:1px solid color-mix(in srgb,var(--warning) 35%,transparent); color:var(--warning); font-size:14px; font-weight:600 }
+.kb-superseded-banner a { color:inherit; text-decoration:none; border-bottom:1px solid color-mix(in srgb,var(--warning) 50%,transparent) }
+.kb-supersedes-line { margin-top:4px; font-size:12px; color:var(--text-muted) }
+.kb-supersedes-line a { color:var(--accent); text-decoration:none }
+/* Revision-diff compare UI (KBRev) */
+.kbrev-panel { margin:10px 0; padding:8px 12px; border-radius:8px; background:var(--bg-input); border:1px solid var(--border); font-size:13px; display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+.kbrev-panel-label { color:var(--text-muted) }
+.kbrev-chip { padding:2px 8px; border-radius:10px; background:var(--bg); border:1px solid var(--border); font-size:12px }
+.kbrev-chip-cur { border-color:var(--accent); color:var(--accent); font-weight:600 }
+.kbrev-summary { padding:8px 4px 12px; border-bottom:1px solid var(--border); margin-bottom:10px; font-size:14px }
+.kbrev-chapter { margin-bottom:14px }
+.kbrev-chapter-h { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin:8px 0 4px }
+.kbrev-row { padding:6px 4px; border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent) }
+.kbrev-row-dim { opacity:.5 }
+.kbrev-row-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+/* Status color arrives inline from revisions.js as a tint + text color pair
+   (tint-don't-flood, matching the .kind-* badge language). */
+.kbrev-badge { font-size:11px; padding:1px 7px; border-radius:10px; font-weight:600 }
+.kbrev-refs { font-family:var(--mono,monospace); font-size:12px; color:var(--text-muted) }
+.kbrev-title { font-size:13px; font-weight:600 }
+.kbrev-conf { font-size:11px; color:var(--accent); border:1px solid var(--accent); border-radius:8px; padding:0 5px }
+.eos-btn-sm.kbrev-mini { padding:1px 8px; font-size:11px }
+.kbrev-digest { font-size:12.5px; color:var(--text); margin:3px 0 0 4px; line-height:1.4 }
+.kbrev-diffwrap { margin:6px 0 2px }
+.kbrev-diff { max-height:340px; overflow:auto; font-family:var(--mono,monospace); font-size:11.5px; line-height:1.45; margin:0; padding:8px; border-radius:6px; background:var(--bg-input); border:1px solid var(--border) }
+.kbrev-add { background:color-mix(in srgb,var(--success) 14%,transparent); color:var(--success); white-space:pre-wrap }
+.kbrev-del { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); white-space:pre-wrap }
+.kbrev-hunk { color:var(--text-muted); white-space:pre-wrap }
+.kbrev-ctx { white-space:pre-wrap }
+.kbrev-nodiff { font-size:12px; color:var(--text-muted); padding:6px }
+.note-list { display:grid; grid-template-columns:minmax(0,1fr); gap:8px }
+.note-visual {
+  display: inline-block; margin-left: 8px;
+  font-size: 14px; color: var(--accent);
+  vertical-align: middle;
+}
+.explore-link {
+  font-size: 13px; font-weight: 500;
+  color: var(--accent); text-decoration: none;
+  margin-left: 12px; padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.explore-link:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.explore-embed {
+  width: 100%; min-height: 560px;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--bg-card);
+  margin-bottom: 16px;
+}
+/* Note row — title-first; kind shown as the colored left edge (not a 72px badge) */
+.note-row { background:var(--bg-card); border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:9px 14px; cursor:pointer; display:flex; flex-direction:column; gap:2px; min-width:0; overflow:hidden; transition:border-color 0.15s,background 0.15s }
+.note-row:hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 4%,var(--bg-card)) }
+.nr-main { display:flex; align-items:center; gap:8px; min-width:0 }
+.nr-title { flex:1; font-size:14.5px; color:var(--text); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.nr-sub { display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--text-muted); flex-wrap:wrap }
+.nr-kind { text-transform:uppercase; letter-spacing:0.05em; font-weight:700; font-size:10.5px }
+.nr-meta { color:var(--text-muted) }
+.nr-snippet { font-size:12.5px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.nr-snippet b { color:var(--text-muted); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; margin-right:6px }
+/* .note-kind kept (used by the detail-view meta chip) — minus the wasteful min-width */
+.note-kind { font-size:11px; font-weight:600; padding:4px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:0.04em }
+.kind-formula { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent) }
+.kind-concept { background:color-mix(in srgb,var(--text-secondary) 18%,transparent); color:var(--text-secondary) }
+.kind-reference { background:color-mix(in srgb,var(--warning) 18%,transparent); color:var(--warning) }
+.kind-clause { background:color-mix(in srgb,var(--text-muted) 22%,transparent); color:var(--text-muted) }
+.kind-case { background:color-mix(in srgb,var(--success) 18%,transparent); color:var(--success) }
+.kind-lesson { background:color-mix(in srgb,var(--danger) 18%,transparent); color:var(--danger) }
+.kind-doc { background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--accent) }
+.kind-moc { background:color-mix(in srgb,var(--accent) 28%,transparent); color:var(--accent) }
+.kind-empty { background:color-mix(in srgb,var(--text-muted) 12%,transparent); color:var(--text-muted) }
+.note-name { flex:1; font-size:14px; color:var(--text); font-weight:500 }
+.note-domain { font-size:12px; color:var(--text-muted) }
+.empty { text-align:center; padding:48px 24px; color:var(--text-muted); font-size:14px }
+
+/* Detail view */
+.detail-wrap { display:none }
+.detail-wrap.show { display:block }
+.list-wrap.hide { display:none }
+.detail-back { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; margin-bottom:16px }
+.detail-back:hover { border-color:var(--accent); color:var(--accent) }
+.detail-head { margin-bottom:24px }
+.detail-head h1 { font-size:26px; font-weight:700; color:var(--text-heading); margin-bottom:8px }
+.detail-meta { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13px; color:var(--text-muted) }
+.detail-body { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px 28px; line-height:1.65; font-size:14px }
+.detail-body h1, .detail-body h2, .detail-body h3 { color:var(--text-heading); font-weight:600; scroll-margin-top:16px }
+.detail-body h1 { font-size:24px; margin:20px 0 12px }
+.detail-body h2 { font-size:22px; margin:30px 0 12px; padding-left:11px; border-left:3px solid color-mix(in srgb,var(--accent) 32%,transparent) }
+.detail-body h3 { font-size:16px; margin:22px 0 8px; color:var(--text-secondary) }
+.detail-body h1:first-child, .detail-body h2:first-child { margin-top:2px }
+.detail-body p { margin:8px 0 }
+.detail-body code { background:color-mix(in srgb,var(--accent) 8%,transparent); padding:2px 8px; border-radius:6px; font-size:13px; font-family:var(--mono,monospace) }
+.detail-body pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; overflow-x:auto; margin:12px 0 }
+.detail-body pre code { background:transparent; padding:0 }
+.detail-body ul, .detail-body ol { margin:8px 0 8px 24px }
+.detail-body li { margin:4px 0 }
+.detail-body a { color:var(--accent); text-decoration:none }
+.detail-body a:hover { text-decoration:underline }
+/* Wikilink to a not-yet-created note ("to be created" stub) — muted + dashed so
+   a reader can tell it from a working cross-link before clicking. */
+.detail-body a.kb-wiki-stub, a.kb-wiki.kb-wiki-stub { color:var(--text-muted); text-decoration:underline dotted; text-underline-offset:2px; cursor:help }
+.detail-body a.kb-wiki-stub::after { content:'∅'; font-size:10px; vertical-align:super; margin-left:1px; opacity:.7 }
+.detail-body blockquote { border-left:3px solid var(--accent); padding:8px 12px; margin:12px 0; color:var(--text-secondary); background:color-mix(in srgb,var(--accent) 4%,transparent) }
+/* Article body + "On this page" scroll-spy TOC rail */
+.article-layout { display:flex; gap:28px; align-items:flex-start }
+.article-layout > .detail-body { flex:1 1 auto; min-width:0; max-width:820px }
+.detail-toc { flex:0 0 212px; position:sticky; top:16px; max-height:calc(100dvh - 32px); overflow:auto; font-size:13px }
+.detail-toc[hidden] { display:none }
+.toc-title { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin:0 0 8px 11px }
+.toc-nav { display:flex; flex-direction:column; border-left:1px solid var(--border) }
+.toc-link { display:block; padding:4px 11px; color:var(--text-muted); text-decoration:none; border-left:2px solid transparent; margin-left:-1px; line-height:1.35; overflow:hidden; text-overflow:ellipsis; transition:color .12s,border-color .12s }
+.toc-link:hover { color:var(--text) }
+.toc-link.toc-l3 { padding-left:24px; font-size:12px }
+.toc-link.active { color:var(--accent); border-left-color:var(--accent); font-weight:600 }
+/* Document TOC (reference note) — collapsible chapter→clause tree */
+.toc-ch { margin:6px 0 1px }
+.toc-chapter { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin:0 0 2px 4px; cursor:pointer; list-style:none; display:flex; align-items:baseline; gap:4px; transition:color .12s }
+.toc-chapter::-webkit-details-marker { display:none }
+.toc-chapter::before { content:'\25B8'; display:inline-block; width:10px; flex:none; color:var(--text-muted); transition:transform .12s }
+.toc-ch[open] > .toc-chapter::before { transform:rotate(90deg) }
+.toc-chapter:hover { color:var(--text-secondary) }
+.toc-link.toc-clause { white-space:normal; line-height:1.3; padding-top:3px; padding-bottom:3px }
+.toc-ch .toc-link.toc-clause { padding-left:22px }
+/* Full-text reader — 3-column docs layout (LEFT document TOC · CENTER text · RIGHT on-this-page) */
+.fulltext-layout { display:flex; gap:24px; align-items:flex-start }
+.ft-doc-toc { flex:0 0 232px; position:sticky; top:14px; max-height:calc(100dvh - 36px); overflow:auto; font-size:12.5px }
+.ft-body { flex:1 1 auto; min-width:0; max-width:780px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:20px 26px; line-height:1.6 }
+.ft-onpage { flex:0 0 196px; position:sticky; top:14px; max-height:calc(100dvh - 36px); overflow:auto; font-size:12px }
+.ft-onpage[hidden] { display:none }
+.ft-toc-title { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 8px 4px }
+.ft-onpage-ch { font-size:11px; color:var(--text-secondary); margin:0 0 6px 4px }
+.ft-ch { margin-bottom:4px }
+.ft-ch > summary { cursor:pointer; font-size:12.5px; font-weight:700; color:var(--text-heading); padding:5px 4px; list-style:none; border-radius:6px }
+.ft-ch > summary::-webkit-details-marker { display:none }
+.ft-ch > summary:hover { background:var(--bg-card) }
+.ft-ch > summary::before { content:'\25B8'; display:inline-block; width:12px; color:var(--text-muted); transition:transform .12s }
+.ft-ch[open] > summary::before { transform:rotate(90deg) }
+.ft-toc-link, .ft-op-link { display:block; color:var(--text-muted); text-decoration:none; padding:3px 6px 3px 14px; border-left:2px solid transparent; margin-left:5px; line-height:1.3; white-space:normal; transition:color .12s,border-color .12s }
+.ft-toc-link:hover, .ft-op-link:hover { color:var(--text) }
+.ft-toc-link.ft-l3, .ft-op-link.ft-l3 { padding-left:24px; color:color-mix(in srgb,var(--text-muted) 85%,transparent); font-size:11.5px }
+.ft-op-link.active { color:var(--accent); border-left-color:var(--accent); font-weight:600 }
+.ft-chapter { margin-bottom:8px; scroll-margin-top:14px }
+.ft-ch-head { font-size:22px; font-weight:700; color:var(--text-heading); margin:18px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border) }
+.ft-chapter:first-child .ft-ch-head { margin-top:0 }
+.ft-sec { font-size:14.5px; font-weight:700; color:var(--text-heading); margin:18px 0 6px; padding-left:9px; border-left:3px solid color-mix(in srgb,var(--accent) 32%,transparent); scroll-margin-top:14px }
+.ft-p { font-size:13.5px; color:var(--text); margin:7px 0; white-space:pre-wrap }
+.ft-p.ft-muted { color:var(--text-muted); font-style:italic }
+.ft-loading { color:var(--text-muted); font-size:13px; padding:8px 0 }
+.ft-divider { margin:26px 0 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); border-top:1px solid var(--border); padding-top:16px }
+.ft-line { font-size:13px; color:var(--text); margin:2px 0; white-space:pre-wrap }
+.ft-toc-link.ft-overview { font-weight:600; color:var(--text-secondary); margin-bottom:4px }
+/* Composed clause sections (the document = its atomic clause notes) */
+.ft-clause { margin:0 0 20px; padding-bottom:16px; border-bottom:1px solid var(--border) }
+.ft-clause:last-child { border-bottom:0 }
+.ft-clause-bar { display:flex; justify-content:flex-end; margin-bottom:-8px }
+.ft-open-note { font-size:11px; color:var(--text-muted); text-decoration:none; opacity:.65 }
+.ft-open-note:hover { color:var(--accent); opacity:1 }
+.kb-arc-row { padding:7px 10px; font-size:12px; color:var(--text-muted); white-space:nowrap }
+.kb-arc-row a { color:var(--accent); text-decoration:none }
+@media (max-width:1100px){ .ft-onpage { display:none } }
+@media (max-width:900px){
+  .fulltext-layout { flex-direction:column }
+  .ft-doc-toc { flex:none; position:static; width:auto; max-height:280px; border:1px solid var(--border); border-radius:12px; padding:10px 12px; background:var(--bg-card) }
+  .ft-body { max-width:none }
+}
+@media (max-width:900px){
+  .article-layout { flex-direction:column-reverse; gap:14px }
+  .article-layout > .detail-body { max-width:none }
+  .detail-toc { flex:none; position:static; width:auto; max-height:none; border:1px solid var(--border); border-radius:12px; padding:10px 12px; background:var(--bg-card) }
+  .detail-toc .toc-nav { max-height:168px; overflow:auto }
+}
+/* ── Redesigned detail page: one docs page, no tabs ── */
+.kb-reading { display:flex; gap:24px; align-items:flex-start }
+.kb-reading-main { flex:1 1 auto; min-width:0; max-width:840px }
+.kb-docnav { flex:0 0 234px; position:sticky; top:14px; max-height:calc(100dvh - 36px); overflow:auto; font-size:12.5px }
+.kb-docnav[hidden] { display:none }
+#kb-fulltext-mount:empty { display:none }
+@media (max-width:1100px){ .kb-reading > .detail-toc { display:none } }
+@media (max-width:900px){
+  .kb-reading { flex-direction:column }
+  .kb-docnav { flex:none; position:static; width:auto; max-height:300px; border:1px solid var(--border); border-radius:12px; padding:10px 12px; background:var(--bg-card) }
+  .kb-reading-main { max-width:none }
+}
+/* Compact header */
+.kb-crumb { font-size:12px; color:var(--text-muted); margin-bottom:8px }
+.kb-crumb a { color:var(--text-muted); text-decoration:none; background:transparent; border:0; cursor:pointer; padding:0; font:inherit }
+.kb-crumb a:hover { color:var(--accent) }
+.kb-head-row { display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap }
+.kb-head-row h1 { flex:1 1 320px; min-width:0; margin-bottom:0 }
+.kb-head-tools { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding-top:4px }
+.kb-rev-select { padding:5px 8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); font-size:12.5px; font-family:inherit; cursor:pointer }
+.kb-mini-btn { padding:5px 10px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text-secondary); font-size:12.5px; font-family:inherit; cursor:pointer; white-space:nowrap }
+.kb-mini-btn:hover { border-color:var(--accent); color:var(--accent) }
+.kb-actions-menu { position:relative }
+.kb-actions-pop { position:absolute; right:0; top:calc(100% + 4px); z-index:30; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:4px; min-width:168px; box-shadow:0 6px 18px var(--shadow,rgba(0,0,0,.14)) }
+.kb-actions-pop button, .kb-actions-pop a { display:block; width:100%; text-align:left; padding:7px 10px; background:transparent; border:0; border-radius:8px; color:var(--text); font-size:13px; font-family:inherit; cursor:pointer; text-decoration:none; box-sizing:border-box }
+.kb-actions-pop button:hover, .kb-actions-pop a:hover { background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--accent) }
+.kb-sup-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:3px 10px; border-radius:999px; background:color-mix(in srgb,var(--warning) 12%,transparent); color:var(--warning); border:1px solid color-mix(in srgb,var(--warning) 30%,transparent); margin-top:8px }
+.kb-sup-chip a { color:inherit; text-decoration:underline; text-underline-offset:2px }
+/* Connections (replaces Graph + Links tabs) */
+.kb-connections { margin-top:28px; border-top:1px solid var(--border) }
+.kb-connections > summary { cursor:pointer; font-size:13px; font-weight:600; color:var(--text-secondary); padding:12px 4px; list-style:none }
+.kb-connections > summary::-webkit-details-marker { display:none }
+.kb-connections > summary::before { content:'\25B8'; display:inline-block; width:14px; color:var(--text-muted); transition:transform .12s }
+.kb-connections[open] > summary::before { transform:rotate(90deg) }
+.kb-conn-n { font-size:11px; color:var(--text-muted); font-weight:400 }
+.kb-conn-body { padding:4px 4px 8px }
+.kb-conn-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(244px,1fr)); gap:12px; margin-top:12px; align-items:start }
+.kb-conn-cards .side-card { margin-bottom:0 }
+.kb-connections .neighborhood { min-height:320px }
+.side-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:12px }
+.side-card h3 { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:12px }
+.side-card .item { display:block; padding:8px 0; font-size:13px; color:var(--text); border-bottom:1px solid var(--border) }
+.side-card .item:last-child { border-bottom:0 }
+.side-card .item a { color:var(--accent); text-decoration:none }
+.side-card .item a:hover { text-decoration:underline }
+.side-card .empty-side { font-size:12px; color:var(--text-muted); font-style:italic }
+.side-card .clauses-group-header { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; padding:8px 0 4px; border-bottom:1px solid var(--border) }
+.impl-ok { color:var(--success) }
+.impl-bad { color:var(--danger) }
+
+/* Neighborhood graph wrapper — sizing only; visual styles come from .eos-rg-wrap */
+.neighborhood { margin-bottom:16px }
+
+/* Sidebar item links */
+.side-card .item-link { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); text-decoration:none; color:var(--text); font-size:13px; cursor:pointer }
+.side-card .item-link:last-child { border-bottom:0 }
+.side-card .item-link:hover { color:var(--accent) }
+.side-card .item-link .mini-kind { font-size:10px; padding:2px 8px; border-radius:6px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; flex-shrink:0 }
+.side-card .item-link .item-slug { flex:1; word-break:break-word }
+.side-card .item-link.external { color:var(--text-muted); cursor:default }
+.side-card .item-link.external:hover { color:var(--text-muted) }
+.bl-count { font-size:11px; color:var(--text-muted); font-weight:400; text-transform:none; letter-spacing:0; margin-left:8px }
+.refs-text { font-size:12px; line-height:1.6; color:var(--text-secondary); padding:8px 0; border-bottom:1px solid var(--border); word-break:break-word }
+.refs-text:last-child { border-bottom:0 }
+.impl-card { padding:8px 0; border-bottom:1px solid var(--border); font-size:12px }
+.impl-card:last-child { border-bottom:0 }
+.impl-card-row { display:flex; align-items:flex-start; gap:8px }
+.impl-card-sym { font-family:var(--mono,monospace); color:var(--accent); font-weight:600 }
+.impl-card-path { font-family:var(--mono,monospace); font-size:11px; color:var(--text-muted); word-break:break-all; margin-top:2px; margin-left:16px }
+
+/* Sibling-page nav strip — Notes / Blocks / Documents */
+.kb-views { display:flex; gap:8px; flex-wrap:wrap }
+.kb-view-link { display:inline-block; padding:4px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:999px; font-size:12px; color:var(--text-secondary); text-decoration:none; transition:border-color 0.15s,color 0.15s }
+.kb-view-link:hover { border-color:var(--accent); color:var(--accent) }
+.kb-view-link.active { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent); color:var(--accent); font-weight:600 }
+
+/* View-mode toggle — list / network / flipbook */
+.view-toggle { display:flex; gap:4px; padding:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; margin:8px 0 16px; width:fit-content }
+.view-toggle button { padding:8px 16px; background:transparent; border:0; border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; font-weight:500; font-family:inherit; display:inline-flex; align-items:center; gap:8px; transition:background 0.12s,color 0.12s }
+.view-toggle button:hover { color:var(--text) }
+.view-toggle button.active { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); font-weight:600 }
+.view-toggle .icon { font-size:14px; line-height:1 }
+
+/* Network pane */
+.network-wrap { display:none }
+.network-wrap.show { display:block }
+.network-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px }
+.network-toolbar select, .network-toolbar input { padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; font-family:inherit }
+.network-toolbar label { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px }
+.network-toolbar .stat { font-size:12px; color:var(--text-muted); margin-left:auto }
+.net-semantic-legend { display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+.net-semantic-legend label { font-size:11px; gap:5px }
+.net-sw { display:inline-block; width:18px; height:0; border-top-width:2px; border-top-style:solid; vertical-align:middle }
+.network-canvas-wrap { position:relative; width:100%; height:calc(100dvh - 240px); min-height:400px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden }
+#network-canvas { width:100%; height:100% }
+.network-status { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); padding:8px 16px; background:var(--bg); border:1px solid var(--border); border-radius:999px; font-size:13px; color:var(--text-muted) }
+
+/* Inline-expand card — pinned to a node */
+.node-card { position:absolute; max-width:300px; min-width:220px; background:var(--bg-card); border:1px solid var(--accent); border-radius:14px; box-shadow:0 6px 24px var(--shadow); padding:16px; z-index:50; pointer-events:auto; font-size:13px; line-height:1.45 }
+.node-card .nc-close { position:absolute; top:6px; right:8px; background:transparent; border:0; color:var(--text-muted); cursor:pointer; font-size:16px; line-height:1; padding:2px 8px; border-radius:6px }
+.node-card .nc-close:hover { color:var(--danger); background:color-mix(in srgb,var(--danger) 10%,transparent) }
+.node-card .nc-title { font-size:14px; font-weight:600; color:var(--text-heading); margin-bottom:8px; padding-right:16px; word-break:break-word }
+.node-card .nc-meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px }
+.node-card .nc-excerpt { color:var(--text-secondary); margin-bottom:12px; max-height:6em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical }
+.node-card .nc-out-label { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px }
+.node-card .nc-out-chips { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px }
+.node-card .nc-chip { display:inline-block; padding:4px 8px; background:color-mix(in srgb,var(--accent) 10%,transparent); border:1px solid color-mix(in srgb,var(--accent) 24%,transparent); border-radius:999px; font-size:11px; color:var(--accent); cursor:pointer; text-decoration:none }
+.node-card .nc-chip:hover { background:color-mix(in srgb,var(--accent) 22%,transparent) }
+.node-card .nc-chip.external { color:var(--text-muted); border-color:var(--border); background:transparent; cursor:default }
+.node-card .nc-actions { display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--border) }
+.node-card .nc-btn { flex:1; padding:4px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text); cursor:pointer; font-size:12px; font-family:inherit }
+.node-card .nc-btn:hover { border-color:var(--accent); color:var(--accent) }
+.node-card .nc-btn.primary { background:var(--accent); color:var(--bg); border-color:var(--accent) }
+.node-card .nc-btn.primary:hover { background:color-mix(in srgb,var(--accent) 88%,var(--text)) }
+
+/* In-detail flipbook panel — stacked under the radial neighborhood */
+.neighborhood-flipbook { margin-bottom:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden }
+.neighborhood-flipbook .nf-frame { width:100%; height:520px; border:0; background:transparent; display:block }
+.neighborhood-flipbook .nf-placeholder { padding:32px 24px; text-align:center; color:var(--text-muted); font-size:13px }
+.neighborhood-flipbook .nf-placeholder .nf-cta { margin-top:12px; display:inline-flex; align-items:center; gap:8px; padding:8px 16px; background:transparent; border:1px solid var(--accent); border-radius:999px; color:var(--accent); text-decoration:none; font-weight:500; font-size:13px; cursor:pointer }
+.neighborhood-flipbook .nf-placeholder .nf-cta:hover { background:color-mix(in srgb,var(--accent) 10%,transparent) }
+.neighborhood-flipbook .nf-callouts-preview { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:16px }
+.neighborhood-flipbook .nf-callout-chip { font-size:11px; padding:4px 8px; background:color-mix(in srgb,var(--accent) 8%,transparent); border:1px solid color-mix(in srgb,var(--accent) 20%,transparent); border-radius:999px; color:var(--text-secondary) }
+.neighborhood-flipbook .nf-section-label { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em }
+.neighborhood-flipbook .nf-section-label .nf-open-link { font-size:11px; color:var(--accent); text-decoration:none; text-transform:none; letter-spacing:0; font-weight:500 }
+.neighborhood-flipbook .nf-section-label .nf-open-link:hover { text-decoration:underline }
+
+/* Health triage modal */
+.kb-health-summary { font-size:14px; color:var(--text); margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border) }
+.kb-health-summary strong { color:var(--text-heading) }
+.kb-health-group { margin-bottom:12px }
+.kb-health-group > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600; background:var(--bg-card); border:1px solid var(--border) }
+.kb-health-group > summary::-webkit-details-marker { display:none }
+.kb-health-group[open] > summary { border-bottom-left-radius:0; border-bottom-right-radius:0 }
+.kb-health-cat-n { margin-left:auto; font-size:11px; padding:2px 8px; border-radius:999px; background:color-mix(in srgb,var(--text-muted) 18%,transparent); color:var(--text-muted) }
+.kb-health-cat-n.err { background:color-mix(in srgb,var(--danger) 20%,transparent); color:var(--danger) }
+.kb-health-cat-n.warn { background:color-mix(in srgb,var(--warning) 22%,transparent); color:var(--warning) }
+.kb-health-rows { border:1px solid var(--border); border-top:0; border-radius:0 0 8px 8px; padding:8px 12px; max-height:240px; overflow-y:auto }
+.kb-health-row { display:block; padding:4px 0; font-size:12px; border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent); color:var(--accent); text-decoration:none; word-break:break-word }
+.kb-health-row:last-child { border-bottom:0 }
+.kb-health-row:hover { text-decoration:underline }
+.kb-health-row .kb-health-detail { color:var(--text-muted); font-size:11px }
+.kb-health-sev-head { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin:16px 0 8px }
+.kb-health-sev-head.err { color:var(--danger) }
+.kb-health-sev-head.warn { color:var(--warning) }
+.kb-health-clean { padding:24px; text-align:center; color:var(--success); font-size:14px }
+.kb-health-foot { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); text-align:right }
+.kb-coverage-intro { margin:0 0 14px; color:var(--text-muted); font-size:13px; line-height:1.5 }
+.kb-coverage-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:16px }
+.kb-coverage-stat { padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card) }
+.kb-coverage-stat strong { display:block; color:var(--text-heading); font-size:19px; line-height:1.1 }
+.kb-coverage-stat span { display:block; margin-top:4px; color:var(--text-muted); font-size:11px }
+.kb-coverage-section { margin-top:16px }
+.kb-coverage-section h3 { margin:0 0 8px; color:var(--text-heading); font-size:12px; text-transform:uppercase; letter-spacing:.06em }
+.kb-coverage-list { border:1px solid var(--border); border-radius:10px; overflow:hidden }
+.kb-coverage-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; padding:9px 11px; border-bottom:1px solid var(--border); color:var(--text); text-decoration:none }
+.kb-coverage-row:last-child { border-bottom:0 }
+a.kb-coverage-row:hover { background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)) }
+.kb-coverage-name { min-width:0; font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.kb-coverage-meta { margin-top:3px; color:var(--text-muted); font-size:11px; font-weight:400; white-space:normal }
+.kb-coverage-side { display:flex; align-items:center; gap:8px; white-space:nowrap }
+.kb-coverage-count { color:var(--text-muted); font-size:11px }
+.kb-coverage-status { padding:2px 7px; border-radius:999px; border:1px solid var(--border); color:var(--text-muted); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em }
+.kb-coverage-status.digested { color:var(--success); border-color:color-mix(in srgb,var(--success) 45%,var(--border)); background:color-mix(in srgb,var(--success) 10%,transparent) }
+.kb-coverage-status.undigested, .kb-coverage-status.clauses-only, .kb-coverage-status.metadata-only { color:var(--warning); border-color:color-mix(in srgb,var(--warning) 45%,var(--border)); background:color-mix(in srgb,var(--warning) 10%,transparent) }
+.kb-coverage-status.source-missing, .kb-coverage-status.missing-reference { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 45%,var(--border)); background:color-mix(in srgb,var(--danger) 10%,transparent) }
+@media (max-width:560px){ .kb-coverage-stats { grid-template-columns:repeat(2,minmax(0,1fr)) } }
+
+/* Not-found recovery */
+.kb-notfound { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px; text-align:center }
+.kb-notfound .nf-icon { font-size:32px; margin-bottom:8px }
+.kb-notfound h2 { font-size:18px; color:var(--text-heading); margin-bottom:4px }
+.kb-notfound .nf-sub { font-size:13px; color:var(--text-muted); margin-bottom:16px }
+.kb-notfound .nf-suggest-head { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:8px; text-align:left }
+.kb-notfound .nf-suggest { text-align:left; margin-bottom:16px }
+.kb-notfound .nf-actions { display:flex; gap:8px; justify-content:center; flex-wrap:wrap }
+
+/* Mobile */
+@media (max-width:640px){
+  .toolbar { flex-direction:column; align-items:stretch }
+  .toolbar > select { flex:1 1 auto; width:100% }
+  .toolbar .toolbar-actions { margin-left:0; justify-content:space-between }
+  .kb-domains > summary { display:block }
+  .kb-domains[open] > summary { margin-bottom:8px }
+}
+@media (max-width:480px){
+  .note-row { flex-wrap:wrap; row-gap:8px }
+  .note-row .note-name { flex:1 1 100%; order:2 }
+  .note-row .note-kind { order:1 }
+  .note-row .note-domain { order:3; margin-left:auto }
+}
+</style>
+</head>
+<body>
+<div id="kb-app">
+  <div class="hero">
+    <h1>Knowledge Base</h1>
+    <div class="desc" id="kb-desc">Loading…</div>
+  </div>
+
+  <!-- VIEW-MODE TOGGLE — list / network. Flipbook is a per-note renderer
+       inside the detail view (stacked alongside the radial neighborhood),
+       not a vault-wide view. -->
+  <div class="view-toggle" id="view-toggle" role="tablist" aria-label="View mode">
+    <button data-view="list" class="active" role="tab" aria-selected="true"><span class="icon">▤</span> List</button>
+    <button data-view="network" role="tab" aria-selected="false"><span class="icon">◉</span> Network</button>
+  </div>
+
+  <!-- LIST VIEW -->
+  <div class="list-wrap" id="list-wrap">
+    <!-- Search (primary action) + KB-wide actions -->
+    <div class="kb-home-top">
+      <div class="kb-search" id="kb-search">
+        <span class="kb-search-icon" aria-hidden="true">⌕</span>
+        <input id="filter-q" data-shortcut-search type="search" placeholder="Search the knowledge base…" autocomplete="off" aria-label="Search notes" />
+        <button class="kb-search-clear" id="kb-search-clear" type="button" aria-label="Clear search">×</button>
+      </div>
+      <div class="kb-actions">
+        <button class="kb-action" id="new-note-btn" type="button" title="Create a new KB note">+ New note</button>
+        <a class="kb-action" href="/kb/pages/docs.html">Docs editor</a>
+        <a class="kb-action" href="/kb/pages/guidelines.html" title="Prescriptive guidelines organized by category">Guidelines</a>
+        <button class="kb-action" id="digest-btn" title="Paste an algorithm / standard excerpt → proposed KB notes for review">Digest doc</button>
+        <button class="kb-action" id="reference-coverage-btn" title="Inspect reference archives, clause-note coverage, and missing parent references">Reference coverage</button>
+        <button class="kb-action" id="health-btn" title="Inspect broken links, verification gaps, and corpus health">Health</button>
+        <span id="kb-model-pill"></span>
+        <button class="kb-action" id="kb-settings-btn" title="Knowledge Base settings">&#9881;</button>
+      </div>
+    </div>
+
+    <!-- Quick-view tiles (launchpad) — Recently updated / Most linked / Needs attention -->
+    <div class="kb-tiles" id="kb-tiles"></div>
+
+    <!-- Browse by domain -->
+    <details class="kb-domains" id="kb-domains">
+      <summary id="kb-domains-summary">Browse by domain</summary>
+      <div class="kb-domain-chips" id="domain-grid"></div>
+    </details>
+
+    <!-- Result bar: which view is active + kind/sort + count -->
+    <div class="kb-resultbar">
+      <span class="kb-result-title" id="kb-result-title">All notes</span>
+      <div class="kb-result-controls">
+        <select id="filter-kind" aria-label="Filter by kind">
+          <option value="">All kinds</option>
+          <option value="concept">Concepts</option>
+          <option value="formula">Formulas</option>
+          <option value="reference">References</option>
+          <option value="clause">Clauses</option>
+          <option value="case">Cases</option>
+          <option value="lesson">Lessons</option>
+          <option value="pattern">Patterns</option>
+          <option value="guide">Guides</option>
+          <option value="doc">Documents</option>
+          <option value="moc">MOCs</option>
+        </select>
+        <select id="filter-sort" aria-label="Sort">
+          <option value="az">Sort: A–Z</option>
+          <option value="recent">Sort: Recently updated</option>
+          <option value="linked">Sort: Most linked</option>
+        </select>
+        <span class="count" id="count"></span>
+      </div>
+    </div>
+
+    <div class="note-list" id="note-list"></div>
+  </div>
+
+  <!-- DETAIL VIEW -->
+  <div class="detail-wrap" id="detail-wrap">
+    <div class="detail-head" id="detail-head"></div>
+
+    <!-- Not-found recovery renders here; hidden in the normal flow -->
+    <div id="detail-notfound" style="display:none"></div>
+
+    <!-- Reading surface (no tabs). Leaf note: body + on-this-page (2-col).
+         Document (reference w/ full text): doc-nav + (overview → full text) +
+         on-this-page (3-col). The full-text reader (KBFull) feeds #kb-docnav +
+         #detail-toc and appends chapters into #kb-fulltext-mount. -->
+    <div class="kb-reading" id="kb-reading">
+      <aside class="kb-docnav" id="kb-docnav" hidden aria-label="Document contents"></aside>
+      <div class="kb-reading-main" id="kb-reading-main">
+        <div class="neighborhood-flipbook" id="neighborhood-flipbook" style="display:none"></div>
+        <div class="detail-body" id="detail-body"></div>
+        <div id="kb-fulltext-mount"></div>
+      </div>
+      <aside class="detail-toc" id="detail-toc" hidden aria-label="On this page"></aside>
+    </div>
+
+    <!-- Connections — graph + link cards (replaces the old Graph & Links tabs). -->
+    <details class="kb-connections" id="detail-connections">
+      <summary>Connections <span class="kb-conn-n" id="kb-conn-n"></span></summary>
+      <div class="kb-conn-body">
+        <div class="neighborhood eos-rg-wrap" id="neighborhood"></div>
+        <div class="kb-conn-cards">
+          <div class="side-card" id="detail-clauses-card" style="display:none">
+            <h3>Clauses in this standard <span class="bl-count" id="cl-count"></span></h3>
+            <div id="detail-clauses"></div>
+          </div>
+          <div class="side-card"><h3>References</h3><div id="detail-refs"></div></div>
+          <div class="side-card"><h3>Outgoing links</h3><div id="detail-outgoing"></div></div>
+          <div class="side-card"><h3>Implemented in</h3><div id="detail-impl"></div></div>
+          <div class="side-card"><h3>Backlinks <span class="bl-count" id="bl-count"></span></h3><div id="detail-backlinks"></div></div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- NETWORK VIEW — vis-network with inline-expand cards -->
+  <div class="network-wrap" id="network-wrap">
+    <div class="network-toolbar">
+      <select id="net-kinds">
+        <option value="kb">KB only</option>
+        <option value="">Whole vault</option>
+        <option value="note">Notes only</option>
+        <option value="guideline">Guidelines</option>
+        <option value="explore">Explored topics</option>
+      </select>
+      <select id="net-domain"><option value="">All domains</option></select>
+      <select id="net-kind">
+        <option value="">All kinds</option>
+        <option value="concept">Concepts</option>
+        <option value="formula">Formulas</option>
+        <option value="reference">References</option>
+        <option value="clause">Clauses</option>
+        <option value="case">Cases</option>
+        <option value="lesson">Lessons</option>
+        <option value="pattern">Patterns</option>
+        <option value="guide">Guides</option>
+        <option value="doc">Documents</option>
+        <option value="moc">MOCs</option>
+      </select>
+      <label><input type="checkbox" id="net-tag-edges"> Tag-shared edges</label>
+      <label title="Surface verified_against / references / superseded_by / related as typed edges"><input type="checkbox" id="net-semantic-edges"> Semantic edges</label>
+      <span class="net-semantic-legend" id="net-semantic-legend" style="display:none">
+        <label><input type="checkbox" id="net-edge-validates" checked><span class="net-sw" style="border-top-color:var(--success)"></span>validates</label>
+        <label><input type="checkbox" id="net-edge-cites" checked><span class="net-sw" style="border-top-color:var(--accent)"></span>cites</label>
+        <label><input type="checkbox" id="net-edge-supersedes" checked><span class="net-sw" style="border-top-color:var(--warning);border-top-style:dashed"></span>supersedes</label>
+        <label><input type="checkbox" id="net-edge-related" checked><span class="net-sw" style="border-top-color:var(--text-secondary)"></span>related</label>
+      </span>
+      <input type="search" id="net-filter-q" placeholder="Filter labels…" style="width:160px">
+      <span class="stat" id="net-stat-line"></span>
+    </div>
+    <div class="network-canvas-wrap">
+      <div id="network-canvas"></div>
+      <div class="network-status" id="network-status">Loading vis-network…</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/kb/pages/kb.js"></script>
+<script src="/kb/pages/revisions.js"></script>
+<script src="/kb/pages/fulltext.js"></script>
+</body>
+</html>

@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Presentations</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); overflow: hidden; }
+  .ppt-shell [hidden] { display: none !important; }
+  /* The auto-provenance chip is the edit pane's next sibling; keep it out of the
+     empty state while a generated deck is still loading. */
+  .ppt-shell #edit-pane[hidden] + .eos-auto-provenance{display:none!important}
+  .ppt-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; min-height: 0; }
+  .ppt-header {
+    display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .ppt-brand { min-width: 0; flex: 1; }
+  .ppt-kicker {
+    display: block; margin-bottom: 2px; color: var(--text-muted);
+    font: 600 var(--fs-meta)/1 var(--mono); letter-spacing: var(--tracking-meta);
+    text-transform: uppercase;
+  }
+  .ppt-header h1 { margin: 0; color: var(--text-heading); font-size: var(--fs-h2); line-height: var(--lh-heading); font-weight: var(--fw-display); }
+  .ppt-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
+  .ppt-body { display: grid; grid-template-columns: 304px minmax(0, 1fr); min-height: 0; }
+  .ppt-sidebar {
+    display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--space-3);
+    min-height: 0; padding: var(--space-3); overflow: hidden;
+    border-right: 1px solid var(--border); background: var(--bg-surface);
+  }
+  .ppt-side-head { display: grid; gap: var(--space-2); }
+  .ppt-side-title { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+  .ppt-side-title h2 { margin: 0; font-size: 16px; line-height: var(--lh-ui); font-weight: 600; }
+  .ppt-count { color: var(--text-muted); font: 500 var(--fs-mono)/1 var(--mono); }
+  .ppt-search-wrap { position: relative; }
+  .ppt-search {
+    width: 100%; min-height: 36px; padding: 8px 12px 8px 32px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-input); color: var(--text); font: inherit; outline: none;
+  }
+  .ppt-search:focus { border-color: var(--accent); }
+  .ppt-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; pointer-events: none; }
+  .ppt-list { display: flex; flex-direction: column; gap: var(--space-2); min-height: 0; overflow: auto; padding-right: 2px; }
+  .ppt-deck-row {
+    position: relative; display: grid; gap: var(--space-1); padding: 12px 48px 12px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-card); cursor: pointer; transition: background var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
+  }
+  .ppt-deck-row:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+  .ppt-deck-row.active { border-color: var(--accent); background: var(--accent-tint-weak); }
+  .ppt-deck-row:active { transform: translateY(1px); }
+  .ppt-deck-row .title {
+    display: flex; align-items: center; gap: var(--space-1);
+    min-width: 0; color: var(--text-heading); font-size: var(--fs-body); font-weight: 600; line-height: var(--lh-ui);
+  }
+  .ppt-deck-row .title span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ppt-deck-row .meta { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; color: var(--text-muted); font: 500 var(--fs-mono)/1.2 var(--mono); }
+  .ppt-system-mark { color: var(--text-muted); font-size: 13px; }
+  .ppt-chip {
+    display: inline-flex; align-items: center; min-height: 20px; padding: 2px 8px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+    color: var(--text-muted); font: 500 var(--fs-mono)/1 var(--mono);
+  }
+  .ppt-main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; background: var(--bg); }
+  .ppt-toolbar {
+    display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: var(--space-2) var(--space-3);
+    align-items: center; padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  .ppt-current { min-width: 0; display: grid; gap: 2px; }
+  .ppt-current strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-heading); font-size: 16px; line-height: var(--lh-ui); }
+  .ppt-current-meta { color: var(--text-muted); font: 500 var(--fs-mono)/1.25 var(--mono); }
+  .ppt-status { color: var(--text-muted); }
+  .ppt-status.dirty { color: var(--amber); }
+  .ppt-stylebar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
+  .ppt-style-group { display: flex; align-items: center; gap: var(--space-1); }
+  .ppt-style-label { color: var(--text-muted); font: 600 var(--fs-meta)/1 var(--mono); letter-spacing: var(--tracking-meta); text-transform: uppercase; }
+  .ppt-segment {
+    display: inline-flex; gap: 2px; padding: 2px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-surface);
+  }
+  .ppt-segment button {
+    min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--radius-sm);
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    font: 600 var(--fs-small)/1 var(--font); transition: background var(--dur-fast), color var(--dur-fast);
+  }
+  .ppt-segment button:hover { color: var(--text-heading); background: var(--bg-card); }
+  .ppt-segment button.active { color: var(--accent); background: var(--accent-bg); }
+  .ppt-visual-current {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-surface); color: var(--text-secondary); cursor: pointer;
+    font: 600 var(--fs-small)/1 var(--font);
+  }
+  .ppt-visual-current:hover { border-color: var(--border-strong); color: var(--text-heading); background: var(--bg-card); }
+  /* Dot/swatch hexes mirror the fixed style palettes in eos-deck.js — the
+     deck renderer is a visual island, so these are representational, not
+     theme tokens. Pinned by tests/test_unit_ppt_styles.py. */
+  .ppt-visual-dot {
+    width: 12px; height: 12px; flex: 0 0 12px; border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
+    background: linear-gradient(135deg, #8b5cf6, #22d3ee);  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  }
+  .ppt-visual-dot.is-editorial { background: linear-gradient(135deg, #fbf3e8, #b94a3c); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  .ppt-visual-dot.is-tech { background: linear-gradient(135deg, #061018, #38bdf8); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  .ppt-visual-dot.is-luxury { background: linear-gradient(135deg, #17110d, #d6b56d); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  .ppt-visual-dot.is-clay { background: linear-gradient(135deg, #f4f0e8, #6f8b77, #b87562); }
+  .ppt-visual-dot.is-ink { background: linear-gradient(135deg, #f8f7f1, #1d4ed8); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  .ppt-toolbar-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .ppt-toggle-row {
+    display: inline-flex; align-items: center; gap: var(--space-1); min-height: 36px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-secondary);
+    background: var(--bg-card); font-size: var(--fs-small); cursor: pointer;
+  }
+  .ppt-toggle-row input { accent-color: var(--accent); }
+  .ppt-edit-area { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr); min-height: 0; }
+  .ppt-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .ppt-pane:first-child { border-right: 1px solid var(--border); }
+  .ppt-pane-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+    min-height: 42px; padding: 0 var(--space-4); border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 88%, var(--bg-card));
+  }
+  .ppt-pane-head span:first-child { color: var(--text-heading); font-size: var(--fs-small); font-weight: 600; }
+  .ppt-pane-hint { color: var(--text-muted); font: 500 var(--fs-mono)/1 var(--mono); }
+  .ppt-pane-hint.dirty { color: var(--amber); }
+  .ppt-editor { min-height: 0; }
+  .ppt-editor textarea {
+    width: 100%; height: 100%; resize: none; border: 0; outline: none; padding: var(--space-4) var(--space-5);
+    font-family: var(--mono); font-size: var(--fs-small); line-height: 1.55;
+    background: var(--bg); color: var(--text);
+  }
+  .ppt-editor textarea:focus { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
+  .ppt-preview { min-height: 0; overflow: auto; padding: var(--space-4); background: var(--bg-surface); }
+  .ppt-preview #deck-preview { display: block; width: 100%; max-width: 900px; margin: 0 auto; }
+  .ppt-preview .eos-deck-host { display: block; width: 100%; }
+  .ppt-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3);
+    color: var(--text-muted); padding: var(--space-7) var(--space-5); text-align: center;
+  }
+  .ppt-empty h2 { margin: 0; color: var(--text-heading); font-size: var(--fs-h2); }
+  .ppt-empty p { margin: 0; max-width: 42ch; font-size: var(--fs-body); line-height: var(--lh-prose); }
+  .ppt-pill {
+    padding: 8px 12px; border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 13px; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .ppt-pill:hover { background: var(--bg-card-hover); }
+  .ppt-pill-active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .ppt-image-placeholder {
+    display: inline-block; padding: 12px 16px; border: 1px dashed var(--border-strong);
+    border-radius: 8px; color: var(--text-muted); font-size: 13px; line-height: 1.4;
+    background: var(--bg-card); margin: 8px 0; max-width: 100%;
+  }
+  .ppt-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: var(--space-3); }
+  .ppt-pill-row { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+  .ppt-checks { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--fs-small); }
+  .ppt-check { display: flex; gap: var(--space-2); align-items: flex-start; cursor: pointer; }
+  .ppt-check input { margin-top: 4px; flex-shrink: 0; accent-color: var(--accent); }
+  .ppt-muted { color: var(--text-muted); }
+  .ppt-elements-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 16px; margin-top: var(--space-2); }
+  .ppt-element-choice { display: flex; gap: var(--space-1); align-items: center; font-size: var(--fs-small); color: var(--text); }
+  .ppt-field-hint { color: var(--text-muted); font-size: var(--fs-meta); line-height: 1.4; margin-top: var(--space-1); }
+  .ppt-visual-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); margin-top: var(--space-2); }
+  .ppt-visual-card {
+    display: grid; gap: 8px; min-height: 118px; padding: 12px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-card); color: var(--text); text-align: left; cursor: pointer;
+    transition: border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
+  }
+  .ppt-visual-card:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+  .ppt-visual-card.active { border-color: var(--accent); background: var(--accent-tint-weak); }
+  .ppt-visual-card:active { transform: translateY(1px); }
+  .ppt-visual-swatch { height: 40px; border-radius: 6px; border: 1px solid var(--border); background: linear-gradient(135deg, #121826, #8b5cf6 52%, #22d3ee); }
+  .ppt-visual-swatch.is-editorial { background: linear-gradient(135deg, #fbf3e8, #f7eadc 50%, #b94a3c); }
+  .ppt-visual-swatch.is-tech { background: linear-gradient(135deg, #061018, #0f2a3f 54%, #38bdf8); }
+  .ppt-visual-swatch.is-luxury { background: linear-gradient(135deg, #17110d, #2c2018 58%, #d6b56d); }
+  .ppt-visual-swatch.is-clay { background: linear-gradient(135deg, #f4f0e8, #d8dfcf 52%, #b87562); }
+  .ppt-visual-swatch.is-ink { background: linear-gradient(135deg, #f8f7f1, #e6e1d3 48%, #1d4ed8); }
+  .ppt-visual-card strong { color: var(--text-heading); font-size: var(--fs-small); line-height: var(--lh-ui); }
+  .ppt-visual-card span { color: var(--text-muted); font-size: var(--fs-meta); line-height: 1.35; }
+  .ppt-slide-board {
+    display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--space-3);
+    min-height: 560px; max-height: min(76vh, 760px);
+  }
+  .ppt-slide-rail {
+    display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--space-2);
+    min-height: 0; border-right: 1px solid var(--border); padding-right: var(--space-3);
+  }
+  .ppt-slide-rail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .ppt-slide-rail-head strong { color: var(--text-heading); font-size: var(--fs-small); }
+  .ppt-slide-list { display: flex; flex-direction: column; gap: var(--space-2); min-height: 0; overflow: auto; padding-right: 2px; }
+  .ppt-slide-card {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: var(--space-2);
+    align-items: stretch; min-height: 92px; padding: 8px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-card); color: var(--text); cursor: grab;
+    transition: border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast), opacity var(--dur-fast);
+  }
+  .ppt-slide-card:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+  .ppt-slide-card.active { border-color: var(--accent); background: var(--accent-tint-weak); }
+  .ppt-slide-card.dragging { opacity: .48; transform: scale(.985); }
+  .ppt-slide-num { color: var(--text-muted); font: 600 var(--fs-mono)/1 var(--mono); padding-top: 4px; text-align: center; }
+  .ppt-slide-thumb {
+    display: grid; align-content: center; gap: 4px; min-width: 0; padding: 12px;
+    aspect-ratio: 16 / 9; border: 1px solid var(--border); border-radius: 6px;
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 80%, transparent), color-mix(in srgb, var(--accent) 10%, var(--bg-card))),
+      var(--bg-card);
+  }
+  .ppt-slide-thumb-title {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-heading); font-size: 12px; font-weight: 700; line-height: 1.2;
+  }
+  .ppt-slide-thumb-line { height: 5px; max-width: 100%; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 36%, transparent); }
+  .ppt-slide-thumb-line:nth-child(3) { width: 72%; }
+  .ppt-slide-thumb-line:nth-child(4) { width: 48%; }
+  .ppt-slide-card-actions { display: flex; flex-direction: column; gap: 2px; align-self: center; }
+  .ppt-slide-editor {
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--space-2);
+    min-height: 0;
+  }
+  .ppt-slide-editor-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .ppt-slide-editor-head strong { color: var(--text-heading); font-size: var(--fs-small); }
+  .ppt-slide-editor textarea {
+    width: 100%; min-height: 0; resize: none; padding: var(--space-3);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-input); color: var(--text);
+    font: 500 var(--fs-small)/1.55 var(--mono); outline: none;
+  }
+  .ppt-slide-editor textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .ppt-slide-edit-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .ppt-slide-edit-actions .left, .ppt-slide-edit-actions .right { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .ppt-details { margin: 0 0 var(--space-3); }
+  .ppt-details summary { cursor: pointer; color: var(--text-muted); font-size: var(--fs-mono); }
+  .ppt-plan-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 100px; gap: var(--space-3); }
+  .ppt-plan-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+  .ppt-plan-slides {
+    display: flex; flex-direction: column; gap: var(--space-2); max-height: 380px; overflow: auto;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2); background: var(--bg-surface);
+  }
+  .plan-slide-row {
+    display: grid; grid-template-columns: 28px 120px minmax(0, 1fr) auto; gap: var(--space-2); align-items: start;
+    background: var(--bg-card); padding: var(--space-2); border-radius: var(--radius); border: 1px solid var(--border);
+  }
+  .plan-slide-num { text-align: center; color: var(--text-muted); font: 500 var(--fs-mono)/1 var(--mono); padding-top: 8px; }
+  .plan-slide-fields { display: flex; flex-direction: column; gap: var(--space-1); }
+  .plan-slide-surface { font-size: var(--fs-mono); padding: 4px 8px; }
+  .plan-slide-headline { font-size: var(--fs-small); padding: 4px 8px; }
+  .plan-slide-beat { font-size: var(--fs-mono); padding: 4px 8px; color: var(--text-muted); }
+  .plan-slide-actions { display: flex; flex-direction: column; gap: 2px; }
+  .ppt-icon-button {
+    width: 30px; min-height: 28px; border: 1px solid transparent; border-radius: var(--radius-sm);
+    background: transparent; color: var(--text-muted); cursor: pointer; font-size: 13px;
+  }
+  .ppt-icon-button:hover { border-color: var(--border); color: var(--text-heading); background: var(--bg-surface); }
+  .ppt-icon-button.is-danger:hover { color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    .ppt-shell { height: auto; min-height: 100dvh; }
+    .ppt-body { grid-template-columns: 1fr; }
+    .ppt-sidebar { border-right: 0; border-bottom: 1px solid var(--border); max-height: 300px; }
+    .ppt-toolbar { grid-template-columns: 1fr; }
+    .ppt-stylebar { justify-content: flex-start; }
+    .ppt-edit-area { grid-template-columns: 1fr; }
+    .ppt-slide-board { grid-template-columns: 1fr; max-height: none; }
+    .ppt-slide-rail { border-right: 0; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: var(--space-3); }
+    .ppt-slide-list { max-height: 260px; }
+    .ppt-pane:first-child { border-right: 0; border-bottom: 1px solid var(--border); }
+    .ppt-editor { height: 44vh; min-height: 280px; }
+    .ppt-preview { min-height: 360px; }
+  }
+  @media (max-width: 640px) {
+    .ppt-header { align-items: stretch; flex-direction: column; padding: var(--space-3) var(--space-4); }
+    .ppt-header-actions { justify-content: flex-start; }
+    .ppt-header-actions .eos-btn { flex: 1 1 auto; }
+    .ppt-toolbar-actions .eos-btn { flex: 1 1 150px; }
+    .ppt-form-grid, .ppt-plan-grid, .plan-slide-row { grid-template-columns: 1fr; }
+    .plan-slide-actions { flex-direction: row; }
+  }
+</style>
+</head>
+<body>
+<div class="ppt-shell">
+  <header class="ppt-header">
+    <div class="ppt-brand">
+      <span class="ppt-kicker">Markdown decks</span>
+      <h1>Presentations</h1>
+    </div>
+    <div class="ppt-header-actions">
+      <button class="eos-btn eos-btn-primary" onclick="newDeck()" title="Create a new markdown deck">+ New deck</button>
+      <button class="eos-btn" onclick="newFromCanvas()" title="Build a deck from a canvas board">From canvas&hellip;</button>
+      <button class="eos-btn eos-btn-icon" onclick="openAppSettings()" title="Settings">&#9881;</button>
+    </div>
+  </header>
+  <div class="ppt-body">
+    <aside class="ppt-sidebar">
+      <div class="ppt-side-head">
+        <div class="ppt-side-title">
+          <h2>Decks</h2>
+          <span id="deck-count" class="ppt-count">0</span>
+        </div>
+        <div class="ppt-search-wrap">
+          <span class="ppt-search-icon">/</span>
+          <input id="deck-search" class="ppt-search" type="search" placeholder="Search decks" title="Filter decks by title, theme, or aspect">
+        </div>
+      </div>
+      <div id="deck-list" class="ppt-list"></div>
+    </aside>
+    <main class="ppt-main">
+      <div class="ppt-toolbar" id="toolbar" hidden>
+        <div class="ppt-current">
+          <strong id="cur-title"></strong>
+          <span id="cur-meta" class="ppt-current-meta"></span>
+        </div>
+        <div class="ppt-stylebar" id="stylebar">
+          <div class="ppt-style-group" aria-label="Deck theme">
+            <span class="ppt-style-label">Theme</span>
+            <div class="ppt-segment" id="theme-segment">
+              <button type="button" data-style-field="theme" data-style-value="dark" title="Use the dark deck theme">Dark</button>
+              <button type="button" data-style-field="theme" data-style-value="light" title="Use the light deck theme">Light</button>
+              <button type="button" data-style-field="theme" data-style-value="mono" title="Use the mono deck theme">Mono</button>
+            </div>
+          </div>
+          <div class="ppt-style-group" aria-label="Deck aspect ratio">
+            <span class="ppt-style-label">Size</span>
+            <div class="ppt-segment" id="aspect-segment">
+              <button type="button" data-style-field="aspect" data-style-value="16:9" title="Set slides to 16:9 widescreen">16:9</button>
+              <button type="button" data-style-field="aspect" data-style-value="4:3" title="Set slides to 4:3 standard">4:3</button>
+            </div>
+          </div>
+          <div class="ppt-style-group" aria-label="Deck visual style">
+            <span class="ppt-style-label">Visual</span>
+            <button type="button" class="ppt-visual-current" onclick="openVisualStyleLab()" title="Choose a visual style system">
+              <span id="visual-style-dot" class="ppt-visual-dot"></span>
+              <span id="visual-style-name">Studio</span>
+            </button>
+          </div>
+        </div>
+        <div class="ppt-toolbar-actions">
+          <button class="eos-btn eos-btn-primary" onclick="presentCurrent()" title="Open this deck in presenter mode">&#9654; Present</button>
+          <button class="eos-btn" onclick="saveCurrent()" title="Save the markdown editor contents">Save</button>
+          <button class="eos-btn" onclick="openSlideBoard()" title="Open the slide board">&#9638; Slides</button>
+          <button class="eos-btn" onclick="regenerateDeck()" title="Rewrite this deck guided by a direction prompt">&#10227; Regenerate</button>
+          <button class="eos-btn" onclick="resolveImages()" title="Materialize every image, vault, or screenshot placeholder">&#127912; Resolve images</button>
+          <label class="ppt-toggle-row" title="Auto-play narration in present mode">
+            <input type="checkbox" id="narration-toggle" onchange="toggleNarration(this.checked)">
+            <span>&#128266; Auto-play</span>
+          </label>
+          <button class="eos-btn" onclick="speakifyCurrent()" title="Rewrite presenter notes into audience-facing Say lines via AI">&#128172; Speakify&hellip;</button>
+          <button class="eos-btn" onclick="narrateCurrent()" title="Generate TTS narration from Say lines or speaker notes">&#128266; Narrate&hellip;</button>
+          <button class="eos-btn" onclick="toPodcast()" title="Generate a two-host podcast episode from this deck">&#127908; Podcast</button>
+          <button class="eos-btn" onclick="toPost()" title="Convert this deck to a draft blog post">&#128221; Blog post</button>
+          <button class="eos-btn" onclick="exportCurrent()" title="Export this deck as standalone HTML">Export HTML</button>
+          <button class="eos-btn" onclick="exportPdf()" title="Export this deck as a real, multi-page PDF — one page per slide">Export PDF</button>
+        </div>
+      </div>
+      <div id="edit-pane" class="ppt-edit-area" hidden data-ai-output="/ppt/api/generate-from-plan">
+        <section class="ppt-pane">
+          <div class="ppt-pane-head">
+            <span>Markdown</span>
+            <span id="dirty-status" class="ppt-pane-hint">Saved</span>
+          </div>
+          <div class="ppt-editor">
+            <textarea id="md-editor" placeholder="# Slide 1&#10;..."></textarea>
+          </div>
+        </section>
+        <section class="ppt-pane">
+          <div class="ppt-pane-head">
+            <span>Preview</span>
+            <span id="preview-status" class="ppt-pane-hint">Live</span>
+          </div>
+          <div id="preview" class="ppt-preview"></div>
+        </section>
+      </div>
+      <div id="empty" class="ppt-empty">
+        <h2>No deck selected</h2>
+        <p>Select a deck from the sidebar, or create a new markdown deck.</p>
+        <button class="eos-btn eos-btn-primary" onclick="newDeck()" title="Create a new markdown deck">+ New deck</button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script src="/static/eos-deck.js"></script>
+<script src="/ppt/pages/ppt.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+/* Garden theme — cottage · Victorian Herbarium (Beatrix Potter / Morris)
+ * Page-level chrome only. Plant colors come from themes.py inline SVG.
+ *
+ * Soft warm cream with thin double-rule borders. Latin captions live in
+ * the SVG foreground (chrome_fg in themes.py).
+ */
+.eos-garden[data-theme="cottage"] {
+  --g-bg: #efe6d6;
+  --g-text: #4a5859;
+  --g-muted: #7a7268;
+  --g-border: #c9b994;
+  --g-accent: #d4a5a5;
+  font-family: "EB Garamond", "Cormorant Garamond", "Iowan Old Style",
+               Georgia, "Palatino Linotype", serif;
+}
+.eos-garden[data-theme="cottage"] .eos-g-card {
+  background: #f5ebe0;
+  border: 1px solid var(--g-border);
+  border-radius: 2px;
+  padding: 16px 14px 22px;
+  position: relative;
+  box-shadow: 0 0 0 4px #efe6d6 inset, 0 1px 2px rgba(74, 88, 89, 0.06);
+}
+.eos-garden[data-theme="cottage"] .eos-g-label {
+  color: var(--g-muted);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  font-style: italic;
+  text-transform: lowercase;
+}
+.eos-garden[data-theme="cottage"] .eos-g-annot {
+  color: var(--g-muted);
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.3px;
+}

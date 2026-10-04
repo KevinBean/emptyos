@@ -1,0 +1,16 @@
+[plugin]
+id = "playwright"
+name = "Playwright"
+version = "1.0.0"
+description = "Headless browser automation — provides the browse capability via Chromium"
+
+[plugin.entry]
+module = "plugin"
+class = "PlaywrightPlugin"
+
+[provides]
+services = ["playwright"]
+tags = ["browser", "automation", "scraping", "ui-test"]
+
+[platforms]
+supports = ["laptop", "vps"]

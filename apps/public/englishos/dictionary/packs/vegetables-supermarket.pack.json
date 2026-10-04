@@ -1,0 +1,43 @@
+{
+  "id": "vegetables-supermarket",
+  "groups": [
+    {
+      "id": "leafy-veg",
+      "label": "Leafy vegetables",
+      "members": [
+        "artichoke",
+        "beetroot",
+        "cabbage",
+        "chard",
+        "fennel",
+        "kale",
+        "radicchio",
+        "rhubarb",
+        "savoy-cabbage",
+        "watercress"
+      ]
+    },
+    {
+      "id": "fruit-veg",
+      "label": "Fruit vegetables",
+      "members": [
+        "eggplant",
+        "butternut-squash",
+        "okra",
+        "bell-pepper",
+        "zucchini"
+      ]
+    },
+    {
+      "id": "root-veg",
+      "label": "Root vegetables",
+      "members": [
+        "parsnip",
+        "shallot",
+        "spring-onion",
+        "swede",
+        "yam"
+      ]
+    }
+  ]
+}

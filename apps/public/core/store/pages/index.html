@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Store — EmptyOS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+.store-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 24px 64px; }
+.store-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.store-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.store-meta { font-size: 12px; color: var(--text-muted); }
+
+/* Restart banner — sticky-ish, shows when state changed since boot */
+.restart-banner { display: none; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; margin-bottom: 16px; background: color-mix(in srgb, var(--warning) 12%, var(--bg-card)); border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border)); border-radius: var(--radius-sm); }
+.restart-banner.on { display: flex; }
+.restart-banner-text { font-size: 13px; color: var(--text); }
+.restart-banner-code { font-family: var(--font-mono); padding: 2px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
+
+/* Tab bar */
+.store-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.store-tab { padding: 12px 16px; cursor: pointer; font-size: 14px; color: var(--text-muted); border-bottom: 2px solid transparent; transition: color 0.12s, border-color 0.12s; }
+.store-tab:hover { color: var(--text); }
+.store-tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+.store-tab-count { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+
+/* Toolbar (search + filter) */
+.store-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+.store-search { flex: 1; min-width: 200px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; }
+.store-search:focus { outline: none; border-color: var(--accent); }
+.store-filter { padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; }
+.store-toggle-installed { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+
+/* Card grid */
+.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.store-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 8px; transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s; }
+.store-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.store-card.openable { cursor: pointer; }
+.store-card.openable:hover { border-color: var(--accent); box-shadow: 0 2px 14px color-mix(in srgb, var(--accent) 14%, transparent); transform: translateY(-1px); }
+.store-card-tagline { font-size: 12px; color: var(--text-secondary); font-style: italic; line-height: 1.4; }
+.store-card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.store-cap { font-size: 10.5px; font-family: var(--font-mono); padding: 1px 7px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+.store-cap.feat { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.store-cap.dim { color: var(--text-secondary); }
+.store-btn.open { background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); color: var(--accent); }
+.store-btn.open:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 22%, var(--bg-card)); }
+.store-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.store-card-title { font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--text); }
+.store-card-id { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+.store-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.45; flex: 1; }
+.store-card-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.store-card-badge { padding: 2px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+.store-card-badge.cat { color: var(--text); }
+.store-card-badge.essential { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.store-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.store-card-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.store-info-btn { border: none; background: transparent; color: var(--text-muted); font-size: 15px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.store-info-btn:hover { color: var(--accent); background: var(--bg); }
+a.store-btn { text-decoration: none; display: inline-flex; align-items: center; }
+.store-btn { padding: 8px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); transition: background 0.12s; }
+.store-btn:hover:not(:disabled) { background: var(--bg-card-hover); }
+.store-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.store-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.store-btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, black); }
+.store-btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+
+.store-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; }
+.store-status.enabled { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.store-status.disabled { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+.store-status.uninstalled { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+.store-status.parked { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); }
+
+.store-empty { padding: 48px 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.store-deps { font-size: 11px; color: var(--text-muted); }
+.store-deps strong { color: var(--text); font-weight: 500; }
+
+/* Marketplace panel */
+.mkt-section { margin-bottom: 32px; }
+.mkt-section-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.mkt-section-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.mkt-install-from { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.mkt-from-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+.mkt-from-card h4 { font-size: 13px; font-weight: 600; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+.mkt-from-row { display: flex; gap: 8px; }
+.mkt-input { flex: 1; min-width: 0; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; }
+.mkt-input:focus { outline: none; border-color: var(--accent); }
+.mkt-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+.mkt-source-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+
+/* Review-gate (preview before install) */
+.mkt-review-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; font-size: 13px; margin: 4px 0 12px; }
+.mkt-review-grid dt { color: var(--text-muted); }
+.mkt-review-grid dd { margin: 0; color: var(--text); }
+.mkt-cap { display: inline-block; padding: 2px 8px; margin: 0 4px 4px 0; border-radius: 4px; font-size: 11px; font-family: var(--font-mono); background: color-mix(in srgb, var(--accent) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); color: var(--text); }
+.mkt-files { max-height: 160px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.6; color: var(--text-muted); }
+.mkt-warn { font-size: 12px; color: var(--warning); margin-top: 8px; }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('store');</script>
+
+<div class="store-wrap">
+  <div class="store-head">
+    <div>
+      <div class="store-title">📦 Store</div>
+      <div class="store-meta">Install / uninstall apps, plugins, and skills. Restart-required for apps + plugins.</div>
+    </div>
+  </div>
+
+  <div id="restart-banner" class="restart-banner">
+    <div class="restart-banner-text">⚠ Restart required to apply changes — run <span class="restart-banner-code">restart.bat</span></div>
+    <button class="store-btn" onclick="checkRestart()">Recheck</button>
+  </div>
+
+  <div class="store-tabs">
+    <div class="store-tab active" data-kind="apps" onclick="switchTab('apps')">Apps <span class="store-tab-count" id="count-apps">…</span></div>
+    <div class="store-tab" data-kind="plugins" onclick="switchTab('plugins')">Plugins <span class="store-tab-count" id="count-plugins">…</span></div>
+    <div class="store-tab" data-kind="connections" onclick="switchTab('connections')">🔌 Connections <span class="store-tab-count" id="count-connections">…</span></div>
+    <div class="store-tab" data-kind="skills" onclick="switchTab('skills')">Skills <span class="store-tab-count" id="count-skills">…</span></div>
+    <div class="store-tab" data-kind="marketplace" onclick="switchTab('marketplace')">🛒 Marketplace</div>
+  </div>
+
+  <div class="store-toolbar">
+    <input type="text" class="store-search" id="search" placeholder="Search by name, id, or description…" oninput="render()">
+    <select class="store-filter" id="filter-cat" onchange="render()">
+      <option value="">All categories</option>
+    </select>
+    <select class="store-filter" id="filter-state" onchange="render()">
+      <option value="">All states</option>
+      <option value="enabled">Enabled</option>
+      <option value="disabled">Disabled</option>
+      <option value="not-installed">Not installed</option>
+      <option value="parked">Parked</option>
+    </select>
+  </div>
+
+  <div id="grid" class="store-grid"></div>
+
+  <!-- Marketplace panel (shown only on the Marketplace tab) -->
+  <div id="marketplace-panel" style="display:none;">
+    <div class="mkt-section" style="margin-bottom:16px;">
+      <div class="mkt-kind-toggle" style="display:inline-flex;gap:4px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;background:var(--bg-card);">
+        <button class="store-btn mkt-kind-btn primary" data-mktkind="apps" onclick="mktSwitchKind('apps')">Apps</button>
+        <button class="store-btn mkt-kind-btn" data-mktkind="plugins" onclick="mktSwitchKind('plugins')">Plugins / Connections</button>
+      </div>
+    </div>
+    <div class="mkt-section">
+      <div class="mkt-section-title">Install from…</div>
+      <div class="mkt-section-sub" id="mkt-install-sub">Drops the app into a category folder under <code>apps/</code>. You'll review what it declares before anything is installed; code only loads on the next restart, and installed code is kept out of git.</div>
+      <div style="margin-bottom:12px;" id="mkt-category-row">
+        <label style="font-size:12px;color:var(--text-muted);">Category&nbsp;</label>
+        <select class="mkt-input" id="mkt-category" style="max-width:240px;display:inline-block;">
+          <option value="extension/others">extension / others (default)</option>
+          <option value="extension/engineering">extension / engineering</option>
+          <option value="extension/english-learning">extension / english-learning</option>
+          <option value="extension/portfolio">extension / portfolio</option>
+          <option value="extension/plekto">extension / plekto</option>
+          <option value="extension/dev">extension / dev</option>
+          <option value="extension/labs">extension / labs (WIP)</option>
+          <option value="public/labs">public / labs (experimental)</option>
+          <option value="personal">personal</option>
+          <option value="personal/labs">personal / labs (WIP)</option>
+        </select>
+        <span class="mkt-hint" style="margin-left:8px;">where the app lands (registry apps use their own category)</span>
+      </div>
+      <div class="mkt-install-from">
+        <div class="mkt-from-card">
+          <h4>🐙 GitHub repo</h4>
+          <div class="mkt-from-row">
+            <input class="mkt-input" id="mkt-gh" placeholder="github.com/user/repo or .../tree/main/subdir">
+            <button class="store-btn primary" onclick="mktFromGithub()">Fetch</button>
+          </div>
+          <div class="mkt-hint">Public repos. Downloaded as a tarball (no git hooks run).</div>
+        </div>
+        <div class="mkt-from-card">
+          <h4>🗜 Zip file</h4>
+          <div class="mkt-from-row">
+            <input class="mkt-input" type="file" id="mkt-zip" accept=".zip">
+            <button class="store-btn primary" onclick="mktFromZip()">Upload</button>
+          </div>
+          <div class="mkt-hint">A zip containing one app folder (manifest.toml + app.py).</div>
+        </div>
+        <div class="mkt-from-card">
+          <h4>📁 Local folder</h4>
+          <div class="mkt-from-row">
+            <input class="mkt-input" id="mkt-folder" placeholder="D:/path/to/app-folder">
+            <button class="store-btn primary" onclick="mktFromFolder()">Add</button>
+          </div>
+          <div class="mkt-hint">Copied in — your original folder is left untouched.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mkt-section">
+      <div class="mkt-section-title">Official registry <span id="mkt-registry-src" class="mkt-source-chip"></span></div>
+      <div class="mkt-section-sub">Curated community apps.</div>
+      <div id="mkt-registry-grid" class="store-grid"></div>
+    </div>
+
+    <div class="mkt-section">
+      <div class="mkt-section-title">Installed from elsewhere</div>
+      <div class="mkt-section-sub">Apps you brought in via the marketplace. Uninstalling removes the folder.</div>
+      <div id="mkt-installed-grid" class="store-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var STATE = {
+  kind: 'apps',
+  data: { apps: null, plugins: null, skills: null },
+};
+
+// Marketplace install kind (Apps vs Plugins/Connections). A "connection" is a
+// plugin, so it installs through the plugins path — there's no separate kind.
+var MKT = { kind: 'apps' };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+async function loadCatalog(kind) {
+  if (STATE.data[kind]) return STATE.data[kind];
+  var res = await fetch('/store/api/catalog/' + kind);
+  STATE.data[kind] = await res.json();
+  return STATE.data[kind];
+}
+
+async function switchTab(kind) {
+  STATE.kind = kind;
+  document.querySelectorAll('.store-tab').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.kind === kind);
+  });
+  var isMkt = (kind === 'marketplace');
+  document.getElementById('marketplace-panel').style.display = isMkt ? '' : 'none';
+  document.querySelector('.store-toolbar').style.display = isMkt ? 'none' : '';
+  document.getElementById('grid').style.display = isMkt ? 'none' : '';
+  if (isMkt) {
+    await loadMarketplace();
+    return;
+  }
+  document.getElementById('filter-cat').style.display = (kind === 'skills') ? 'none' : '';
+  await render();
+}
+
+async function render() {
+  // The Connections tab is a lens over the plugins catalog, filtered to
+  // connector-tagged plugins. Data + actions use the plugins kind; only the
+  // view (tab, count) is "connections".
+  var viewKind = STATE.kind;
+  var dataKind = (viewKind === 'connections') ? 'plugins' : viewKind;
+  var data = await loadCatalog(dataKind);
+  var items = (data && data.items) || [];
+  if (viewKind === 'connections') {
+    items = items.filter(function(i) { return i.connector; });
+  }
+
+  // Populate category dropdown (apps + plugins/connections only)
+  if (dataKind !== 'skills') {
+    var cats = Array.from(new Set(items.map(function(i) { return i.category || 'other'; }))).sort();
+    var sel = document.getElementById('filter-cat');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">All categories</option>' +
+      cats.map(function(c) { return '<option value="' + escAttr(c) + '">' + esc(c) + '</option>'; }).join('');
+    sel.value = cats.indexOf(current) >= 0 ? current : '';
+  }
+
+  // Count badge — show enabled/total (disabled items count as installed but not loaded)
+  setCountBadge(viewKind, items);
+
+  // Filter
+  var q = (document.getElementById('search').value || '').toLowerCase().trim();
+  var cat = document.getElementById('filter-cat').value;
+  var state = document.getElementById('filter-state').value;
+  var filtered = items.filter(function(it) {
+    if (state === 'enabled' && !(it.installed && !it.disabled)) return false;
+    if (state === 'disabled' && !(it.installed && it.disabled)) return false;
+    if (state === 'not-installed' && it.installed) return false;
+    if (state === 'parked' && !it.parked) return false;
+    if (cat && (it.category || 'other') !== cat) return false;
+    if (q) {
+      var blob = (it.id + ' ' + it.name + ' ' + (it.description || '')).toLowerCase();
+      if (blob.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+
+  // Render
+  var grid = document.getElementById('grid');
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="store-empty">No matches.</div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(function(it) { return renderCard(it, dataKind); }).join('');
+}
+
+function renderCard(it, kind) {
+  // Status badge — four states for apps (parked is a special "uninstalled
+  // with code physically moved to _catalog/"), three for plugins, two for
+  // skills (folder-move is their only toggle).
+  var statusClass, statusLabel;
+  if (it.parked) {
+    statusClass = 'parked';
+    statusLabel = '⊟ Parked';
+  } else if (!it.installed) {
+    statusClass = 'uninstalled';
+    statusLabel = 'Not installed';
+  } else if (it.disabled) {
+    statusClass = 'disabled';
+    statusLabel = 'Disabled';
+  } else {
+    statusClass = 'enabled';
+    statusLabel = '✓ Enabled';
+  }
+
+  // Buttons depend on (state, kind, essential)
+  var buttons = [];
+  if (!it.installed) {
+    buttons.push(btn('Install', 'primary', "install('" + kind + "', '" + esc(it.id) + "')"));
+  } else {
+    if (kind !== 'skills') {
+      // Disable / Enable toggle
+      if (it.disabled) {
+        var enableDisabled = it.essential ? ' disabled title="' + escAttr(it.id) + ' is always enabled"' : '';
+        buttons.push(btn('Enable', 'primary', "enable('" + kind + "', '" + esc(it.id) + "')", enableDisabled));
+      } else {
+        var disableDisabled = it.essential ? ' disabled title="' + escAttr(it.id) + ' is essential — cannot disable"' : '';
+        buttons.push(btn('Disable', '', "disable('" + kind + "', '" + esc(it.id) + "')", disableDisabled));
+      }
+    }
+    var uninstallDisabled = it.essential ? ' disabled title="' + escAttr(it.id) + ' is required by EmptyOS"' : '';
+    buttons.push(btn('Uninstall', 'danger', "uninstall('" + kind + "', '" + esc(it.id) + "')", uninstallDisabled));
+  }
+
+  // Leading actions: Open ↗ then ⚙ Configure (unshift in reverse so Open ends first).
+  if (it.settings_url) {
+    buttons.unshift(btn('⚙ Configure', '', "go('" + escAttr(it.settings_url) + "', event)"));
+  }
+  if (it.open_url) {
+    buttons.unshift(btn('Open ↗', 'open', "go('" + escAttr(it.open_url) + "', event)"));
+  }
+
+  var meta = [];
+  if (it.category && kind !== 'skills') meta.push('<span class="store-card-badge cat">' + esc(it.category) + '</span>');
+  if (it.essential) meta.push('<span class="store-card-badge essential">essential</span>');
+  if (it.version) meta.push('<span class="store-card-badge">v' + esc(it.version) + '</span>');
+  if (it.private) meta.push('<span class="store-card-badge">private</span>');
+
+  // Feature chips — what the app actually does, at a glance.
+  var tags = [];
+  (it.requires_capabilities || []).forEach(function(c) { tags.push('<span class="store-cap">' + esc(c) + '</span>'); });
+  (it.provides_capabilities || []).forEach(function(c) { tags.push('<span class="store-cap feat">+' + esc(c) + '</span>'); });
+  if (it.has_hub_panel) tags.push('<span class="store-cap feat">📊 hub</span>');
+  (it.cli_commands || []).forEach(function(c) { tags.push('<span class="store-cap">⌘ ' + esc(c) + '</span>'); });
+  (it.dimensions || []).forEach(function(d) { tags.push('<span class="store-cap dim">' + esc(d) + '</span>'); });
+
+  var deps = '';
+  if (it.requires_apps && it.requires_apps.length) {
+    deps += '<div class="store-deps">Requires: <strong>' + it.requires_apps.map(esc).join(', ') + '</strong></div>';
+  }
+  if (it.dependents && it.dependents.length) {
+    deps += '<div class="store-deps">Used by: <strong>' + it.dependents.map(esc).join(', ') + '</strong></div>';
+  }
+  if (it.provides_capabilities && it.provides_capabilities.length) {
+    deps += '<div class="store-deps">Provides: <strong>' + it.provides_capabilities.map(esc).join(', ') + '</strong></div>';
+  }
+
+  var openable = !!it.open_url;
+  var cardAttrs = openable
+    ? ' class="store-card openable" onclick="cardOpen(event, \'' + escAttr(it.open_url) + '\')" title="Open ' + escAttr(it.name) + '"'
+    : ' class="store-card"';
+
+  return [
+    '<div', cardAttrs, '>',
+      '<div class="store-card-head">',
+        '<div>',
+          '<div class="store-card-title">', esc(it.name), '</div>',
+          '<div class="store-card-id">', esc(it.id), '</div>',
+        '</div>',
+        '<div class="store-card-head-right">',
+          '<button class="store-info-btn" title="Details" onclick="showDetails(\'', kind, '\', \'', escAttr(it.id), '\', event)">ⓘ</button>',
+          '<span class="store-status ', statusClass, '">', statusLabel, '</span>',
+        '</div>',
+      '</div>',
+      '<div class="store-card-desc">', esc(it.description || '(no description)'), '</div>',
+      (it.tagline ? '<div class="store-card-tagline">“' + esc(it.tagline) + '”</div>' : ''),
+      (tags.length ? '<div class="store-card-tags">' + tags.join('') + '</div>' : ''),
+      (meta.length ? '<div class="store-card-meta">' + meta.join('') + '</div>' : ''),
+      deps,
+      '<div class="store-card-actions">', buttons.join(''), '</div>',
+    '</div>'
+  ].join('');
+}
+
+// Navigate to an app. `go` is the button handler (stops the card-click too);
+// `cardOpen` is the whole-card handler (ignores clicks on the action buttons).
+function go(url, event) {
+  if (event) event.stopPropagation();
+  if (url) window.location.href = url;
+}
+function cardOpen(event, url) {
+  if (event && event.target) {
+    if (event.target.closest('.store-card-actions')) return;
+    if (event.target.closest('.store-info-btn')) return;
+  }
+  if (url) window.location.href = url;
+}
+
+// ⓘ Details — a read-only modal built from the catalog item already in memory.
+function showDetails(kind, id, event) {
+  if (event) event.stopPropagation();
+  var data = STATE.data[kind];
+  var it = ((data && data.items) || []).filter(function(x) { return x.id === id; })[0];
+  if (!it) return;
+  function row(label, val) {
+    if (!val || (val.join && !val.length)) return '';
+    var v = val.join ? val.map(esc).join(', ') : esc(val);
+    return '<dt>' + esc(label) + '</dt><dd>' + v + '</dd>';
+  }
+  var rows = [
+    row('What', it.description),
+    row('Category', it.category),
+    row('Version', it.version ? 'v' + it.version : ''),
+    row('Uses', it.requires_capabilities),
+    row('Provides', it.provides_capabilities),
+    row('Needs apps', it.requires_apps),
+    row('Used by', it.dependents),
+    row('CLI', (it.cli_commands || []).map(function(c){ return 'eos ' + c; })),
+    row('Web', it.web_prefix),
+    row('Emits', it.emits),
+    row('Wellbeing', it.dimensions),
+    row('Hub panel', it.has_hub_panel ? 'yes' : ''),
+    row('Configurable', it.has_settings ? 'yes' : ''),
+  ].join('');
+  var body = '<dl class="mkt-review-grid">' + rows + '</dl>';
+  var actions = [];
+  if (it.open_url) actions.push('<a class="store-btn open" href="' + escAttr(it.open_url) + '">Open ↗</a>');
+  if (it.settings_url) actions.push('<a class="store-btn" href="' + escAttr(it.settings_url) + '">⚙ Configure</a>');
+  if (actions.length) body += '<div class="store-card-actions" style="margin-top:14px">' + actions.join('') + '</div>';
+  EOS_UI.modal({ title: esc(it.name) + '  ·  ' + esc(it.id), body: body, width: '520px' });
+}
+
+function btn(label, klass, handler, extraAttrs) {
+  return '<button class="store-btn ' + klass + '"' + (extraAttrs || '') + ' onclick="' + handler + '">' + label + '</button>';
+}
+
+function setCountBadge(viewKind, items) {
+  var enabled = items.filter(function(i) { return i.installed && !i.disabled; }).length;
+  var el = document.getElementById('count-' + viewKind);
+  if (el) el.textContent = enabled + '/' + items.length;
+}
+
+async function install(kind, id, installDeps) {
+  var body = installDeps ? { install_deps: true } : {};
+  var res = await fetch('/store/api/install/' + kind + '/' + encodeURIComponent(id), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  var j = await res.json();
+  if (j.error) {
+    EOS_UI.toast(j.error, 'error');
+    return;
+  }
+  if (j.needs_confirm && j.missing_deps && j.missing_deps.length) {
+    var ok = await EOS_UI.confirm({
+      title: 'Install dependencies?',
+      body: '<p>Installing <strong>' + esc(id) + '</strong> requires:</p><p><strong>' + j.missing_deps.map(esc).join(', ') + '</strong></p><p>Install all?</p>',
+      action: 'Install all',
+      danger: false,
+    });
+    if (!ok) return;
+    return install(kind, id, true);
+  }
+  STATE.data[kind] = null;  // invalidate cache
+  await render();
+  EOS_UI.toast(j.message || (id + ' installed'), 'success');
+  if (j.restart_required) markRestartRequired();
+}
+
+async function uninstall(kind, id, force) {
+  var body = force ? { force: true } : {};
+  var res = await fetch('/store/api/uninstall/' + kind + '/' + encodeURIComponent(id), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  var j = await res.json();
+  if (j.error) {
+    EOS_UI.toast(j.error, 'error');
+    return;
+  }
+  if (j.needs_confirm && j.dependents_broken && j.dependents_broken.length) {
+    var ok = await EOS_UI.confirm({
+      title: 'Uninstall anyway?',
+      body: '<p>Uninstalling <strong>' + esc(id) + '</strong> will break:</p><p><strong>' + j.dependents_broken.map(esc).join(', ') + '</strong></p>',
+      action: 'Uninstall anyway',
+      danger: true,
+    });
+    if (!ok) return;
+    return uninstall(kind, id, true);
+  }
+  STATE.data[kind] = null;
+  await render();
+  EOS_UI.toast(j.message || (id + ' uninstalled'), 'success');
+  if (j.restart_required) markRestartRequired();
+}
+
+async function disable(kind, id) {
+  var res = await fetch('/store/api/disable/' + kind + '/' + encodeURIComponent(id), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  var j = await res.json();
+  if (j.error) {
+    EOS_UI.toast(j.error, 'error');
+    return;
+  }
+  STATE.data[kind] = null;
+  await render();
+  EOS_UI.toast(j.message || (id + ' disabled'), 'success');
+  if (j.restart_required) markRestartRequired();
+}
+
+async function enable(kind, id) {
+  var res = await fetch('/store/api/enable/' + kind + '/' + encodeURIComponent(id), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  var j = await res.json();
+  if (j.error) {
+    EOS_UI.toast(j.error, 'error');
+    return;
+  }
+  STATE.data[kind] = null;
+  await render();
+  EOS_UI.toast(j.message || (id + ' enabled'), 'success');
+  if (j.restart_required) markRestartRequired();
+}
+
+function markRestartRequired() {
+  document.getElementById('restart-banner').classList.add('on');
+}
+
+async function checkRestart() {
+  var res = await fetch('/store/api/restart-required');
+  var j = await res.json();
+  document.getElementById('restart-banner').classList.toggle('on', !!j.restart_required);
+}
+
+// ── Marketplace ──────────────────────────────────────────────────────────
+
+async function loadMarketplace() {
+  await Promise.all([loadRegistry(), loadInstalledFromElsewhere()]);
+}
+
+// Toggle the marketplace install kind (Apps vs Plugins/Connections). Plugins
+// land flat at plugins/<id>/, so the category selector is hidden for them.
+function mktSwitchKind(kind) {
+  MKT.kind = kind;
+  document.querySelectorAll('.mkt-kind-btn').forEach(function(b) {
+    b.classList.toggle('primary', b.dataset.mktkind === kind);
+  });
+  var isPlugin = (kind === 'plugins');
+  var catRow = document.getElementById('mkt-category-row');
+  if (catRow) catRow.style.display = isPlugin ? 'none' : '';
+  var sub = document.getElementById('mkt-install-sub');
+  if (sub) {
+    sub.innerHTML = isPlugin
+      ? 'Installs a plugin (or connection) flat into <code>plugins/</code>. ⚠ Plugin code runs automatically when the daemon starts — you\'ll review what it declares first. A mandatory static scan runs on every plugin.'
+      : 'Drops the app into a category folder under <code>apps/</code>. You\'ll review what it declares before anything is installed; code only loads on the next restart, and installed code is kept out of git.';
+  }
+  loadMarketplace();
+}
+
+async function loadRegistry() {
+  var grid = document.getElementById('mkt-registry-grid');
+  grid.innerHTML = '<div class="store-empty">Loading registry…</div>';
+  try {
+    var j = await fetch('/store/api/marketplace/registry?kind=' + MKT.kind).then(function(r){ return r.json(); });
+    document.getElementById('mkt-registry-src').textContent = j.source || '';
+    if (j.error) { grid.innerHTML = '<div class="store-empty">' + esc(j.error) + '</div>'; return; }
+    var items = j.items || [];
+    if (!items.length) {
+      grid.innerHTML = '<div class="store-empty">No ' + (MKT.kind === 'plugins' ? 'plugins' : 'apps') + ' in the registry yet.</div>';
+      return;
+    }
+    grid.innerHTML = items.map(renderRegistryCard).join('');
+  } catch (e) {
+    grid.innerHTML = EOS_UI.errorState({message: 'Could not load the registry.', onRetry: 'loadRegistry()'});
+  }
+}
+
+function renderRegistryCard(it) {
+  var meta = [];
+  if (it.category) meta.push('<span class="store-card-badge cat">' + esc(it.category) + '</span>');
+  if (it.version) meta.push('<span class="store-card-badge">v' + esc(it.version) + '</span>');
+  if (it.author) meta.push('<span class="store-card-badge">' + esc(it.author) + '</span>');
+  var caps = (it.capabilities || []).length
+    ? '<div class="store-deps">Uses: <strong>' + it.capabilities.map(esc).join(', ') + '</strong></div>' : '';
+  var action;
+  if (it.installed) {
+    action = btn('Installed', '', '', ' disabled');
+  } else {
+    action = btn('Install', 'primary', "mktPreview({type:'registry',id:'" + esc(it.id) + "'})");
+  }
+  // registry cards install via the active marketplace kind (mktPreview reads MKT.kind)
+  return [
+    '<div class="store-card">',
+      '<div class="store-card-head"><div>',
+        '<div class="store-card-title">', esc(it.name), '</div>',
+        '<div class="store-card-id">', esc(it.id), '</div>',
+      '</div></div>',
+      '<div class="store-card-desc">', esc(it.description || '(no description)'), '</div>',
+      (meta.length ? '<div class="store-card-meta">' + meta.join('') + '</div>' : ''),
+      caps,
+      '<div class="store-card-actions">', action, '</div>',
+    '</div>'
+  ].join('');
+}
+
+async function loadInstalledFromElsewhere() {
+  var grid = document.getElementById('mkt-installed-grid');
+  try {
+    var j = await fetch('/store/api/marketplace/installed?kind=' + MKT.kind).then(function(r){ return r.json(); });
+    var items = j.items || [];
+    if (!items.length) {
+      grid.innerHTML = '<div class="store-empty">Nothing installed from the marketplace yet.</div>';
+      return;
+    }
+    grid.innerHTML = items.map(renderInstalledCard).join('');
+  } catch (e) {
+    grid.innerHTML = EOS_UI.errorState({message: 'Could not load marketplace installs.', onRetry: 'loadInstalledFromElsewhere()'});
+  }
+}
+
+function renderInstalledCard(it) {
+  var icons = { github: '🐙', zip: '🗜', folder: '📁', registry: '🛒' };
+  var src = (icons[it.source_type] || '') + ' ' + esc(it.source_url || it.source_type);
+  var meta = [];
+  if (it.version) meta.push('<span class="store-card-badge">v' + esc(it.version) + '</span>');
+  meta.push('<span class="mkt-source-chip">' + src + '</span>');
+  if (!it.present) meta.push('<span class="store-card-badge">missing files</span>');
+  return [
+    '<div class="store-card">',
+      '<div class="store-card-head"><div>',
+        '<div class="store-card-title">', esc(it.name), '</div>',
+        '<div class="store-card-id">', esc(it.id), '</div>',
+      '</div>',
+      '<span class="store-status ', (it.installed ? 'enabled' : 'uninstalled'), '">',
+        (it.installed ? '✓ Installed' : 'Not loaded'), '</span>',
+      '</div>',
+      '<div class="store-card-meta">', meta.join(''), '</div>',
+      '<div class="store-card-actions">',
+        btn('Uninstall', 'danger', "mktUninstall('" + esc(it.id) + "')"),
+      '</div>',
+    '</div>'
+  ].join('');
+}
+
+function mktCategory() {
+  var el = document.getElementById('mkt-category');
+  return el ? el.value : 'extension/others';
+}
+
+// Install-from button handlers
+function mktFromGithub() {
+  var url = (document.getElementById('mkt-gh').value || '').trim();
+  if (!url) { EOS_UI.toast('Enter a GitHub URL', 'error'); return; }
+  mktPreview({ type: 'github', url: url });
+}
+function mktFromFolder() {
+  var path = (document.getElementById('mkt-folder').value || '').trim();
+  if (!path) { EOS_UI.toast('Enter a folder path', 'error'); return; }
+  mktPreview({ type: 'folder', path: path });
+}
+async function mktFromZip() {
+  var input = document.getElementById('mkt-zip');
+  if (!input.files || !input.files.length) { EOS_UI.toast('Choose a .zip file', 'error'); return; }
+  var fd = new FormData();
+  fd.append('file', input.files[0]);
+  fd.append('category', mktCategory());
+  fd.append('kind', MKT.kind);
+  EOS_UI.toast('Uploading…', 'info');
+  try {
+    var j = await fetch('/store/api/marketplace/upload', { method: 'POST', body: fd })
+      .then(function(r){ return r.json(); });
+    if (j.error) { EOS_UI.toast(j.error, 'error'); return; }
+    mktShowReviewGate(j.summary, j.token);
+  } catch (e) {
+    EOS_UI.toast('Upload failed', 'error');
+  }
+}
+
+// Resolve a source → review gate
+async function mktPreview(source) {
+  EOS_UI.toast('Fetching…', 'info');
+  try {
+    var j = await fetch('/store/api/marketplace/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: source, category: mktCategory(), kind: MKT.kind }),
+    }).then(function(r){ return r.json(); });
+    if (j.error) { EOS_UI.toast(j.error, 'error'); return; }
+    mktShowReviewGate(j.summary, j.token);
+  } catch (e) {
+    EOS_UI.toast('Fetch failed', 'error');
+  }
+}
+
+// The trust gate: show what the item declares, confirm before install.
+function mktShowReviewGate(s, token) {
+  s = s || {};
+  var isPlugin = (s.kind === 'plugins') || !!s.load_time_exec;
+  var rows = [];
+  rows.push('<dt>' + (isPlugin ? 'Plugin' : 'App') + '</dt><dd><strong>' + esc(s.name || s.id) + '</strong> <span class="store-card-id">' + esc(s.id) + '</span>' + (s.version ? ' v' + esc(s.version) : '') + '</dd>');
+  if (s.description) rows.push('<dt>What</dt><dd>' + esc(s.description) + '</dd>');
+
+  if (isPlugin) {
+    if ((s.services || []).length) rows.push('<dt>Services</dt><dd><span class="store-card-id">' + s.services.map(esc).join(', ') + '</span></dd>');
+    var pcaps = (s.capabilities_provided || []).map(function(c){ return '<span class="mkt-cap">' + esc(c) + '</span>'; }).join('');
+    if (pcaps) rows.push('<dt>Provides</dt><dd>' + pcaps + '</dd>');
+    if ((s.tags || []).length) rows.push('<dt>Tags</dt><dd><span class="store-card-id">' + s.tags.map(esc).join(', ') + '</span></dd>');
+    if ((s.requires_plugins || []).length) {
+      var missing = s.missing_plugin_deps || [];
+      rows.push('<dt>Needs plugins</dt><dd>' + s.requires_plugins.map(function(d){
+        return missing.indexOf(d) >= 0 ? '<span class="mkt-warn" style="display:inline">' + esc(d) + ' (not installed)</span>' : esc(d);
+      }).join(', ') + '</dd>');
+    }
+  } else {
+    var caps = (s.capabilities || []).map(function(c){ return '<span class="mkt-cap">' + esc(c) + '</span>'; }).join('');
+    rows.push('<dt>Capabilities</dt><dd>' + (caps || '<span class="store-card-id">none declared</span>') + '</dd>');
+    if ((s.requires_apps || []).length) rows.push('<dt>Needs apps</dt><dd>' + s.requires_apps.map(esc).join(', ') + '</dd>');
+    if ((s.routes || []).length) rows.push('<dt>Routes</dt><dd><span class="store-card-id">' + s.routes.map(esc).join(', ') + '</span></dd>');
+    if ((s.emits || []).length) rows.push('<dt>Emits</dt><dd><span class="store-card-id">' + s.emits.map(esc).join(', ') + '</span></dd>');
+  }
+
+  var srcType = (s.source && s.source.type) || '';
+  var srcUrl = (s.source && (s.source.url || s.source.path)) || '';
+  rows.push('<dt>Source</dt><dd>' + esc(srcType) + (srcUrl ? ' — <span class="store-card-id">' + esc(srcUrl) + '</span>' : '') + '</dd>');
+  if (isPlugin) {
+    rows.push('<dt>Installs to</dt><dd><span class="store-card-id">plugins/' + esc(s.id) + '/</span></dd>');
+  } else if (s.category) {
+    rows.push('<dt>Installs to</dt><dd><span class="store-card-id">apps/' + esc(s.category) + '/' + esc(s.id) + '/</span></dd>');
+  }
+
+  var files = (s.files || []);
+  var fileBlock = '<div class="mkt-files">' + files.map(esc).join('<br>') +
+    (s.file_count > files.length ? '<br>… +' + (s.file_count - files.length) + ' more' : '') + '</div>';
+
+  var warn = '';
+  if (isPlugin) {
+    // Plugins execute code at daemon boot — the load-bearing trust warning.
+    warn = '<div class="mkt-warn">⚠ This is a <strong>plugin</strong> — its code runs automatically when the daemon starts and may launch background processes. Only install plugins you fully trust.</div>';
+  } else {
+    var risky = (s.capabilities || []).filter(function(c){ return ['browse','send','write','speak','draw','animate'].indexOf(c) >= 0; });
+    if (risky.length) warn = '<div class="mkt-warn">⚠ This app can use: ' + risky.map(esc).join(', ') + '. Only install code you trust.</div>';
+  }
+
+  // Static risk scan (present only when the store's skill-scan flag is on).
+  var scanBlock = '';
+  if (s.scan && s.scan.error) {
+    scanBlock = '<div class="mkt-section-sub">Static scan: <span class="store-card-id">unavailable — ' + esc(s.scan.error) + '</span></div>';
+  } else if (s.scan) {
+    var findings = s.scan.findings || [];
+    var bandHot = s.scan.score >= 51;
+    var head = 'Static scan: risk ' + s.scan.score + '/100 (' + esc(s.scan.band || 'low') + ') · ' + findings.length + ' finding' + (findings.length === 1 ? '' : 's');
+    var rows2 = findings.slice(0, 8).map(function(f){
+      return '<div class="store-card-id">' + esc(f.severity) + ' · ' + esc(f.name) + ' — ' + esc(f.file) + ':' + f.line + '</div>';
+    }).join('');
+    if (findings.length > 8) rows2 += '<div class="store-card-id">… +' + (findings.length - 8) + ' more</div>';
+    scanBlock = (bandHot ? '<div class="mkt-warn">⚠ ' + head + '. Read the findings before installing.</div>' : '<div class="mkt-section-sub">' + head + '</div>') + rows2;
+  }
+
+  var actionLabel = s.is_update ? 'Update' : 'Install';
+  // Use EOS_UI.modal (renders body as real HTML) — NOT EOS_UI.confirm, which
+  // only takes a plain-text `message` and would discard this whole review card.
+  var body = '<dl class="mkt-review-grid">' + rows.join('') + '</dl>' +
+    '<div class="mkt-section-sub">Files (' + s.file_count + '):</div>' + fileBlock + scanBlock + warn +
+    '<div class="mkt-hint" style="margin:10px 0;">No code runs now — it loads on the next <code>restart.bat</code>' +
+    (s.is_update ? '. <strong>This replaces an existing install of the same id.</strong>' : '.') + '</div>' +
+    '<div class="store-card-actions" style="justify-content:flex-end;">' +
+      '<button class="store-btn" id="mkt-gate-cancel">Cancel</button>' +
+      '<button class="store-btn primary" id="mkt-gate-install">' + actionLabel + '</button>' +
+    '</div>';
+
+  EOS_UI.modal({
+    title: (s.is_update ? 'Update ' : 'Install ') + esc(s.name || s.id) + '?',
+    body: body,
+    width: '560px',
+  });
+  var cancelBtn = document.getElementById('mkt-gate-cancel');
+  var installBtn = document.getElementById('mkt-gate-install');
+  if (cancelBtn) cancelBtn.onclick = function() { EOS_UI.closeModal(); };
+  if (installBtn) installBtn.onclick = function() { EOS_UI.closeModal(); mktCommit(token); };
+}
+
+async function mktCommit(token) {
+  try {
+    var j = await fetch('/store/api/marketplace/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token }),
+    }).then(function(r){ return r.json(); });
+    if (j.error) { EOS_UI.toast(j.error, 'error'); return; }
+    EOS_UI.toast(j.message || 'Installed', 'success');
+    if (j.restart_required) markRestartRequired();
+    // catalog changes after restart; invalidate both (a connection lives in plugins)
+    STATE.data.apps = null;
+    STATE.data.plugins = null;
+    await loadMarketplace();
+  } catch (e) {
+    EOS_UI.toast('Install failed', 'error');
+  }
+}
+
+async function mktUninstall(id) {
+  var folder = (MKT.kind === 'plugins') ? 'plugins/' : 'apps/';
+  var ok = await EOS_UI.confirm({
+    title: 'Uninstall ' + esc(id) + '?',
+    body: '<p>This removes <strong>' + esc(id) + '</strong> from <code>' + folder + '</code> and deletes its files.</p>',
+    action: 'Uninstall',
+    danger: true,
+  });
+  if (!ok) return;
+  var j = await fetch('/store/api/uninstall/' + MKT.kind + '/' + encodeURIComponent(id), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  }).then(function(r){ return r.json(); });
+  if (j.error) { EOS_UI.toast(j.error, 'error'); return; }
+  EOS_UI.toast(j.message || (id + ' uninstalled'), 'success');
+  if (j.restart_required) markRestartRequired();
+  STATE.data[MKT.kind] = null;
+  await loadMarketplace();
+}
+
+// Boot — load all three catalogs in parallel, render apps tab, check restart state.
+(async function() {
+  await Promise.all([loadCatalog('apps'), loadCatalog('plugins'), loadCatalog('skills')]);
+  // Pre-fill every tab's count badge (render only updates the active tab).
+  var pluginItems = ((STATE.data.plugins || {}).items) || [];
+  setCountBadge('apps', ((STATE.data.apps || {}).items) || []);
+  setCountBadge('plugins', pluginItems);
+  setCountBadge('connections', pluginItems.filter(function(i) { return i.connector; }));
+  setCountBadge('skills', ((STATE.data.skills || {}).items) || []);
+  await render();
+  await checkRestart();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+{
+  "_": "Durable human decisions. Re-applied on every regeneration, so judgement survives a corpus update. See build_soundcheck_bank.py.",
+  "approve": [
+    "mp-sub-ae-eh-bad-bed-bad",
+    "mp-sub-ae-eh-batter-better-batter",
+    "mp-sub-ae-eh-bed-bad-bed",
+    "mp-sub-ae-eh-better-batter-better",
+    "mp-sub-ae-eh-hack-heck-hack",
+    "mp-sub-ae-eh-had-head-had",
+    "mp-sub-ae-eh-head-had-head",
+    "mp-sub-ae-eh-heck-hack-heck",
+    "mp-sub-ae-eh-land-lend-land",
+    "mp-sub-ae-eh-lend-land-lend",
+    "mp-sub-ae-eh-tan-ten-tan",
+    "mp-sub-ae-eh-ten-tan-ten",
+    "mp-sub-ah-er-bird-bud-bird",
+    "mp-sub-ah-er-bud-bird-bud",
+    "mp-sub-ah-er-burst-bust-burst",
+    "mp-sub-ah-er-bust-burst-bust",
+    "mp-sub-ah-er-era-error-era",
+    "mp-sub-ah-er-error-era-error",
+    "mp-sub-ah-er-hurt-hut-hurt",
+    "mp-sub-ah-er-hut-hurt-hut",
+    "mp-sub-ah-er-ton-turn-ton",
+    "mp-sub-ah-er-tough-turf-tough",
+    "mp-sub-ah-er-turf-tough-turf",
+    "mp-sub-ah-er-turn-ton-turn",
+    "mp-sub-uh-uw-fool-full-fool",
+    "mp-sub-uh-uw-full-fool-full",
+    "mp-sub-uh-uw-pool-pull-pool",
+    "mp-sub-uh-uw-pools-pulls-pools",
+    "mp-sub-uh-uw-pull-pool-pull",
+    "mp-sub-uh-uw-pulls-pools-pulls"
+  ],
+  "reject": [],
+  "reject_ids": [],
+  "audit_known": [
+    "a:damage",
+    "a:orange",
+    "al:half",
+    "au:cause",
+    "ough:bought",
+    "ough:cough",
+    "augh:caught",
+    "ough:thorough",
+    "ough:borough",
+    "et:buffet",
+    "ei:either",
+    "uoy:buoy"
+  ],
+  "audit_notes": {
+    "au:cause": "cot-caught merger — cmudict transcribes the THOUGHT set as AA. Why sub:AA/AO ships merger_sensitive and off by default.",
+    "a:damage": "crosswalk claims the unstressed vowel is /ɪ/; cmudict says AH0 (schwa). A real content question for the crosswalk, not a generator bug.",
+    "ough:thorough": "cmudict gives ER,OW — the crosswalk's /ʌ/ claim describes a different (British) realisation."
+  },
+  "_review_log": {
+    "2026-08-15": "Hand-reviewed the pending items for the three contrasts the learner's own telemetry ranks worst and that the mechanical bar had left empty or thin (UH/UW, AH/ER, AE/EH). Kept pairs where both words are ordinary vocabulary; rejected proper nouns (Luc, Poole, Beck, Ellie, Kenyan, Penn, Bernie, Silva), abbreviations (rec, sec, sac), and pairs with a second audible difference. ~1,600 items remain unreviewed."
+  }
+}

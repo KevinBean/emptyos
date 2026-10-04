@@ -1,0 +1,27 @@
+[app]
+id = "bench-gesture-1a51fa"
+name = "Gesture Demo (Camera)"
+version = "0.1.0"
+description = "Camera-based gesture control demo (web-only). Detects simple hand poses from live camera and logs gesture events back to the backend."
+dimensions = ["physical", "intellectual"]
+
+[app.entry]
+module = "app"
+class = "BenchGestureApp"
+
+[requires]
+capabilities = []
+apps = []
+
+[provides.cli]
+commands = ["bench-gesture-1a51fa"]
+
+[provides.web]
+prefix = "/bench-gesture-1a51fa"
+
+[provides.events]
+# This app emits events mainly for local debugging/benchmarking.
+emits = ["gesture:bench-detected"]
+subscribes = []
+
+[provides.settings]

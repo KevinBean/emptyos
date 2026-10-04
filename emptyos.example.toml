@@ -1,0 +1,294 @@
+# EmptyOS Configuration
+# Copy to emptyos.toml and edit for your machine.
+#
+# EmptyOS is built on human capabilities: think, read, write, search.
+# Without any tools configured, it asks YOU to fulfill these.
+# Add providers to automate what you want automated.
+
+[os]
+name = "My EmptyOS"
+# home = "/hub/"  # Where / lands. Default: /portal/ (or /hub/ without portal). An app route or Space, e.g. /workspaces/#engineering
+data_dir = "./data"
+log_level = "INFO"
+
+# Notes directory — any folder of text/markdown files.
+# Works with any markdown vault, plain folders, anything.
+# Leave empty if you don't use a notes system.
+[notes]
+path = ""
+watch = false
+
+# --- Network / deployment mode ---
+# EmptyOS runs the same code locally or on a server. The `mode` picks the
+# trust level of the network it's accessible on.
+#
+#   "local"   — only this machine (127.0.0.1, no auth). Default.
+#   "private" — your own trusted network: Tailscale, WireGuard, LAN, VPN.
+#               Binds 0.0.0.0; the network layer is the gate.
+#   "public"  — internet-exposed (VPS, Docker, cloud). auth_token REQUIRED.
+#
+# `host`, `auth_token`, `password` below are overrides — usually you just pick a mode.
+# Either credential gates the daemon equally (see docs/AUTH.md):
+#   auth_token — machine bearer for CLI / API / deep links
+#   password   — human-typeable, used by the browser login form
+# At least one is required in "private" / "public" modes.
+[network]
+mode = "local"
+port = 9000
+# host = "127.0.0.1"         # override the mode default
+# auth_token = ""            # 32+ random chars, e.g. `python -c "import secrets;print(secrets.token_urlsafe(32))"`
+# password = ""              # human-typeable login (browser form)
+
+# --- Demo mode (orthogonal to network mode) ---
+# When enabled: shows demo banner, disables GPU capabilities, enables BYOK
+# in settings. Can layer on top of "public" (hosted demo) or "local" (local
+# test of the demo UX).
+[demo]
+enabled = false
+# reset_on_restart = false   # ephemeral vault for hosted demos
+# seed_on_boot = false       # on first boot, run every app's demo/seed.py (idempotent)
+
+# --- Cloud Consent ---
+# Controls what happens when a capability falls back to a cloud provider
+# (OpenAI, Anthropic, or any non-localhost/private-IP host).
+#   "ask"    — prompt on first use per session (default)
+#   "always" — proceed without prompting
+#   "never"  — skip cloud providers entirely
+[cloud]
+consent = "ask"
+
+# --- Retention (optional) ---
+# Set any value to 0 to disable that sweep.
+# [retention]
+# events_days = 30             # persisted event-bus history
+# syslog_rows = 20000          # most recent structured log rows
+# runs_days = 90               # dated data/apps/*/runs/ directories only
+
+# --- Capabilities ---
+# Each capability tries providers in order. "human" is always the final fallback.
+# You only need to configure what you want to automate.
+
+# Think: answer questions, summarize, generate text.
+# Without providers, EmptyOS asks you. With an LLM, it answers automatically.
+#
+# [capabilities.think]
+# providers = ["ollama"]   # try these in order; human is always last
+# timeout = 30             # seconds per provider before fallback
+#
+# [capabilities.think.ollama]
+# host = "http://localhost:11434"
+# model = "llama3.1"
+#
+# [capabilities.think.openai]
+# host = "https://api.openai.com"  # or any OpenAI-compatible endpoint
+# model = "gpt-5-mini"
+# api_key_env = "OPENAI_API_KEY"
+#
+# [capabilities.think.claude]      # requires a Claude Code Max subscription
+# max_tokens = 4096
+#
+# [capabilities.think.lmstudio]
+# host = "http://localhost:1234"
+# model = "default"
+#
+# --- Domain routing (optional) — different models for different task types ---
+# [capabilities.think.domains.code]
+# providers = ["openai"]
+# model = "gpt-5"
+#
+# [capabilities.think.domains.reason]
+# providers = ["claude"]
+#
+# --- Vision (local-first) — used by the `operate` app's distiller/executor ---
+# Pull a vision model first:  ollama pull qwen2.5vl:7b
+# [capabilities.think.domains.vision]
+# providers = ["ollama"]
+# model = "qwen2.5vl:7b"
+
+# Read/Write: filesystem providers are always available if [notes.path] is set.
+# Search: grep is always available. Add more providers for smarter search.
+#
+# The "files" domain (opt-in via `self.search("budget*.xlsx", domain="files")`)
+# does instant filename/path discovery via each OS's native file index:
+#   Windows → Everything (es.exe)       — install voidtools CLI tools
+#   macOS   → mdfind (Spotlight)        — built in, no install
+#   Linux   → fd                        — `apt install fd-find` (fd/fdfind)
+# Filename/path only (content searches fall through to grep). Results are scoped
+# to allowed_roots at both the query and post-filter level, so a whole-machine
+# index never leaks filenames outside your vault/repo; with no roots it refuses
+# to search.
+# [capabilities.search.files]
+# enabled = true
+# allowed_roots = ["notes", "repo"]        # tokens (notes/vault, repo) or paths; default [vault, repo]
+# es_path = "C:/Tools/Everything/es.exe"   # Windows: es.exe location (optional — else PATH)
+# fd_path = "/usr/bin/fdfind"              # Linux: fd/fdfind location (optional — else PATH)
+# # macOS mdfind is always at /usr/bin/mdfind — no path key needed.
+
+# Vault semantic search embeddings (used by the /search app's mode=embed +
+# BaseApp.embed_text/embedding_index). Dark by default: with no [embeddings]
+# table, it uses OpenAI text-embedding-3-small (cloud) — unchanged behaviour.
+# For a local, private, offline embedder, point it at ollama instead:
+#   ollama pull bge-m3             # 1024-dim, strong 中英 multilingual (recommended)
+#   ollama pull nomic-embed-text   # 768-dim, lighter/faster, English-leaning
+# [embeddings]
+# provider = "ollama"          # "openai" (default) | "ollama"
+# model = "bge-m3"             # dim auto-derived; set `dim` for an unlisted model
+# base_url = "http://127.0.0.1:11434/v1"
+
+# --- Legacy format (also works) ---
+# [llm]
+# default_provider = "ollama"
+# [llm.providers.ollama]
+# host = "http://localhost:11434"
+# model = "llama3.1"
+
+[services.gpu]
+comfyui = ""
+tts = ""
+
+[scheduler]
+enabled = true
+timezone = "UTC"
+
+# --- Plugins ---
+# All plugins are optional. If a service isn't reachable, the plugin degrades
+# gracefully (no crash, no error). Set autostart = true + launcher path to
+# include in the system boot sequence (eos boot --generate).
+#
+# Disable a single plugin: add `enabled = false` under its section — a hard
+# override that wins over the /store gate. For permanent retirement across
+# every machine, list the id in plugins/BLACKLIST.toml instead.
+#
+# [plugins]
+# path = "./plugins"
+#
+# [plugins.ollama]
+# host = "http://localhost:11434"
+# model = "llama3.1"
+#
+# [plugins.comfyui]
+# host = "http://localhost:8188"      # or remote: http://gpu-server:8188
+# launcher = "C:/path/to/ComfyUI/run_nvidia_gpu.bat"
+# autostart = true
+#
+# MV post / lip-sync toolkit (scripts/mv/). Every key is optional: comfy_root is
+# derived from plugins.comfyui.launcher's folder, comfy_python and models_dir
+# from comfy_root, fonts from the OS font folder. CLI flags override all of it.
+# [mv_tools]
+# comfy_root = "C:/path/to/ComfyUI_windows_portable"
+# comfy_python = "C:/path/to/ComfyUI_windows_portable/python_embeded/python.exe"
+# models_dir = "C:/path/to/ComfyUI_windows_portable/ComfyUI/models"
+# comfy_host = "http://127.0.0.1:8188"   # default: plugins.comfyui.host
+# [mv_tools.fonts]
+# zh_sans = "C:/Windows/Fonts/msjh.ttc"
+# zh_serif = "C:/Windows/Fonts/NotoSerifSC-VF.ttf"
+# [mv_tools.infinitetalk]    # lip-sync model files exactly as ComfyUI lists them:
+#                            # its OS separator, so '\' on Windows (literal '...' strings)
+# base = 'wanvideo\wan2.1-i2v-14b-480p-Q4_K_S.gguf'
+# talk = 'wanvideo\InfiniteTalk\Wan2_1-InfiniteTalk_Single_Q8.gguf'
+#
+# [plugins.voice-api]
+# host = "http://localhost:8601"      # F5-TTS + Whisper service
+#
+# [plugins.applio]
+# host = "http://localhost:6969"      # AI voice conversion
+#
+# [plugins.blender]
+# host = "http://localhost:8400"      # Blender addon server (3D rendering)
+# executable = ""                     # auto-detected per platform
+# output_dir = "./data/blender-output"
+#
+# [plugins.telegram]
+# bot_token = "YOUR_BOT_TOKEN"        # from @BotFather — two-way notifications
+# chat_id = "YOUR_CHAT_ID"            # your Telegram user ID
+#
+# [plugins.health]
+# watchdog_interval = 60              # seconds between health checks
+# ollama_host = ""                    # auto-reads from plugins.ollama.host
+# comfyui_host = ""                   # auto-reads from plugins.comfyui.host
+#
+# [plugins.webcam]
+# device = 0          # camera index
+# width = 1280
+# height = 720
+# warmup_frames = 3   # skip initial frames while sensor auto-exposes
+#
+# [plugins.screen-capture]
+# # Read-only screen grab + input recorder backing the `operate` app's
+# # demonstration recorder. 100% local, no host. Needs: pip install pynput mss
+# # (pynput = input recording; mss = fast grabs, PowerShell is the zero-dep
+# # fallback on Windows). No config keys.
+#
+# [plugins.dogfood-demo]
+# enabled = true       # spawn a sidecar EmptyOS daemon on :9001 for sharable
+#                      # surfaces (ppt embeds, screenshots) so demos don't leak
+#                      # personal data. First-time setup:
+#                      #   cp dogfood/emptyos.toml.example dogfood/emptyos.toml
+#                      # Restart the personal daemon — the sidecar auto-starts.
+# autostart = true     # spawn on personal daemon boot (default)
+# port = 9001
+# config_path = "./dogfood/emptyos.toml"
+# vault_path = "./dogfood/vault"
+#
+# [plugins.playwright]
+# # Headless browser automation — provides the `browse` capability.
+# # One-time install:  pip install playwright && playwright install chromium
+# headless = true        # set false to watch the browser (debug only)
+# timeout_s = 30         # per-action timeout
+# viewport_width = 1280
+# viewport_height = 800
+
+# --- System Startup ---
+# Non-plugin programs to launch on boot (via eos boot --generate).
+# [startup]
+# obsidian = "C:/path/to/Obsidian.exe"
+
+[apps]
+path = "./apps"
+autostart = []              # app IDs to start on boot (empty = start all)
+
+# Per-app AI settings (runtime, no restart needed):
+#   eos settings set think.app.shadowing "ollama"
+#   eos settings set think.app.shadowing.providers "ollama,openai"
+#   eos settings set think.app.shadowing.timeout 60
+
+# ── Operate app: learn-by-demonstration software operation (dark-default) ──
+# All off by default. Prefer the Settings gear icon toggles (live, no restart).
+# [apps.operate]
+# feature.enabled = false            # master switch — record + browse demos
+# feature.executor.enabled = false   # live mouse/keyboard actuation (Phase 4)
+
+# ── Store app: marketplace registry ──
+# The Store's Marketplace tab browses an "official registry" — a list of
+# installable community apps. Default (when unset/empty) is the in-repo
+# registry/index.json that ships with this clone. Point registry_url at a
+# remote raw JSON to track a live registry, or at your own fork's index.
+#
+# [apps.store]
+# registry_url = "https://raw.githubusercontent.com/<owner>/<repo>/main/registry/index.json"
+
+# ── Publish app: optional standalone chatbot service integration ──
+# The publish app can proxy admin calls to a standalone chatbot service
+# (services/chatbot/) if you run one. Leave unset to skip this entirely.
+#
+# [apps.publish.chatbot]
+# endpoint    = ""    # e.g. "https://chat.yourdomain.example" — default
+#                     # endpoint when a site doesn't override it in its own
+#                     # site profile (sites.json)
+# admin_token = ""    # MUST match CHATBOT_ADMIN_TOKEN set on the chat
+#                     # service host; without it, Q&A admin endpoints are
+#                     # disabled in the UI
+
+# ── Hub: per-contributor budget for the panel debug listing ──
+# `/hub/debug/panels` hydrates EVERY lazy panel at once, so it takes as long as
+# the slowest contributor — one stuck LLM-backed panel used to hold the whole
+# listing. Each contributor gets this budget; a panel past it is still listed
+# but marked "timed out" (never silently removed), and its unbudgeted per-panel
+# reload will hydrate it. Set 0 to disable the budget and wait for every panel
+# however long it takes.
+# The home board itself (`/hub/`) and single-panel refreshes are NOT budgeted,
+# so a slow panel asked for on its own still finishes.
+# Any other app hosting panel contributions reads the same key.
+#
+# [apps.hub]
+# panel_timeout_s = 12      # seconds per contributor; 0 = unbounded

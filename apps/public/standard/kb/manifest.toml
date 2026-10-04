@@ -1,0 +1,188 @@
+[app]
+id = "kb"
+icon_id = "kb"
+store_category = "productivity"
+name = "Knowledge Base"
+version = "0.2.0"
+description = "Domain-general knowledge base — concepts, formulas, standards, cases, lessons, and prescriptive guidelines"
+dimensions = ["intellectual"]
+# `guideline` namespaces the verbs absorbed from the retired guideline app.
+aliases = ["guideline"]
+user_intent = [
+    "I want to save what I learned",
+    "build up knowledge on a topic",
+    "look up a concept I noted before",
+    "我学到的东西放哪里",
+    "save a formula or standard for later",
+    "find which paper I cited that from",
+]
+
+[app.entry]
+module = "app"
+class = "KBApp"
+
+[requires]
+# `draw` is for the flipbook image-mode generator (ComfyUI / openai-image).
+# SVG-mode flipbook only needs `think`; image-mode adds the rendering hop.
+capabilities = ["read", "write", "think", "draw", "search"]
+apps = []
+services = []
+
+[provides.cli]
+commands = ["kb", "guideline"]
+
+[provides.web]
+prefix = "/kb"
+
+[provides.events]
+emits = [
+    "kb:viewed",
+    "kb:note_created",
+    "kb:note_upserted",
+    "kb:doc_created",
+    "kb:doc_updated",
+    "kb:doc_deleted",
+    "kb:flipbook_visited",
+    "kb:implemented_in_updated",
+    "kb:reference_checked",
+    "kb:embed_added",
+    "kb:figure_attached",
+    "note:embed_added",
+    "kb:standard_atomized",
+    "kb:source_ingested",
+    "guideline:added",
+    "guideline:updated",
+    "guideline:deprecated",
+    "guideline:removed",
+    "guideline:clause_added",
+    "guideline:clause_updated",
+    "guideline:clause_removed",
+]
+
+# Events that carry no cross-app meaning — routine CRUD on content that already
+# lives in the vault, plus the analytics-shape visit signal. `topology.py` reads
+# this to keep them off the dependency graph, so the graph shows the edges that
+# represent real coupling rather than every write.
+#
+# This list sat inside the last [[provides.verbs]] block until 2026-07-25, which
+# parsed as `provides.verbs[-1].internal` — a key nothing reads. Keep it under
+# [provides.events]; a stray table header above it silently disables it again.
+internal = [
+    "kb:note_created",
+    "kb:note_upserted",
+    "kb:doc_created",
+    "kb:doc_deleted",
+    "kb:doc_updated",
+    "kb:flipbook_visited",
+    "kb:implemented_in_updated",
+    "kb:reference_checked",
+    "kb:embed_added",
+    "note:embed_added",
+    "kb:standard_atomized",
+    "guideline:added",
+    "guideline:clause_added",
+    "guideline:clause_removed",
+    "guideline:clause_updated",
+    "guideline:deprecated",
+    "guideline:removed",
+    "guideline:updated",
+]
+
+# ── Verb registry — voice entry point for "what do I know about X".
+# Read-only over the KB corpus; deep-links to the closest note.
+
+[[provides.verbs]]
+verb = "kb.search"
+method = "voice_kb_search"
+summary = "Search the knowledge base and speak the closest note"
+args = { query = "string" }
+eligibility = "gated"
+surfaces = ["voice"]
+voice = { example = "what do I know about cable derating", description = "Search the user's own knowledge base (concepts, formulas, standards, cases, lessons) by topic and speak the closest note's gist. Use for 'what do I know about X' / 'do I have notes on X' — NOT for current events (that's the research verb).", always = true, card = "task-list" }
+
+# Guideline verbs (absorbed 2026-07-10; namespaced by the `guideline` alias).
+# Both autopilot-eligible, voice-only; method IS the voice handler.
+[[provides.verbs]]
+verb = "guideline.show"
+method = "voice_guideline_show"
+summary = "List active guidelines in a category"
+args = { category = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "show me guidelines for testing", description = "List active guidelines in a category", card = "task-list" }
+
+[[provides.verbs]]
+verb = "guideline.random"
+method = "voice_guideline_random"
+summary = "Speak a random active guideline"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "remind me of a guideline", description = "Speak a random active guideline" }
+
+# 4D timeline — KB notes are entities with a past (revisions, citations) and a
+# future (review anchors); detail views set data-entity-path → auto 📅 button.
+[provides.timeline]
+entity_source = "note_path"
+
+[provides.settings]
+schema = [
+    {key = "kb.guideline_default_category", label = "Default category for new guidelines", type = "text", default = "general"},
+    {key = "kb.guideline_hub_panel_enabled", label = "Show daily guideline on hub", type = "boolean", default = true},
+    {key = "kb.stale_days", label = "Stale-note threshold (days)", type = "number", default = 365, hint = "Flag a non-reference note as stale in Health if untouched (updated/created) for this many days."},
+]
+
+# ✨ AI field-suggest for guideline clause bodies (see .claude/rules/field-suggest.md)
+[[provides.field_suggest]]
+field = "body"
+instruction = "Propose crisp guidelines or principles riffing on the lessons and patterns in the user's knowledge base — each a single actionable 'when X, do Y' statement."
+vault_tags = ["lesson"]
+title_only = true
+count = 5
+mode = "fill"
+
+[[contributes.boards.preset]]
+id = "kb-boards"
+method = "board_presets"
+
+[[contributes.hub.panel]]
+id = "kb-summary"
+method = "panel_summary"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 220
+
+[[contributes.hub.panel]]
+id = "guideline-daily"
+method = "panel_guideline_daily"
+renderer = "entity-card"
+group = ""
+priority = 320
+title = "Guideline of the day"
+lazy = false
+
+# Action template: summarize N selected KB notes into a single summary.
+# Items are note slugs; output is markdown (bullet list or single paragraph).
+# (Slot moved from the retired `actions` app to `workflows`, 2026-07-10.)
+[[contributes.workflows.template]]
+id = "summarize-notes"
+method = "action_summarize_notes"
+label = "Summarize selected"
+icon = "📝"
+kind = "llm"
+description = "Render N notes into a single summary (bullet or paragraph)."
+is_risky = false
+args_schema = "[{\"key\":\"style\",\"label\":\"Style\",\"type\":\"select\",\"options\":[\"bullet\",\"paragraph\"],\"default\":\"bullet\"}]"
+
+[[contributes.work.deliverable]]
+id = "kb-notes"
+label = "KB notes"
+icon = "📝"
+description = "A durable, cross-linkable concept note filed into the knowledge base — best when the outcome is knowledge to keep and look up later, not a one-off document."
+method = "deliver_work_notes"
+
+[provides.welcome]
+title = "Knowledge Base"
+tagline = "Formulas anchored to worked cases; clauses traced to the standards they cite."
+href = "/kb/"
+order = 50

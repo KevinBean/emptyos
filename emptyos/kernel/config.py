@@ -1,0 +1,257 @@
+"""Config loader — reads emptyos.toml with env var overrides."""
+
+from __future__ import annotations
+
+import os
+import tomllib
+from pathlib import Path
+from typing import Any
+
+
+class Config:
+    """TOML-based config with dot-path access and env override."""
+
+    def __init__(self, path: str = "emptyos.toml"):
+        self.path = Path(path)
+        try:
+            with open(self.path, "rb") as f:
+                self._data = tomllib.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Config not found: {self.path}\n"
+                f"Run 'eos init' or copy emptyos.example.toml to emptyos.toml."
+            ) from None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a config value by dot-path. e.g. config.get('llm.default_provider')
+
+        Checks EOS_SECTION_KEY env var first (e.g. EOS_LLM_DEFAULT_PROVIDER).
+        """
+        # Check env override
+        env_key = "EOS_" + key.replace(".", "_").upper()
+        env_val = os.environ.get(env_key)
+        if env_val is not None:
+            return env_val
+
+        # Walk the nested dict
+        parts = key.split(".")
+        node = self._data
+        for part in parts:
+            if isinstance(node, dict) and part in node:
+                node = node[part]
+            else:
+                return default
+        return node
+
+    def get_section(self, key: str) -> dict:
+        """Get a config section as a dict."""
+        val = self.get(key, {})
+        return val if isinstance(val, dict) else {}
+
+    @property
+    def data_dir(self) -> Path:
+        """Machine-state root. Always absolute, for the same reason
+        ``notes_path`` is: a relative value silently changes meaning once it is
+        passed to a helper that resolves relative paths against the *vault*.
+
+        ``BaseApp.render_pdf`` does exactly that, so
+        ``render_pdf(str(self.data_dir / "exports" / name))`` wrote the PDF into
+        ``<vault>/data/apps/<id>/exports/`` while ``serve_data_file`` looked for
+        it under the repo — the export 404'd in the browser AND littered the
+        user's vault, with no error either side. Resolving here fixes the whole
+        class rather than that one call site.
+
+        A relative value is anchored to the **config file's directory**, not the
+        process CWD — the convention ``emptyos/cli/sandbox_target.py`` already
+        applied by hand and the one CLAUDE.md documents (``config.path.parent``
+        is the project dir). That also makes the state dir independent of where
+        a script was launched from. Nothing moves in practice: the daemon's
+        ``emptyos.toml`` sits at the repo root beside ``./data``, and sandbox
+        members configure an absolute ``os.data_dir``.
+        """
+        p = Path(self.get("os.data_dir", "./data"))
+        return p if p.is_absolute() else (self.path.resolve().parent / p).resolve()
+
+    @property
+    def notes_path(self) -> Path | None:
+        """Path to the notes directory (markdown vault). Always absolute so
+        callers that build paths off it don't accidentally double-prefix when
+        the value is later passed back through `FilesystemReadProvider` /
+        `FilesystemWriteProvider` (whose `base_path` is also vault-rooted)."""
+        p = self.get("notes.path")
+        if not p:
+            return None
+        path = Path(p)
+        return path if path.is_absolute() else path.resolve()
+
+    # --- Network / deployment mode -------------------------------------------
+    # Modes describe the trust level of the network EmptyOS is accessible on.
+    # They are independent of demo mode (see demo_enabled).
+    #
+    #   "local"   — 127.0.0.1 only, no auth. Single machine.
+    #   "private" — 0.0.0.0, auth_token REQUIRED by default. Tailscale / LAN /
+    #               WireGuard — the network layer is the *outer* gate; the
+    #               token is the *inner* gate. Override with
+    #               `network.auth_required = false` if you genuinely want
+    #               token-less LAN access (you're accepting full data exposure
+    #               to anyone on the same subnet).
+    #   "public"  — 0.0.0.0, auth_token REQUIRED. Internet-exposed / VPS.
+    #
+    # Raw network.host / network.auth_token still work as overrides for power users.
+
+    _MODE_DEFAULTS = {
+        "local": {"host": "127.0.0.1", "auth_required": False},
+        # Private was historically auth-off; defaults flipped on 2026-04-27
+        # following a security review — "private" implied trust we never
+        # actually enforced. Set network.auth_required = false to opt back out.
+        "private": {"host": "0.0.0.0", "auth_required": True},
+        "public": {"host": "0.0.0.0", "auth_required": True},
+    }
+
+    @property
+    def network_mode(self) -> str:
+        mode = (self.get("network.mode", "local") or "local").lower().strip()
+        return mode if mode in self._MODE_DEFAULTS else "local"
+
+    @property
+    def host(self) -> str:
+        explicit = self.get("network.host", None)
+        if explicit:
+            return str(explicit)
+        return self._MODE_DEFAULTS[self.network_mode]["host"]
+
+    @property
+    def port(self) -> int:
+        return int(self.get("network.port", 9000))
+
+    @property
+    def auth_token(self) -> str:
+        return (self.get("network.auth_token", "") or "").strip()
+
+    @property
+    def login_password(self) -> str:
+        """Human-typeable login password. Distinct from auth_token (the
+        machine bearer credential). Either gates the daemon equally —
+        password is for the browser login form, token is for CLI/API.
+        See docs/AUTH.md for the design pin."""
+        return (self.get("network.password", "") or "").strip()
+
+    @property
+    def auth_required(self) -> bool:
+        """True when the current mode requires an auth token.
+
+        Power-user override: `network.auth_required = false` in emptyos.toml
+        forces auth off (e.g. you're behind your own reverse proxy that
+        terminates auth). Default is mode-driven."""
+        explicit = self.get("network.auth_required", None)
+        if explicit is not None:
+            return self._as_bool(explicit, default=True)
+        return bool(self._MODE_DEFAULTS[self.network_mode]["auth_required"])
+
+    @property
+    def is_remote_bind(self) -> bool:
+        """True when host is not loopback — i.e. accessible beyond the machine."""
+        h = self.host.strip()
+        return h not in ("127.0.0.1", "localhost", "::1", "")
+
+    # --- Demo mode (orthogonal to network mode) -------------------------------
+    @staticmethod
+    def _as_bool(value: Any, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            v = value.strip().lower()
+            if v in ("true", "1", "yes", "on"):
+                return True
+            if v in ("false", "0", "no", "off", ""):
+                return False
+        return default
+
+    @property
+    def demo_enabled(self) -> bool:
+        return self._as_bool(self.get("demo.enabled", False))
+
+    @property
+    def demo_reset_on_restart(self) -> bool:
+        return self._as_bool(self.get("demo.reset_on_restart", False))
+
+    @property
+    def demo_seed_on_boot(self) -> bool:
+        return self._as_bool(self.get("demo.seed_on_boot", False))
+
+    # --- Cloud consent --------------------------------------------------------
+    @property
+    def cloud_consent(self) -> str:
+        val = (self.get("cloud.consent", "ask") or "ask").lower().strip()
+        return val if val in ("ask", "always", "never") else "ask"
+
+    @property
+    def cloud_locked(self) -> bool:
+        """True when the operator's cloud settings (consent policy, think
+        models) cannot be changed from Settings — ``[cloud] locked = true``
+        or ``EOS_CLOUD_LOCKED=true``. For a hosted build whose users must not
+        widen what may leave the machine or what it costs.
+
+        An unrecognised value reads as locked: a typo in the lock must not
+        silently unlock a hosted build."""
+        return self._as_bool(self.get("cloud.locked", False), default=True)
+
+    @property
+    def cloud_allow(self) -> tuple[str, ...]:
+        """Cloud providers allowed without a prompt under any policy.
+
+        ``[cloud] allow = ["openrouter", "edge-tts"]``, or the env override
+        ``EOS_CLOUD_ALLOW=openrouter,edge-tts`` (a string, so comma-separated).
+        """
+        raw = self.get("cloud.allow", ()) or ()
+        items = raw.split(",") if isinstance(raw, str) else raw
+        return tuple(s for s in (str(i).strip() for i in items if i is not None) if s)
+
+    # --- Trust posture: is the browser user the operator? ---------------------
+    @property
+    def trust_web(self) -> str:
+        """Who is at the browser: ``"operator"`` or ``"user"``.
+
+        ``[trust] web = "operator" | "user"`` (env ``EOS_TRUST_WEB``). This is a
+        deployment fact fixed at boot, never a per-request identity — see
+        ``docs/AUTH.md`` § Operator vs user and ``emptyos/posture.py``. It
+        decides whether operator-shaped routes (host filesystem, config,
+        network, plugins, code install, generic dispatch) are reachable over the
+        web at all.
+
+        - ``operator`` — the browser user runs the machine (local desktop,
+          Tailscale-private, a self-hoster on their own VPS). Today's behaviour.
+        - ``user`` — the browser user owns their vault and app preferences but
+          not the host, code, keys or process (public demo, hosted learner).
+
+        Resolution (fail closed):
+          1. an explicit ``[trust] web`` value wins;
+          2. ``demo.enabled`` or ``cloud.locked`` ⇒ ``user``;
+          3. ``network.mode`` local/private ⇒ ``operator``;
+          4. ``network.mode = public`` with no explicit value ⇒ ``""`` (unset),
+             which the boot check turns into a refusal so a public daemon can
+             never default open.
+        An unrecognised explicit value reads as ``user`` — the fail-closed rule
+        the lock (:cloud_locked) already uses: a typo must not widen access.
+        """
+        raw = self.get("trust.web", None)
+        if raw is not None:
+            v = str(raw).strip().lower()
+            return v if v in ("operator", "user") else "user"
+        if self.demo_enabled or self.cloud_locked:
+            return "user"
+        mode = self.network_mode
+        if mode in ("local", "private"):
+            return "operator"
+        return ""  # public, unset — the boot check refuses this
+
+    @property
+    def web_is_operator(self) -> bool:
+        """True when the browser user is trusted as the operator. A daemon that
+        cannot resolve its posture (``trust_web == ""``) is NOT operator."""
+        return self.trust_web == "operator"
+
+    def __repr__(self) -> str:
+        return f"Config({self.path})"

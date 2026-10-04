@@ -1,0 +1,36 @@
+{
+  "id": "garden-tools-outdoor",
+  "groups": [
+    {
+      "id": "digging-cutting",
+      "label": "Digging and cutting",
+      "members": [
+        "spade",
+        "fork",
+        "pruning-shears",
+        "loppers",
+        "hedge-trimmer"
+      ]
+    },
+    {
+      "id": "shed-tools",
+      "label": "Shed tools",
+      "members": [
+        "broom",
+        "wheelbarrow",
+        "lawn-mower",
+        "gloves"
+      ]
+    },
+    {
+      "id": "watering",
+      "label": "Watering",
+      "members": [
+        "watering-can",
+        "hose",
+        "sprinkler",
+        "bucket"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Reactor - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+
+.stats-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease }
+
+.event-log { animation:cardIn 0.35s ease 0.1s both }
+.log-item { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border) }
+.log-item:last-child { border-bottom:none }
+.log-date { font-size:11px; color:var(--text-muted); flex-shrink:0; width:72px }
+.log-event { font-size:12px; color:var(--accent); font-family:monospace; flex-shrink:0; width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.log-action { font-size:13px; color:var(--text-secondary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+.event-chart { display:flex; gap:4px; align-items:flex-end; height:80px; margin-bottom:24px; animation:cardIn 0.35s ease 0.15s both }
+.chart-bar { flex:1; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; transition:height 0.3s; opacity:0.7 }
+.chart-bar:hover { opacity:1 }
+
+.filter-row { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap }
+
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('reactor');</script>
+
+<div class="page">
+    <div class="stats-row" id="reactor-stats"></div>
+
+    <div class="eos-section-title">Activity (last 7 days)</div>
+    <div class="event-chart" id="chart"></div>
+
+    <div class="eos-section-title">Filter by Event</div>
+    <div class="filter-row" id="filters"></div>
+
+    <div class="eos-section-title">Recent Reactions</div>
+    <div class="event-log" id="log"></div>
+</div>
+
+<script>
+let allActions = [];
+let activeFilter = '';
+
+async function load() {
+    try {
+        const actions = await EOS.api('/reactor/api/log?limit=200');
+        allActions = actions || [];
+        renderStats();
+        renderChart();
+        renderFilters();
+        renderLog();
+    } catch (e) {
+        EOS_UI.toast('Failed to load reactor log: ' + (e.message || e), false);
+        document.getElementById('log').innerHTML = EOS_UI.errorState({
+            message: 'Could not load reactions. Check daemon status.',
+            onRetry: 'load()'
+        });
+    }
+}
+
+function renderStats() {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayCount = allActions.filter(a => a.date === today).length;
+    const types = new Set(allActions.map(a => a.event)).size;
+    EOS_UI.statCards('reactor-stats', [
+        {value: allActions.length, label: 'Reactions'},
+        {value: todayCount, label: 'Today'},
+        {value: types, label: 'Event Types'},
+    ]);
+}
+
+function renderChart() {
+    const el = document.getElementById('chart');
+    const days = {};
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        days[d.toISOString().slice(0, 10)] = 0;
+    }
+    allActions.forEach(a => { if (days[a.date] !== undefined) days[a.date]++; });
+    const max = Math.max(...Object.values(days), 1);
+    el.innerHTML = Object.entries(days).map(([d, c]) =>
+        `<div class="chart-bar" style="height:${Math.max(c/max*100, 3)}%" title="${d}: ${c}"></div>`
+    ).join('');
+}
+
+var _reactorFilterBar = null;
+function renderFilters() {
+    const counts = {};
+    allActions.forEach(a => { counts[a.event] = (counts[a.event] || 0) + 1; });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    const cats = sorted.map(([ev, c]) => ({ key: ev, label: ev.split(':')[0], count: c }));
+    if (!_reactorFilterBar) {
+        _reactorFilterBar = EOS_UI.filterBar('filters', cats, function(key) {
+            activeFilter = key === 'all' ? '' : key;
+            renderLog();
+        }, { initial: activeFilter || 'all' });
+    } else {
+        _reactorFilterBar.update(cats);
+        _reactorFilterBar.setActive(activeFilter || 'all');
+    }
+}
+
+function setFilter(f) { activeFilter = f; if (_reactorFilterBar) _reactorFilterBar.setActive(f || 'all'); renderLog(); }
+
+function renderLog() {
+    const filtered = activeFilter ? allActions.filter(a => a.event === activeFilter) : allActions;
+    const el = document.getElementById('log');
+    if (!filtered.length) { el.innerHTML = EOS_UI.emptyState({message: 'No reactions yet', icon: '✨'}); return; }
+    el.innerHTML = filtered.slice(-80).reverse().map(a =>
+        `<div class="log-item">
+            <span class="log-date">${a.date?.slice(5) || ''}</span>
+            <span class="log-event">${a.event}</span>
+            <span class="log-action">${a.action}</span>
+        </div>`
+    ).join('');
+}
+
+load();
+</script>
+</body>
+</html>

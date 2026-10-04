@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Designer — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  body { margin: 0; }
+  .dz-shell {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .dz-header {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+  }
+  .dz-header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+  .dz-header .right { display: flex; gap: 8px; align-items: center; }
+  .dz-side {
+    border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .dz-main { overflow: hidden; display: flex; flex-direction: column; }
+  .dz-preview { flex: 1; background: #fff; border: 0; width: 100%; height: 100%; }
+  .dz-empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 13px; padding: 24px; text-align: center;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .field textarea {
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 13px;
+    resize: vertical; min-height: 100px;
+  }
+  .field select {
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 8px; border-radius: 4px; font-family: inherit; font-size: 13px;
+  }
+  .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); }
+  .toggle-row input { accent-color: var(--accent); }
+  .row-list { display: flex; flex-direction: column; gap: 8px; }
+  .row-item {
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg-card); cursor: pointer; font-size: 12px; line-height: 1.35;
+    transition: border-color .15s;
+  }
+  .row-item:hover, .row-item.active { border-color: var(--accent); }
+  .row-item .meta { color: var(--muted); font-size: 10.5px; margin-top: 4px; display: flex; justify-content: space-between; gap: 8px; }
+  .working { color: var(--accent); font-size: 12px; }
+  .hint { color: var(--muted); font-size: 11px; line-height: 1.45; }
+  .btn-edit-on { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+
+  /* Element-edit panel (floating, anchored bottom-right of preview) */
+  .edit-panel {
+    position: fixed; right: 18px; bottom: 18px; width: 340px; max-height: 76vh;
+    overflow-y: auto; z-index: 9000; display: none;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.28); padding: 16px; font-size: 13px;
+  }
+  .edit-panel.open { display: block; }
+  .edit-panel h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .edit-panel .picked { font-size: 12px; color: var(--text); margin-bottom: 12px; word-break: break-word; }
+  .edit-panel .picked code { color: var(--accent); }
+  .edit-panel textarea {
+    width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 8px; font-family: inherit; font-size: 13px;
+    resize: vertical; min-height: 64px;
+  }
+  .knob-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .knob { display: flex; flex-direction: column; gap: 4px; }
+  .knob label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .knob input[type=color] { width: 100%; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; }
+  .knob select { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px; font-size: 12px; }
+  .align-row { display: flex; gap: 4px; }
+  .align-row button { flex: 1; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 12px; }
+  .align-row button:hover { border-color: var(--accent); }
+  .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .edit-actions .eos-btn, .edit-actions .eos-btn-sm { flex: 1; }
+  /* Diff box is the shared .eos-diff component (eos-components.css). */
+  #edit-diff { margin: 12px 0; }
+</style>
+</head>
+<body>
+<div class="dz-shell">
+  <div class="dz-header">
+    <h1>Designer <span style="color: var(--muted); font-weight: 400; margin-left: 8px;">— styled web pages & UI</span></h1>
+    <div class="right">
+      <span id="working" class="working" style="display:none">generating…</span>
+      <span id="model-pill" title="Pins designer's provider for this app only."></span>
+      <button id="edit-toggle" class="eos-btn-sm" onclick="toggleEditMode()" style="display:none"
+              title="Click elements in the preview to edit them">✎ Edit elements</button>
+      <button id="annotate-toggle" class="eos-btn-sm" onclick="toggleAnnotateMode()" style="display:none"
+              title="Overlay numbered interface-spec annotations on the page">🏷 Annotate</button>
+      <button id="reannotate-btn" class="eos-btn-sm" onclick="reAnnotate()" style="display:none"
+              title="Regenerate the annotations for this page">↻ Re-annotate</button>
+      <button class="eos-btn-sm" onclick="reloadPreview()" title="Force-refresh the preview">↻ Reload</button>
+      <button class="eos-btn-sm" onclick="downloadCurrent()" title="Download the current page as standalone HTML">⭳ HTML</button>
+      <button class="btn-settings eos-btn-sm" onclick="openAppSettings()">⚙ Settings</button>
+    </div>
+  </div>
+
+  <aside class="dz-side">
+    <div class="field">
+      <label for="style">Design system</label>
+      <select id="style"><option value="">— No design system —</option></select>
+      <div class="hint" id="style-hint">Pick a style to match its colours, type, spacing &amp; components.</div>
+    </div>
+
+    <div id="ability-gate" style="margin:0;"></div>
+
+    <div class="field">
+      <label for="prompt"><span id="prompt-label">Brief — describe the page</span></label>
+      <textarea id="prompt" data-suggest-app="designer" data-suggest-field="prompt" placeholder="A pricing page for a developer tool: nav, hero with one headline + CTA, a 3-tier pricing grid, a small revenue-growth chart, and a footer."></textarea>
+    </div>
+
+    <div class="toggle-row">
+      <input type="checkbox" id="embed" checked>
+      <label for="embed" style="text-transform:none; letter-spacing:0; color:var(--text); font-size:12px;">
+        Embed viz elements (charts / diagrams / 3D)
+      </label>
+    </div>
+    <div class="hint">Where a chart or diagram belongs, the model leaves a placeholder; viz fills it and it's baked in. Off = pure HTML only.</div>
+
+    <div class="field">
+      <div style="display:flex; gap:6px;">
+        <button id="gen-btn" class="eos-btn" onclick="generate()" style="flex:1">Generate</button>
+        <button id="iter-btn" class="eos-btn" onclick="iterate()" style="flex:1; display:none">Iterate</button>
+        <button id="cancel-iter" class="eos-btn-sm" onclick="cancelIterate()" style="display:none">+ New</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Recent designs</label>
+      <div id="list" class="row-list"></div>
+    </div>
+  </aside>
+
+  <main class="dz-main">
+    <div id="empty" class="dz-empty">
+      No design loaded. Describe a page on the left, optionally pick a design system, and click Generate.
+    </div>
+    <iframe id="preview" class="dz-preview" style="display:none" sandbox="allow-scripts"></iframe>
+  </main>
+</div>
+
+<div id="edit-panel" class="edit-panel">
+  <h3>Edit element</h3>
+  <div class="picked" id="edit-picked"></div>
+  <div id="edit-form">
+    <textarea id="edit-instruction" placeholder="make this larger and use the accent colour"></textarea>
+    <div class="knob-grid">
+      <div class="knob"><label>Text colour</label><input type="color" id="knob-color" onchange="proposeKnob('color', this.value)"></div>
+      <div class="knob"><label>Background</label><input type="color" id="knob-bg" onchange="proposeKnob('background', this.value)"></div>
+      <div class="knob"><label>Font size</label>
+        <select id="knob-size" onchange="if(this.value)proposeKnob('font-size', this.value)">
+          <option value="">—</option>
+          <option>12px</option><option>14px</option><option>16px</option>
+          <option>20px</option><option>24px</option><option>32px</option><option>48px</option>
+        </select>
+      </div>
+      <div class="knob"><label>Padding</label>
+        <select id="knob-pad" onchange="if(this.value)proposeKnob('padding', this.value)">
+          <option value="">—</option>
+          <option value="0px">none</option><option value="8px">S</option>
+          <option value="16px">M</option><option value="24px">L</option>
+        </select>
+      </div>
+    </div>
+    <div class="knob"><label>Align</label>
+      <div class="align-row">
+        <button onclick="proposeKnob('text-align','left')">Left</button>
+        <button onclick="proposeKnob('text-align','center')">Center</button>
+        <button onclick="proposeKnob('text-align','right')">Right</button>
+      </div>
+    </div>
+    <div class="edit-actions">
+      <button class="eos-btn" onclick="proposeInstruction()">Propose change</button>
+      <button class="eos-btn-sm" onclick="closeEditPanel()">Close</button>
+    </div>
+  </div>
+  <div id="edit-preview" style="display:none">
+    <div id="edit-diff"></div>
+    <div class="edit-actions">
+      <button class="eos-btn" onclick="applyEdit()">Apply</button>
+      <button class="eos-btn-sm" onclick="rejectEdit()">Reject</button>
+    </div>
+  </div>
+  <div class="working" id="edit-working" style="display:none">proposing…</div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script src="/designer/pages/designer.js"></script>
+</body>
+</html>

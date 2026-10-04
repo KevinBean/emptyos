@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hello EmptyOS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Theme bootstrap — apply the saved theme class before paint or tokens collapse. -->
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.hello-wrap { max-width: 640px; margin: 0 auto; padding: 48px 24px; }
+.hello-title { font-size: 24px; font-weight: 600; }
+.hello-msg { margin-top: 16px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text); }
+.hello-btn { margin-top: 16px; padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<div class="hello-wrap">
+  <div class="hello-title">👋 Hello EmptyOS</div>
+  <p style="color:var(--text-muted)">This app was installed from the Store marketplace — a template you can copy.</p>
+  <button class="hello-btn" onclick="greet()">Say hello</button>
+  <div id="msg" class="hello-msg">Click the button to call <code>/hello-eos/api/hello</code>.</div>
+</div>
+<script>
+async function greet() {
+  var r = await fetch('/hello-eos/api/hello').then(function(x){ return x.json(); });
+  document.getElementById('msg').textContent = r.message || '(no message)';
+}
+</script>
+</body>
+</html>

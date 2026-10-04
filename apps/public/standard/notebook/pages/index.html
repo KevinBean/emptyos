@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Notebook — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; -webkit-font-smoothing:antialiased }
+.nb-shell { display:grid; grid-template-columns:260px minmax(0,1fr) 240px; height:100dvh }
+.nb-side { border-right:1px solid var(--border); background:var(--bg-card); overflow:auto; padding:12px 8px }
+.nb-side h1 { font-size:15px; font-weight:600; color:var(--text-heading); padding:4px 8px 12px }
+.nb-tree ul { list-style:none; padding-left:12px }
+.nb-tree > ul { padding-left:0 }
+.nb-item { display:flex; align-items:center; gap:6px; width:100%; padding:4px 8px; border:0; border-left:2px solid transparent; border-radius:6px; background:none; color:var(--text); font:inherit; font-size:13px; text-align:left; cursor:pointer; text-decoration:none }
+.nb-item:hover, .nb-item:focus-visible { background:var(--bg-card-hover) }
+.nb-item.active { background:color-mix(in srgb,var(--accent) 14%,transparent); border-left-color:var(--accent); color:var(--text-heading); font-weight:600 }
+.nb-item .nb-count { margin-left:auto; font-size:11px; color:var(--text-muted) }
+.nb-item .nb-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.nb-main { overflow:auto; padding:24px 32px }
+.nb-head { display:flex; align-items:center; gap:8px; margin-bottom:8px }
+.nb-crumb { font-family:var(--font-mono); font-size:12px; color:var(--text-muted); word-break:break-all }
+/* .eos-note-content brings the prose rules and its own card padding; the
+   workspace already has a gutter, so drop the second one. */
+.nb-note.eos-note-content { max-width:720px; font-size:15px; line-height:1.65; padding:0 }
+/* The platform's 📅 button stays on the header between notes; without an
+   entity path (empty or failed view) it can only error, so hide it. */
+.nb-head:not([data-entity-path]) .eos-timeline-btn { display:none }
+.nb-note:focus { outline:none }
+.nb-links { border-left:1px solid var(--border); overflow:auto; padding:16px 12px; font-size:13px }
+.nb-links h2 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--text-heading); margin:12px 0 6px }
+.nb-links h2:first-child { margin-top:0 }
+.nb-links ul, .nb-pick { list-style:none }
+.nb-muted { color:var(--text-muted); font-size:12px; padding:4px 8px }
+.nb-err { color:var(--danger, var(--text)); font-size:12px; padding:4px 8px }
+.nb-broken { color:var(--text-muted); text-decoration:line-through }
+@media (max-width: 900px) {
+  .nb-shell { grid-template-columns:1fr; height:auto }
+  .nb-side, .nb-links { border:0; border-bottom:1px solid var(--border); max-height:40vh; padding:12px 16px }
+  .nb-main { padding:16px }
+}
+</style>
+</head>
+<body>
+<div class="nb-shell">
+  <nav class="nb-side" aria-label="Vault folders">
+    <h1>Notebook</h1>
+    <div id="nb-tree" class="nb-tree"><div class="nb-muted">Loading…</div></div>
+  </nav>
+  <main class="nb-main" id="nb-main">
+    <header id="nb-head" class="nb-head">
+      <div id="nb-crumb" class="nb-crumb" aria-live="polite"></div>
+    </header>
+    <article id="nb-note" class="nb-note eos-note-content" tabindex="-1"></article>
+  </main>
+  <aside class="nb-links" aria-label="Links">
+    <h2>Linked from</h2>
+    <ul id="nb-backlinks"><li class="nb-muted">Open a note to see its links.</li></ul>
+    <h2>Links to</h2>
+    <ul id="nb-outgoing"></ul>
+  </aside>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/notebook/pages/notebook.js"></script>
+</body>
+</html>

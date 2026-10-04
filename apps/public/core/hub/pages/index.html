@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EmptyOS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-hub-renderers.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+.hub-wrap { max-width: 980px; margin: 0 auto; padding: 24px 24px 64px; }
+
+/* ── command surface (docs/HOME-COMPANION-REDESIGN.md) ───────────────────── */
+/* ① command bar */
+.hub-cmd { margin-bottom: 24px; }
+.hub-modes { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.hub-mode { padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; min-height: 32px; }
+.hub-mode:hover { background: var(--bg-card-hover); color: var(--text); border-color: var(--accent); }
+
+/* smart-bar route result strip — capture confirmation + undo + alternatives */
+#hub-route-result:empty { display: none; }
+.hub-route-strip { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px;
+  padding: 8px 16px; background: var(--bg-card); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 999px; font-size: 13px; }
+.hub-route-text { color: var(--text-muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; margin-left: 8px; }
+.hub-route-not { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+.hub-route-alt { background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px;
+  color: var(--text); font: inherit; font-size: 12px; cursor: pointer; text-decoration: none; }
+.hub-route-alt:hover { border-color: var(--accent); color: var(--accent); }
+
+</style>
+</head>
+<body data-own-launcher-mode>
+<div id="eos-nav"></div>
+
+<!-- Always-visible "Take the tour" button (bottom-LEFT — bottom-right is the
+     FAB stack). Hidden by hub.js for returning / tour-app-less users. -->
+<button id="hub-tour-btn"
+        title="Take the 2-minute product tour"
+        onclick="if (window.EOS && EOS.tour) EOS.tour.start();"
+        style="position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);left:20px;z-index:9991;
+               padding:10px 16px;border:1px solid var(--border-strong, var(--border));border-radius:999px;
+               background:var(--bg-card);color:var(--text);
+               font-size:13px;font-weight:600;cursor:pointer;
+               box-shadow:0 4px 14px var(--shadow);
+               display:flex;align-items:center;gap:6px;
+               font-family:inherit;
+               -webkit-tap-highlight-color:transparent">
+  <span style="font-size:14px">&#127881;</span>
+  Take the tour
+</button>
+
+<div class="hub-wrap">
+  <div id="hub-header-mount"></div>
+
+  <!-- ① command bar (smart bar — Enter routes by intent shape) -->
+  <div class="hub-cmd">
+    <div class="hub-modes">
+      <button type="button" class="hub-mode" data-mode="capture" title="Force capture mode — Enter saves the text to your inbox">&#43; Capture</button>
+      <button type="button" class="hub-mode" data-mode="ask" title="Force ask mode — Enter sends the text to the assistant">&#10022; Ask</button>
+      <button type="button" class="hub-mode" data-mode="command" title="Open the command palette — search apps and actions">&#128269; Commands</button>
+    </div>
+    <div id="hub-search-mount"></div>
+    <div id="hub-route-result"></div>
+  </div>
+
+  <!-- quick-log forms (expense, etc.) — action affordances, pinned near the top -->
+  <div id="hub-quick" class="hub-quick-zone"></div>
+
+  <!-- ② greeting + Next move -->
+  <div id="hub-next"></div>
+  <!-- ③ Now strip -->
+  <div id="hub-now"></div>
+  <!-- ④ Today lane -->
+  <div id="hub-today"></div>
+  <!-- ⑤ Continue lane -->
+  <div id="hub-continue"></div>
+  <!-- ⑥ Explore (panel aggregator, ambient dropped) -->
+  <div id="hub-explore"></div>
+</div>
+
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-tour.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script src="/static/eos-hub-renderers.js"></script>
+<script src="/hub/pages/hub.js"></script>
+</body>
+</html>

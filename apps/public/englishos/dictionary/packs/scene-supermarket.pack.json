@@ -1,0 +1,123 @@
+{
+  "id": "scene-supermarket",
+  "groups": [
+    {
+      "id": "in-store",
+      "label": "In the store",
+      "members": [
+        "shopping-trolley",
+        "shopping-basket",
+        "checkout",
+        "cash-register",
+        "receipt",
+        "barcode",
+        "price-tag",
+        "shelf",
+        "shopping-bag",
+        "self-checkout",
+        "scales"
+      ]
+    },
+    {
+      "id": "paying",
+      "label": "Paying",
+      "members": [
+        "debit-card",
+        "coin",
+        "banknote",
+        "wallet"
+      ]
+    },
+    {
+      "id": "fresh",
+      "label": "Fruit and veg",
+      "members": [
+        "apple",
+        "banana",
+        "orange",
+        "grape",
+        "strawberry",
+        "avocado",
+        "tomato",
+        "potato",
+        "onion",
+        "carrot",
+        "lettuce",
+        "broccoli"
+      ]
+    },
+    {
+      "id": "meat-bakery",
+      "label": "Meat, fish and bread",
+      "members": [
+        "beef",
+        "pork",
+        "chicken-meat",
+        "mince",
+        "sausage",
+        "fish-fillet",
+        "egg",
+        "bread"
+      ]
+    },
+    {
+      "id": "dairy",
+      "label": "Dairy and fridge",
+      "members": [
+        "milk",
+        "cheese",
+        "butter",
+        "yoghurt",
+        "cream",
+        "tofu",
+        "ice-cream"
+      ]
+    },
+    {
+      "id": "pantry",
+      "label": "Pantry",
+      "members": [
+        "rice",
+        "noodles",
+        "pasta",
+        "flour",
+        "sugar",
+        "salt",
+        "cooking-oil",
+        "soy-sauce",
+        "vinegar",
+        "tomato-sauce",
+        "honey",
+        "jam",
+        "cereal",
+        "tin"
+      ]
+    },
+    {
+      "id": "drinks-snacks",
+      "label": "Drinks and snacks",
+      "members": [
+        "coffee",
+        "tea",
+        "biscuit",
+        "chocolate",
+        "chips",
+        "bottled-water",
+        "juice",
+        "soft-drink"
+      ]
+    },
+    {
+      "id": "household",
+      "label": "Household",
+      "members": [
+        "toilet-paper",
+        "tissue",
+        "laundry-detergent",
+        "dish-soap",
+        "nappy",
+        "bin-bag"
+      ]
+    }
+  ]
+}

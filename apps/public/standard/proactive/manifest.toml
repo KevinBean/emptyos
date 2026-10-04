@@ -1,0 +1,50 @@
+[app]
+id = "proactive"
+name = "Proactive"
+version = "0.1.0"
+description = "The system speaks first — a restrained engine that scans your state for things worth surfacing (deadlines, journaling gaps, today's load, budget overruns) and nudges you through a quiet-hours + frequency-capped gate"
+store_category = "ai"
+dimensions = ["intellectual", "emotional", "occupational"]
+user_intent = [
+    "have EmptyOS remind me about things on its own",
+    "make the assistant proactive",
+    "tell me when something needs my attention",
+    "让助手主动提醒我",
+    "stop me from forgetting deadlines",
+]
+
+[app.entry]
+module = "app"
+class = "ProactiveApp"
+
+[requires]
+capabilities = []
+apps = []
+# All sources are soft — each fail-soft and skipped if its app is absent. The
+# engine degrades to fewer nudge kinds, never errors.
+optional_apps = ["reminders", "task", "journal", "capture", "projects", "hands-free"]
+services = []
+
+[provides.cli]
+commands = ["proactive"]
+
+[provides.web]
+prefix = "/proactive"
+
+[provides.events]
+# proactive:announce is emitted by BaseApp.proactive_notify for the voice channel;
+# hands-free listens and speaks it. proactive:delivered is a breadcrumb other apps
+# (reactor) can ripple on.
+emits = [
+    "proactive:announce",
+    "proactive:delivered",
+]
+internal = []
+
+[[contributes.hub.panel]]
+id = "proactive-recent"
+method = "panel_recent"
+renderer = "stat-tile"
+title = "Proactive"
+priority = 165
+group = "dashboard"

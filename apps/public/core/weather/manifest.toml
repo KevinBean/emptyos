@@ -1,0 +1,51 @@
+[app]
+id = "weather"
+store_category = "core"
+name = "Weather"
+version = "1.0.0"
+description = "Current conditions, forecast, history — OWM → Open-Meteo → wttr.in fallback chain."
+dimensions = ["environmental"]
+
+[app.entry]
+module = "app"
+class = "WeatherApp"
+
+[requires]
+capabilities = []
+apps = []
+
+[provides.cli]
+commands = ["weather"]
+
+[provides.web]
+prefix = "/weather"
+
+[provides.events]
+emits = ["weather:updated"]
+
+[provides.assistant]
+commands = [
+    {slash = "/weather", method = "get_current"},
+]
+
+# ── Verb registry — voice surface only. The legacy /weather assistant slash
+# above stays on its own surface (all-or-nothing is per app+surface).
+[[provides.verbs]]
+verb = "weather.now"
+method = "voice_now"
+summary = "Current weather conditions"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { method = "voice_now", example = "what's the weather today", description = "Speak the current temperature + conditions and show a stat-tile. Takes no arguments — uses the configured location.", always = true, card = "stat-tile" }
+
+[[contributes.hub.panel]]
+id = "hero-weather"
+method = "panel_hero_weather"
+renderer = "hero-weather"
+priority = 10
+
+[[contributes.voice-assistant.context]]
+id = "current-weather"
+method = "assistant_context"
+priority = 90

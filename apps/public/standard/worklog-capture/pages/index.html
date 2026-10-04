@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Worklog Capture — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('eos-theme') || 'eos';
+    if(!/^[a-z][a-z0-9-]{0,31}$/.test(t))t='eos';
+    document.documentElement.className = 'theme-' + t;
+  } catch (e) { document.documentElement.className = 'theme-eos'; }
+})();
+</script>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
+       background: var(--bg); color: var(--text); }
+.wc-wrap { max-width: 820px; margin: 0 auto; padding: 16px 16px 48px; }
+.wc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.wc-head h1 { font-size: 19px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; flex: 1; }
+.wc-sub { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; }
+.wc-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.wc-btn { border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+          padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.wc-btn.primary { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+.wc-btn:disabled { opacity: .5; cursor: default; }
+.wc-status { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.wc-setup { font-size: 12px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; color: var(--text-muted); }
+.wc-setup b { color: var(--text); }
+.wc-sec-h { font-size: 13px; font-weight: 700; margin: 18px 0 8px; display: flex; gap: 8px; align-items: center; }
+.wc-sec-h .n { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+.wc-card { display: flex; gap: 12px; background: var(--bg-card); border: 1px solid var(--border);
+           border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.wc-card.dim { opacity: .82; border-style: dashed; }
+.wc-thumb { width: 128px; min-width: 128px; height: 84px; border-radius: 8px; object-fit: cover;
+            background: var(--bg); border: 1px solid var(--border); cursor: zoom-in; }
+.wc-thumb.none { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 22px; cursor: default; }
+.wc-body { flex: 1; min-width: 0; }
+.wc-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; word-break: break-word; }
+.wc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.wc-chip { font-size: 11px; background: var(--bg); border: 1px solid var(--border);
+           border-radius: 999px; padding: 2px 8px; color: var(--text-muted); cursor: default; }
+.wc-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.wc-fields .full { grid-column: 1 / -1; }
+.wc-fields input, .wc-fields select { width: 100%; box-sizing: border-box; background: var(--bg);
+           color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; }
+.wc-conf { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); }
+.wc-conf.low { color: var(--danger); border-color: var(--danger); }
+.wc-conf.medium { color: var(--text-muted); }
+.wc-conf.high { color: var(--success, #3a3); }
+.wc-ocr { font-size: 11px; color: var(--text-muted); white-space: pre-wrap; max-height: 60px;
+          overflow: hidden; border-left: 2px solid var(--border); padding-left: 8px; margin: 6px 0; }
+.wc-ocr.err { color: var(--danger); border-left-color: var(--danger); }
+.wc-actions { display: flex; gap: 6px; }
+.wc-empty { text-align: center; color: var(--text-muted); padding: 48px 12px; font-size: 13px; }
+@media (max-width: 640px) { .wc-fields { grid-template-columns: 1fr; } .wc-thumb { width: 96px; min-width: 96px; height: 64px; } }
+</style>
+</head>
+<body>
+<div class="wc-wrap">
+  <div class="wc-head">
+    <h1>📸 Worklog Capture</h1>
+    <span id="model-pill"></span>
+    <button class="wc-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+  </div>
+  <p class="wc-sub">Screenshot or hotkey now — review AI drafts into your worklog later. Cross-checked with your AI-session &amp; browser trail. Nothing is logged until you Apply.</p>
+
+  <div class="wc-bar">
+    <button class="wc-btn primary" id="btn-capture" onclick="captureNow()">📷 Capture now</button>
+    <button class="wc-btn" id="btn-digest" onclick="processNow()">⚙️ Process now</button>
+    <button class="wc-btn" onclick="load()">↻ Reload</button>
+    <span class="wc-status" id="status"></span>
+  </div>
+
+  <div class="wc-setup" id="setup"></div>
+
+  <div id="queue"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var STATE = { flagged: [], unflagged: [], failed: [], config: null };
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function toast(m){ if(window.EOS_UI&&EOS_UI.toast) EOS_UI.toast(m); else console.log(m); }
+
+async function jget(u){ var r=await fetch(u); return r.json(); }
+async function jpost(u,b){ var r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}); return r.json(); }
+
+var STATUSES = ['complete','in-progress','todo','next','waiting','review','blocked'];
+var PROJECTS = [];
+
+async function load(){
+  var cfg = await jget('/worklog-capture/api/config');
+  STATE.config = cfg;
+  renderSetup(cfg);
+  try { var pj = await jget('/worklog/api/projects'); PROJECTS = (pj.projects||[]).map(function(p){return p.name;}); } catch(e){ PROJECTS=[]; }
+  var q = await jget('/worklog-capture/api/queue');
+  STATE.flagged = q.flagged||[]; STATE.unflagged = q.unflagged||[]; STATE.failed = q.failed||[];
+  document.getElementById('status').textContent =
+    (q.new? q.new+' new · ':'') + (STATE.flagged.length+STATE.unflagged.length)+' awaiting review'
+    + (STATE.failed.length? ' · '+STATE.failed.length+' failed':'')
+    + (q.last_digest? ' · last '+q.last_digest.slice(11,16):'');
+  render();
+}
+
+function renderSetup(c){
+  var el = document.getElementById('setup');
+  var ocr = c.ocr_backend==='none'
+    ? '<b style="color:var(--danger)">no OCR backend</b> — run <code>uv pip install ocrmac</code>'
+    : '<b>OCR:</b> '+esc(c.ocr_backend);
+  var wd = c.watch_dir_exists ? '<b>inbox:</b> '+esc(c.watch_dir)
+    : '<b style="color:var(--danger)">inbox folder missing</b> — '+esc(c.watch_dir||'(unset)');
+  var capb = c.capture_backend==='none'
+    ? ' &nbsp;·&nbsp; <b style="color:var(--danger)">live-scrape unsupported on this OS</b> (use the inbox folder)'
+    : ' &nbsp;·&nbsp; <b>live-scrape:</b> '+esc(c.capture_backend);
+  var src = [];
+  if(c.source_sessions) src.push('AI-session trail');
+  if(c.source_browser) src.push('browser history');
+  if(c.source_calendar) src.push('calendar');
+  var think = c.local_only
+    ? ' &nbsp;·&nbsp; <b>drafts on:</b> '+esc(c.think_backend)+' (local only)'
+    : ' &nbsp;·&nbsp; <b style="color:var(--danger)">local-only OFF</b> — screen OCR + browser trail may go to a cloud model';
+  el.innerHTML = wd + ' &nbsp;·&nbsp; ' + ocr + capb + think
+    + (src.length? ' &nbsp;·&nbsp; <b>cross-check:</b> '+src.join(', ') : '')
+    + (c.include_selection? ' &nbsp;·&nbsp; selection-capture ON':'');
+}
+
+function thumb(c){
+  return c.has_image
+    ? '<img class="wc-thumb" src="/worklog-capture/api/thumb/'+escAttr(c.id)+'" onclick="zoom(' + escAttr(JSON.stringify(c.id)) + ')" alt="capture">'
+    : '<div class="wc-thumb none">'+(c.evidence_only?'🧭':'—')+'</div>';
+}
+
+function card(c, dim){
+  var d = c.draft||{};
+  var metaBits = [];
+  if(c.app_name) metaBits.push(esc(c.app_name));
+  if(c.window_title) metaBits.push(esc(c.window_title));
+  if(c.browser_url) metaBits.push(esc(c.browser_url));
+  metaBits.push(esc((c.created||'').slice(11,16)));
+  if(c.member_count) metaBits.push('+'+c.member_count+' more');
+  var chips = (c.evidence||[]).slice(0,4).map(function(e){ return '<span class="wc-chip">'+esc(e.summary)+'</span>'; }).join('');
+  var conf = (d.confidence||'medium');
+  var projOpts = '<option value=""></option>'+PROJECTS.map(function(p){ return '<option'+(p===d.project?' selected':'')+'>'+esc(p)+'</option>'; }).join('');
+  if(d.project && PROJECTS.indexOf(d.project)<0) projOpts = '<option selected>'+esc(d.project)+'</option>'+projOpts;
+  var statOpts = STATUSES.map(function(s){ return '<option'+(s===d.status?' selected':'')+'>'+s+'</option>'; }).join('');
+  var ocr = c.ocr_excerpt? '<div class="wc-ocr">'+esc(c.ocr_excerpt)+'</div>' : '';
+  return '<div class="wc-card'+(dim?' dim':'')+'" data-id="'+escAttr(c.id)+'">'
+    + thumb(c)
+    + '<div class="wc-body">'
+    +   '<div class="wc-meta">'+metaBits.join(' · ')+'</div>'
+    +   (chips? '<div class="wc-chips">'+chips+'</div>':'')
+    +   ocr
+    +   '<div class="wc-fields">'
+    +     '<input class="f-text full" data-f="text" value="'+escAttr(d.text||'')+'" placeholder="work log line">'
+    +     '<select class="f-project" data-f="project">'+projOpts+'</select>'
+    +     '<select class="f-status" data-f="status">'+statOpts+'</select>'
+    +     '<input class="f-employer" data-f="employer" value="'+escAttr(d.employer||'')+'" placeholder="employer (optional)">'
+    +     '<input class="f-date" data-f="date" value="'+escAttr(d.date||'')+'" placeholder="YYYY-MM-DD">'
+    +   '</div>'
+    +   '<div class="wc-actions">'
+    +     '<button class="wc-btn primary" onclick="apply(' + escAttr(JSON.stringify(c.id)) + ')">Apply</button>'
+    +     '<button class="wc-btn" onclick="dismiss(' + escAttr(JSON.stringify(c.id)) + ')">Dismiss</button>'
+    +     '<span class="wc-conf '+conf+'" title="draft confidence">'+conf+'</span>'
+    +   '</div>'
+    + '</div></div>';
+}
+
+function failedCard(c){
+  return '<div class="wc-card dim" data-id="'+escAttr(c.id)+'">'
+    + thumb(c)
+    + '<div class="wc-body">'
+    +   '<div class="wc-meta">'+esc(c.app_name||c.source||'capture')+' · '+esc((c.created||'').slice(11,16))+'</div>'
+    +   '<div class="wc-ocr err">Drafting failed ('+esc(c.attempts||0)+'×): '+esc(c.error||'unknown')+'</div>'
+    +   '<div class="wc-actions">'
+    +     '<button class="wc-btn" onclick="processNow()">Retry on next process</button>'
+    +     '<button class="wc-btn" onclick="dismiss(' + escAttr(JSON.stringify(c.id)) + ')">Dismiss</button>'
+    +   '</div>'
+    + '</div></div>';
+}
+
+function render(){
+  var q = document.getElementById('queue');
+  if(!STATE.flagged.length && !STATE.unflagged.length && !STATE.failed.length){
+    q.innerHTML = '<div class="wc-empty">Nothing to review. Take a screenshot into your inbox folder (or hit <b>Capture now</b>), then <b>Process now</b>.</div>';
+    return;
+  }
+  var html = '';
+  if(STATE.failed.length){
+    html += '<div class="wc-sec-h">Drafting failed <span class="n">'+STATE.failed.length+' · retried automatically on the next process</span></div>';
+    html += STATE.failed.map(failedCard).join('');
+  }
+  if(STATE.flagged.length){
+    html += '<div class="wc-sec-h">Flagged captures <span class="n">'+STATE.flagged.length+'</span>'
+         + ' <button class="wc-btn" style="margin-left:auto" onclick="applyAll()">Apply all flagged</button></div>';
+    html += STATE.flagged.map(function(c){ return card(c,false); }).join('');
+  }
+  if(STATE.unflagged.length){
+    html += '<div class="wc-sec-h">Unflagged activity <span class="n">'+STATE.unflagged.length+' · from your trail, you didn\'t flag these</span></div>';
+    html += STATE.unflagged.map(function(c){ return card(c,true); }).join('');
+  }
+  q.innerHTML = html;
+}
+
+function collect(id){
+  var el = document.querySelector('.wc-card[data-id="'+CSS.escape(id)+'"]');
+  var out = { id: id };
+  if(el) el.querySelectorAll('[data-f]').forEach(function(n){ out[n.getAttribute('data-f')] = n.value; });
+  return out;
+}
+
+async function apply(id){
+  var r = await jpost('/worklog-capture/api/apply/'+encodeURIComponent(id), collect(id));
+  if(r.error){ toast('Apply failed: '+r.error); return; }
+  toast('Logged to worklog'); load();
+}
+async function applyAll(){
+  var items = STATE.flagged.map(function(c){ return collect(c.id); });
+  var r = await jpost('/worklog-capture/api/apply-all', {items: items});
+  toast('Applied '+(r.applied||0)+(r.capped?' (capped at '+r.cap+')':'')); load();
+}
+async function dismiss(id){
+  await jpost('/worklog-capture/api/dismiss/'+encodeURIComponent(id), {});
+  toast('Dismissed'); load();
+}
+async function captureNow(){
+  var b=document.getElementById('btn-capture'); b.disabled=true; b.textContent='📷 …';
+  var r = await jpost('/worklog-capture/api/capture', {source:'ui'});
+  b.disabled=false; b.textContent='📷 Capture now';
+  toast(r.error? ('Capture failed: '+r.error) : ('Captured '+(r.has_image?'':'(no image — check Screen Recording) ')+'— Process to draft'));
+}
+async function processNow(){
+  var b=document.getElementById('btn-digest'); b.disabled=true; b.textContent='⚙️ …';
+  var r = await jpost('/worklog-capture/api/digest', {draft:true});
+  b.disabled=false; b.textContent='⚙️ Process now';
+  toast('Drafted '+(r.drafted||0)+' from '+(r.captures||0)+' capture(s)'+(r.errors?' · '+r.errors+' err':'')); load();
+}
+function zoom(id){
+  if(window.EOS_UI&&EOS_UI.modal) EOS_UI.modal({title:'Capture', body:'<img src="/worklog-capture/api/thumb/'+escAttr(id)+'" style="max-width:100%;border-radius:8px">'});
+  else window.open('/worklog-capture/api/thumb/'+encodeURIComponent(id),'_blank');
+}
+
+// Drafting spends `think` on the user's own screen contents — the pill is how
+// they see (and pin) which model that is before hitting Process.
+if (window.EOS_UI && EOS_UI.modelPill) {
+  EOS_UI.modelPill({ app: 'worklog-capture', mount: '#model-pill', domain: 'text' });
+}
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'wc-settings-panel',
+  title: 'Worklog Capture Settings',
+  app: 'worklog-capture',
+});
+function openAppSettings(){ _appSettings.open(); }
+
+load();
+</script>
+</body>
+</html>

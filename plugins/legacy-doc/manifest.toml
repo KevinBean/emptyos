@@ -1,0 +1,16 @@
+[plugin]
+id = "legacy-doc"
+name = "Legacy Documents"
+version = "0.1.0"
+description = "Local legacy-document to markdown conversion (DOC/RTF/WPS/PPT/ODF) via the anydoc Rust library. Injects a provider into the read capability for the legacy slice markitdown does not cover. In-process (anydoc is a zero-dependency abi3 wheel, so no isolated venv). 100% local — OCR is never requested, so no network call is possible."
+
+[plugin.entry]
+module = "plugin"
+class = "LegacyDocPlugin"
+
+[provides]
+services = ["legacy-doc"]
+tags = ["read", "documents", "conversion", "markdown", "legacy"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

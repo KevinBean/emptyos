@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vault Topology — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; -webkit-font-smoothing:antialiased }
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg-card); position:sticky; top:0; z-index:10 }
+.toolbar h1 { font-size:15px; font-weight:600; color:var(--text-heading); margin-right:8px }
+.toolbar select, .toolbar input { padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; font-family:inherit }
+.toolbar label { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px }
+.toolbar .stat { font-size:12px; color:var(--text-muted); margin-left:auto; cursor:help }
+/* A truncated graph must not read as the whole vault, so the slice claim stops
+   being muted chrome the moment it is a partial view. */
+.toolbar .stat.capped { color:var(--warning); font-weight:600 }
+.toolbar .stat.capped::before { content:"\26A0\FE0E"; margin-right:5px }
+.toolbar .back { padding:8px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; text-decoration:none }
+.toolbar .back:hover { border-color:var(--accent); color:var(--accent) }
+.toolbar .legend { display:flex; gap:12px; align-items:center; font-size:11px; color:var(--text-muted); flex-wrap:wrap }
+.toolbar .legend .sw { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle }
+.toolbar .legend span.lg-item { display:inline-flex; align-items:center; gap:4px }
+#vault-graph-canvas { width:100vw; height:calc(100dvh - 86px) }
+.status { position:fixed; bottom:calc(env(safe-area-inset-bottom, 0px) + 16px); left:50%; transform:translateX(-50%); padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:999px; font-size:13px; color:var(--text-muted); box-shadow:0 4px 16px var(--shadow) }
+.toolbar2 { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg-card); font-size:11px; color:var(--text-muted) }
+
+/* Disconnected-notes panel — reuses .eos-settings-panel chrome (head/body),
+   per .claude/rules/app-ui-patterns.md; only the row grammar is local. */
+.og-section { margin-bottom:22px }
+.og-section h4 { font-size:12px; font-weight:600; color:var(--text-heading); text-transform:uppercase; letter-spacing:0.5px; margin:0 0 2px }
+.og-section .og-count { color:var(--accent) }
+.og-section .og-sub { font-size:11px; color:var(--text-muted); line-height:1.5; margin-bottom:8px }
+.og-row { display:flex; align-items:baseline; gap:8px; padding:7px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; margin-bottom:6px; cursor:pointer; transition:border-color 0.15s }
+.og-row:hover { border-color:color-mix(in srgb,var(--accent) 45%,transparent) }
+.og-row .og-name { flex:1; font-size:13px; color:var(--text-heading); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.og-row .og-folder { flex-shrink:0; max-width:45%; font-size:10px; font-family:var(--mono); color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.og-row .og-inview { flex-shrink:0; font-size:10px; color:var(--accent) }
+.og-more { font-size:11px; color:var(--text-muted); padding:2px 2px 0 }
+.og-foot { font-size:11px; color:var(--text-muted); line-height:1.6; border-top:1px solid var(--border); padding-top:12px }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a class="back" href="/">← Home</a>
+  <h1>Vault Topology</h1>
+  <select id="kinds-filter">
+    <option value="">All kinds</option>
+    <option value="kb">KB only</option>
+    <option value="job-application">Job applications</option>
+    <option value="person">People</option>
+    <option value="project">Projects</option>
+  </select>
+  <input type="search" id="filter-q" placeholder="Filter labels…" style="width:180px">
+  <button class="back" id="orphan-btn" onclick="toggleOrphans()" title="Notes that connect to nothing — computed vault-wide by the link app">&#9888; Disconnected</button>
+  <span class="stat" id="stat-line"></span>
+</div>
+<div class="toolbar2">
+  <label><input type="checkbox" id="edge-wikilink" checked> wikilinks</label>
+  <label><input type="checkbox" id="edge-frontmatter" checked> frontmatter refs</label>
+  <label><input type="checkbox" id="edge-kb" checked> KB clauses</label>
+  <label><input type="checkbox" id="edge-tag"> tag-shared</label>
+  <label><input type="checkbox" id="edge-folder"> folder containment</label>
+  <span class="legend" style="margin-left:auto">
+    <span class="lg-item"><span class="sw" style="background:var(--accent)"></span>kb</span>
+    <span class="lg-item"><span class="sw" style="background:var(--success)"></span>note</span>
+    <span class="lg-item"><span class="sw" style="background:var(--warning)"></span>guideline</span>
+    <span class="lg-item"><span class="sw" style="background:var(--danger)"></span>lesson</span>
+    <span class="lg-item"><span class="sw" style="background:var(--text-muted)"></span>other</span>
+  </span>
+</div>
+<div id="vault-graph-canvas"></div>
+<div class="status" id="status">Loading vis-network…</div>
+
+<div class="eos-settings-panel" id="orphan-panel">
+  <div class="sp-head">
+    <h3>Disconnected notes</h3>
+    <button class="btn-settings" onclick="toggleOrphans(false)" aria-label="Close" title="Close this panel">&times;</button>
+  </div>
+  <div class="sp-body" id="orphan-body"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('vault-graph');
+
+var STATE = { network: null, nodesDS: null, edgesDS: null, raw: { nodes: [], edges: [] } };
+
+// Resolve theme-token swatches once so node colors track the active theme
+// (light/dark/sunset/nord/summer). No hex fallbacks here — they'd hardcode
+// one theme's palette and mis-render the others. If a CSS var is missing,
+// vis-network's own defaults are a cleaner degradation than the wrong hex.
+var THEME = (function() {
+  var cs = getComputedStyle(document.documentElement);
+  var read = function(name) { return (cs.getPropertyValue(name) || '').trim(); };
+  return {
+    accent:  read('--accent'),
+    success: read('--success'),
+    warning: read('--warning'),
+    danger:  read('--danger'),
+    muted:   read('--text-muted'),
+    text:    read('--text'),
+  };
+})();
+
+function kindColor(k) {
+  switch ((k || '').toLowerCase()) {
+    case 'kb': case 'formula': case 'doc': case 'moc': return THEME.accent;
+    case 'concept': return THEME.muted;
+    case 'reference': case 'guideline': return THEME.warning;
+    case 'clause': return THEME.muted;
+    case 'case': case 'note': return THEME.success;
+    case 'lesson': return THEME.danger;
+    case 'project': return THEME.accent;
+    case 'person': return THEME.success;
+    case 'job-application': return THEME.warning;
+    case 'folder': return THEME.muted;
+    default: return THEME.muted;
+  }
+}
+
+function edgeStyle(kind) {
+  switch (kind) {
+    case 'wikilink':       return { color: THEME.accent,  dashes: false, arrows: 'to', width: 1 };
+    case 'frontmatter_ref':return { color: THEME.warning, dashes: false, arrows: 'to', width: 1 };
+    case 'kb_clause':      return { color: THEME.success, dashes: false, arrows: 'to', width: 1 };
+    case 'tag_shared':     return { color: THEME.muted,   dashes: true,  arrows: '',   width: 1 };
+    case 'folder':         return { color: THEME.muted,   dashes: true,  arrows: 'to', width: 0.5 };
+    default:               return { color: THEME.muted,   dashes: false, arrows: '',   width: 1 };
+  }
+}
+
+function loadVisNetwork() {
+  return new Promise(function(resolve, reject) {
+    if (window.vis && window.vis.Network) return resolve();
+    var s = document.createElement('script');
+    s.src = 'https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js';
+    s.onload = resolve;
+    s.onerror = function() { reject(new Error('Failed to load vis-network from CDN')); };
+    document.head.appendChild(s);
+  });
+}
+
+function activeEdgeKinds() {
+  var kinds = [];
+  if (document.getElementById('edge-wikilink').checked)    kinds.push('wikilink');
+  if (document.getElementById('edge-frontmatter').checked) kinds.push('frontmatter_ref');
+  if (document.getElementById('edge-kb').checked)          kinds.push('kb_clause');
+  if (document.getElementById('edge-tag').checked)         kinds.push('tag_shared');
+  if (document.getElementById('edge-folder').checked)      kinds.push('folder');
+  return kinds;
+}
+
+// The graph draws at most `limit` notes, chosen by recency, out of however many
+// the filters matched. Saying only "800 nodes" lets a 3% sample read as the
+// vault — the reified-appearance trap in .claude/rules/three-natures-lens.md.
+// So the denominator ships, and when it bites, it is marked rather than muted.
+//
+// Which denominator is not cosmetic: with a kind filter active the pool is the
+// matching notes, not the vault, so `matched` is the honest one and
+// `total_indexed` rides along as context.
+function renderStatLine(s) {
+  var el = document.getElementById('stat-line');
+  var drawn = s.notes_drawn != null ? s.notes_drawn : (s.in_slice || 0);
+  var matched = s.matched != null ? s.matched : drawn;
+  var total = s.total_indexed || 0;
+  var edges = (s.wikilink_edges || 0) + ' wikilinks · ' +
+              (s.frontmatter_edges || 0) + ' frontmatter · ' +
+              (s.kb_clause_edges || 0) + ' kb';
+
+  var scope, tip;
+  if (!s.capped) {
+    // Everything the filters matched is on screen — no claim to qualify.
+    scope = drawn.toLocaleString() + (s.filtered ? ' matching notes' : ' notes')
+          + (s.filtered && total ? ' of ' + total.toLocaleString() : '');
+    tip = s.filtered
+      ? 'Every note matching the current filter is drawn.'
+      : 'Every indexed note is drawn.';
+  } else {
+    scope = drawn.toLocaleString() + ' of ' + matched.toLocaleString()
+          + (s.filtered ? ' matching' : '') + ' notes'
+          + (s.filtered && total ? ' (' + total.toLocaleString() + ' indexed)' : '');
+    tip = 'Capped at ' + (s.limit || drawn).toLocaleString()
+        + ' notes, selected by most-recently-modified. '
+        + (matched - drawn).toLocaleString() + ' matching notes are not drawn — '
+        + 'links to and from them are missing from this view.';
+  }
+
+  el.textContent = scope + ' · ' + edges;
+  el.title = tip;
+  el.classList.toggle('capped', !!s.capped);
+}
+
+async function fetchGraph() {
+  var status = document.getElementById('status');
+  status.style.display = '';
+  status.textContent = 'Fetching graph…';
+  var kinds = document.getElementById('kinds-filter').value;
+  var tagEdges = document.getElementById('edge-tag').checked;
+  var folderEdges = document.getElementById('edge-folder').checked;
+  var url = '/vault-graph/api/graph?limit=800' +
+            (kinds ? '&kinds=' + encodeURIComponent(kinds) : '') +
+            (tagEdges ? '&shared_tags=1' : '') +
+            (folderEdges ? '&folder_edges=1' : '');
+  try {
+    var r = await fetch(url);
+    var data = await r.json();
+    STATE.raw = data;
+    renderStatLine(data.stats || {});
+    return data;
+  } catch (e) {
+    status.textContent = 'Failed to fetch graph: ' + e.message;
+    document.getElementById('vault-graph-canvas').innerHTML = EOS_UI.errorState({
+      message: 'Could not load the vault graph: ' + e.message,
+      onRetry: 'location.reload()',
+    });
+    throw e;
+  }
+}
+
+function applyFilter() {
+  var q = (document.getElementById('filter-q').value || '').toLowerCase().trim();
+  if (!STATE.nodesDS) return;
+  STATE.nodesDS.forEach(function(n) {
+    var hidden = q && !(n.label || '').toLowerCase().includes(q);
+    STATE.nodesDS.update({ id: n.id, hidden: !!hidden });
+  });
+}
+
+function render(data) {
+  var container = document.getElementById('vault-graph-canvas');
+  if (!data || !data.nodes || data.nodes.length === 0) {
+    container.innerHTML = EOS_UI.emptyState({
+      icon: '◌',
+      message: 'No nodes match this filter. Try enabling more edge kinds, or check that your vault has notes with wikilinks or frontmatter references.',
+    });
+    return;
+  }
+  var activeKinds = activeEdgeKinds();
+  var nodes = data.nodes.map(function(n) {
+    return {
+      id: n.id,
+      label: n.label || '(untitled)',
+      color: { background: kindColor(n.kind), border: kindColor(n.kind) },
+      font: { color: THEME.text, size: 12 },
+      shape: n.kind === 'folder' ? 'square' : 'dot',
+      size: n.kind === 'folder' ? 14 : 10,
+      _kind: n.kind,
+      _folder: n.folder,
+    };
+  });
+  var edges = data.edges
+    .filter(function(e) { return activeKinds.indexOf(e.kind) !== -1; })
+    .map(function(e) {
+      var s = edgeStyle(e.kind);
+      return {
+        from: e.from,
+        to: e.to,
+        arrows: s.arrows,
+        dashes: s.dashes,
+        color: { color: s.color, opacity: 0.55 },
+        width: s.width,
+        title: e.kind + (e.tag ? ' · ' + e.tag : '') + (e.field ? ' · ' + e.field : ''),
+      };
+    });
+  STATE.nodesDS = new vis.DataSet(nodes);
+  STATE.edgesDS = new vis.DataSet(edges);
+  container.innerHTML = '';   // clear any prior empty/error state before vis.js mounts
+  STATE.network = new vis.Network(container, { nodes: STATE.nodesDS, edges: STATE.edgesDS }, {
+    physics: { stabilization: { iterations: 120 }, barnesHut: { gravitationalConstant: -3000 } },
+    interaction: { hover: true, tooltipDelay: 200 },
+    nodes: { borderWidth: 1 },
+  });
+  STATE.network.on('click', function(params) {
+    if (params.nodes && params.nodes.length) {
+      var path = params.nodes[0];
+      // Folder pseudo-nodes — don't open a timeline
+      if (path.indexOf('folder::') === 0) return;
+      if (window.EOS_UI && EOS_UI.timeline4D) {
+        EOS_UI.timeline4D(path, { title: 'Timeline' });
+      }
+    }
+  });
+  document.getElementById('status').style.display = 'none';
+}
+
+// ── Disconnected-notes panel ─────────────────────────────────────────────
+// The numbers come from `link` (whole vault, one cached index) via
+// /vault-graph/api/orphans — not from the drawn slice, which is capped and
+// would answer a narrower question while looking like the same one.
+
+var ORPHANS = { data: null, loading: false };
+
+var ORPHAN_SECTIONS = [
+  { key: 'orphans', title: 'Orphans',
+    sub: 'Nothing links in and nothing links out. Genuinely disconnected — these are the ones to connect.' },
+  { key: 'unreferenced', title: 'Unreferenced',
+    sub: 'Links out, but nothing links back. Often fine: not every note is meant to be a destination.' },
+  { key: 'broken_only', title: 'Broken links only',
+    sub: 'Links out, but every target is missing. The fix is repairing a link, not writing a new note.' },
+];
+
+function inCurrentSlice(path) {
+  return !!(STATE.nodesDS && STATE.nodesDS.get(path));
+}
+
+// Same destination as a node click — the 4D drawer. When the note also happens
+// to be in the drawn slice, focus it so the panel and the canvas agree.
+function openOrphan(path) {
+  if (STATE.network && inCurrentSlice(path)) {
+    STATE.network.selectNodes([path]);
+    STATE.network.focus(path, { scale: 1.4, animation: true });
+  }
+  if (window.EOS_UI && EOS_UI.timeline4D) EOS_UI.timeline4D(path, { title: 'Timeline' });
+}
+
+function orphanRowsHtml(paths, total) {
+  if (!paths.length) return '<div class="og-more">None.</div>';
+  var rows = paths.map(function(p) {
+    var folder = p.indexOf('/') === -1 ? '' : p.slice(0, p.lastIndexOf('/'));
+    return '<div class="og-row" onclick="openOrphan(' + EOS_UI.jsArg(p) + ')">'
+      + '<span class="og-name">' + esc(EOS.fileName(p).replace(/-/g, ' ')) + '</span>'
+      + (inCurrentSlice(p) ? '<span class="og-inview" title="Drawn in the current graph">&#9679; in view</span>' : '')
+      + '<span class="og-folder" title="' + escAttr(p) + '">' + esc(folder) + '</span>'
+      + '</div>';
+  }).join('');
+  var hidden = total - paths.length;
+  return rows + (hidden > 0 ? '<div class="og-more">+ ' + hidden.toLocaleString() + ' more not shown</div>' : '');
+}
+
+function renderOrphans() {
+  var body = document.getElementById('orphan-body');
+  if (ORPHANS.loading) {
+    // Named because the wait is real: `link` rebuilds its whole index whenever
+    // the vault changes, measured at 35-60s over 27.8k notes. A bare "Loading…"
+    // reads as broken at that length.
+    body.innerHTML = '<div class="og-more">Reading the vault link index… '
+      + 'first open after a vault change can take a minute on a large vault.</div>';
+    return;
+  }
+  var d = ORPHANS.data;
+  if (!d) return;
+  if (d.available === false) {
+    body.innerHTML = EOS_UI.errorState({
+      message: 'The link app computes this and could not be reached: ' + (d.error || 'unavailable'),
+      onRetry: 'loadOrphans(true)',
+    });
+    return;
+  }
+  var counts = d.counts || {};
+  var gs = STATE.raw.stats || {};
+  // notes_drawn, not in_slice: the latter counts folder pseudo-nodes too, so it
+  // would overstate how much of the vault is on screen in exactly the sentence
+  // that exists to be honest about it.
+  var drawn = gs.notes_drawn != null ? gs.notes_drawn : (gs.in_slice || 0);
+  body.innerHTML = ORPHAN_SECTIONS.map(function(s) {
+    var paths = d[s.key] || [];
+    var total = counts[s.key] || paths.length;
+    return '<div class="og-section">'
+      + '<h4>' + esc(s.title) + ' <span class="og-count">' + total.toLocaleString() + '</span></h4>'
+      + '<div class="og-sub">' + esc(s.sub) + '</div>'
+      + orphanRowsHtml(paths, total)
+      + '</div>';
+  }).join('')
+  + '<div class="og-foot">Counted across all ' + (d.total_notes || 0).toLocaleString()
+  + ' notes in the vault. The graph is drawing ' + drawn.toLocaleString()
+  + ', so most notes listed here are not on screen — &#9679; marks the ones that are.</div>';
+
+  var btn = document.getElementById('orphan-btn');
+  if (counts.orphans != null) btn.textContent = '⚠ ' + counts.orphans.toLocaleString() + ' disconnected';
+}
+
+async function loadOrphans(force) {
+  if (ORPHANS.loading) return;
+  if (ORPHANS.data && !force) { renderOrphans(); return; }
+  ORPHANS.loading = true;
+  renderOrphans();
+  try {
+    var r = await fetch('/vault-graph/api/orphans?limit=100');
+    ORPHANS.data = await r.json();
+  } catch (e) {
+    ORPHANS.data = { available: false, error: e.message };
+  }
+  ORPHANS.loading = false;
+  renderOrphans();
+}
+
+// Lazy on first open, and this is not a micro-optimisation: `link` builds its
+// index on first read after any vault change — measured 36s and 57s on this
+// 27.8k-note vault, 0.1s once warm. Paying that on every page view, for a
+// question most views never ask, would make the graph itself feel broken.
+function toggleOrphans(force) {
+  var panel = document.getElementById('orphan-panel');
+  var open = (force === undefined) ? !panel.classList.contains('open') : !!force;
+  panel.classList.toggle('open', open);
+  if (open) loadOrphans();
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') toggleOrphans(false);
+});
+
+async function init() {
+  try {
+    await loadVisNetwork();
+  } catch (e) {
+    document.getElementById('status').textContent = e.message;
+    return;
+  }
+  var data = await fetchGraph();
+  render(data);
+}
+
+document.getElementById('kinds-filter').addEventListener('change', async function() {
+  var data = await fetchGraph();
+  render(data);
+});
+['edge-wikilink','edge-frontmatter','edge-kb','edge-tag','edge-folder'].forEach(function(id) {
+  document.getElementById(id).addEventListener('change', async function() {
+    // tag + folder require new server fetch (they're opt-in server-side); others are client filter
+    if (id === 'edge-tag' || id === 'edge-folder') {
+      var data = await fetchGraph();
+      render(data);
+    } else {
+      render(STATE.raw);
+    }
+  });
+});
+document.getElementById('filter-q').addEventListener('input', applyFilter);
+
+init();
+</script>
+</body>
+</html>

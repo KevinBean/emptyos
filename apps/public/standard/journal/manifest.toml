@@ -1,0 +1,140 @@
+[app]
+id = "journal"
+icon_id = "journal"
+store_category = "productivity"
+name = "Journal"
+version = "1.0.0"
+description = "Daily journaling — entries, milestones, mood tracking, reflection"
+icon = "📔"
+dimensions = ["emotional", "intellectual"]
+
+[app.entry]
+module = "app"
+class = "JournalApp"
+
+[requires]
+# task + focus feed the three-things draft (fail-soft; absence tolerated)
+optional_apps = ["healing", "task", "focus"]
+capabilities = ["read", "write", "search", "think"]
+apps = []
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["journal"]
+
+[provides.web]
+prefix = "/journal"
+
+[provides.events]
+emits = ["journal:entry", "journal:created", "journal:reflection", "journal:milestone", "journal:three-things", "journal:wheel-review"]
+# Scheduler-written review — the weekly note is the surface — no cross-app listener by design.
+internal = [
+    "journal:wheel-review",
+]
+
+[provides.prompts]
+module = "prompts"
+
+[provides.settings]
+schema = [
+    {key = "journal.default_mood", label = "Default Mood", type = "select", options = ["great", "good", "okay", "low", "bad"], default = "good", hint = "Mood preselected when opening a new day."},
+    {key = "journal.feature.atomic-note-writes.enabled", label = "Crash-safe journal writes", type = "toggle", default = false, hint = "Dark by default. Writes complete journal notes through an fsynced temporary file and atomic replacement."},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/journal", method = "_recent_days"},
+    {slash = "/journal-summary", method = "get_summary"},
+    {slash = "/journal-tasks", method = "get_tasks"},
+    {slash = "/journal-weekly", method = "get_weekly"},
+]
+
+[[contributes.hub.today]]
+id = "journal-prompt"
+method = "slot_today"
+limit = 1
+priority = 3
+
+[[contributes.hub.recent_thinking]]
+id = "recent-journal"
+method = "slot_recent_thinking"
+limit = 3
+priority = 5
+
+# ── Legacy-parity panels ──
+
+[[contributes.hub.panel]]
+id = "yesterday"
+method = "panel_yesterday"
+renderer = "text-card"
+priority = 240
+
+[[contributes.hub.panel]]
+id = "journal-month-compare"
+method = "panel_month_compare"
+renderer = "compare-tile"
+group = "month-compare"
+priority = 220
+
+[[contributes.hub.panel]]
+id = "journal-today-tile"
+method = "panel_journal_today"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 150
+
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "journal-timeline"
+method = "timeline_items"
+
+[[contributes.voice-assistant.context]]
+id = "todays-journal"
+method = "assistant_context"
+priority = 160
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# Voice-only verb (no canonical call_app method); method IS the voice handler.
+# eligibility=stable feeds the autopilot floor. Voice surface now sourced here
+# (Phase 3 done — legacy intent removed).
+[[provides.verbs]]
+verb = "journal.add_entry"
+method = "voice_add_entry"
+summary = "Append a one-line entry to today's journal"
+args = { text = "string", mood = "string?" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "journal entry: had a great walk this morning, feeling good", description = "Append a one-line entry to today's journal", always = true }
+
+# Fast off-system activity logger — captures a class/workout/social outing that
+# happens away from the keyboard so the wellbeing wheel reads true (it counts
+# logged signals; an un-logged jumper class reads as zero). Stamps the dimension
+# tag so it counts even without keyword inference.
+[[provides.verbs]]
+verb = "journal.log_activity"
+method = "voice_log_activity"
+summary = "Log an off-system activity (class, workout, outing) to today's journal"
+args = { activity = "string", dimension = "string?" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "log a jumper class", description = "Record something you did away from the keyboard (a class, workout, walk, catch-up) so the wheel sees it", always = true }
+
+# Read verb — today's journal state at a glance (entries, streak, mood).
+[[provides.verbs]]
+verb = "journal.today_summary"
+method = "voice_today_summary"
+summary = "Today's journal state — entries, streak, mood"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { method = "voice_today_summary", example = "what did I journal about today", description = "Speak today's journal state — number of entries, current streak, dominant mood — and show a small card. Takes no arguments.", card = "entity-card" }
+
+[[contributes.tour.step]]
+id = "vault.markdown"
+group = "core"
+priority = 300
+route = "/journal/"
+spotlight = "#entry-text"
+title = "Your data, in your filesystem"
+body = "Anything you write here lands in a plain markdown file in your vault — <code>50_Journal/2026/...md</code>. <strong>The vault is the hard drive; EmptyOS is mounted on top, not under.</strong> Swap to any markdown editor or a different OS — your notes don't move."

@@ -1,0 +1,48 @@
+[app]
+id = "bookme"
+name = "BookMe"
+version = "0.1.0"
+description = "Share your availability and let people book meetings — a self-hosted scheduling page."
+store_category = "productivity"
+user_intent = [
+    "let people book a meeting with me",
+    "share my availability",
+    "I want a scheduling link",
+    "book a call",
+    "set up a booking page",
+]
+
+[app.entry]
+module = "app"
+class = "BookMeApp"
+
+[requires]
+capabilities = ["send"]
+apps = []
+# Read-back for conflict detection: `_calendar_busy` asks calendar for existing
+# commitments so a published slot can't land on top of one. Soft — absence
+# degrades to bookme's own bookings, which is the pre-2026-08 behaviour.
+optional_apps = ["calendar"]
+
+[provides.web]
+prefix = "/bookme"
+# Public booking face — reachable without the login gate. Everything else
+# (availability config, booking management) stays auth-gated. The app code is
+# responsible for only exposing open slots + accepting a booking on these.
+public_routes = ["/b", "/api/public"]
+
+[provides.events]
+emits = ["bookme:created", "bookme:cancelled"]
+# Booking CRUD — bookme handles its own outbound notification — no cross-app listener by design.
+internal = [
+    "bookme:created",
+    "bookme:cancelled",
+]
+
+[[contributes.hub.panel]]
+id = "bookme-upcoming"
+method = "panel_upcoming"
+renderer = "task-list"
+title = "Upcoming bookings"
+priority = 95
+limit = 5

@@ -1,0 +1,16 @@
+[plugin]
+id = "mkt-test-plugin-deps"
+name = "Marketplace Test Plugin (with deps)"
+version = "0.1.0"
+description = "Plugin fixture that requires a non-existent plugin — exercises the dependency-warning path."
+
+[plugin.entry]
+module = "plugin"
+class = "MktTestPluginDeps"
+
+[requires]
+plugins = ["nonexistent-plugin"]
+
+[provides]
+services = ["mkt-test-deps-svc"]
+tags = ["test"]

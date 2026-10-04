@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Plekto — B3: dense 5x5 weave</title>
+  <desc>5x5 twill weave (vs original 3x3). Denser — feels closer to actual fabric / textile texture. Uses thinner strokes (6px) to compensate for higher line density. Pattern: alternating O/U at each intersection.</desc>
+
+  <g fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor">
+
+    <!-- 5 horizontals at y = 24, 44, 64, 84, 104 ; 5 verticals at x = 24, 44, 64, 84, 104.
+         Alternating pattern: H is "over" at intersections where (i + j) is even (i = horizontal index 0..4, j = vertical index 0..4).
+         For brevity drawn as continuous lines with gaps cut where each strand is under. -->
+
+    <!-- HORIZONTALS — drawn as multiple segments with gaps where they're under -->
+    <!-- H0 (y=24): O at V0, V2, V4; U at V1, V3 (gaps at x=44, x=84) -->
+    <path d="M 12 24 L 40 24"/>
+    <path d="M 48 24 L 80 24"/>
+    <path d="M 88 24 L 116 24"/>
+
+    <!-- H1 (y=44): U O U O U → visible only across V1, V3 -->
+    <path d="M 40 44 L 48 44"/>            <!-- across V1 -->
+    <path d="M 80 44 L 88 44"/>            <!-- across V3 -->
+
+    <!-- H2 (y=64): O U O U O → same pattern as H0 -->
+    <path d="M 12 64 L 40 64"/>
+    <path d="M 48 64 L 80 64"/>
+    <path d="M 88 64 L 116 64"/>
+
+    <!-- H3 (y=84): U O U O U → same as H1 -->
+    <path d="M 40 84 L 48 84"/>
+    <path d="M 80 84 L 88 84"/>
+
+    <!-- H4 (y=104): O U O U O → same as H0/H2 -->
+    <path d="M 12 104 L 40 104"/>
+    <path d="M 48 104 L 80 104"/>
+    <path d="M 88 104 L 116 104"/>
+
+    <!-- VERTICALS — same alternating logic, mirrored axis -->
+    <!-- V0 (x=24): U O U O U → visible only across H1, H3 -->
+    <path d="M 24 40 L 24 48"/>
+    <path d="M 24 80 L 24 88"/>
+
+    <!-- V1 (x=44): O U O U O → visible at H0, H2, H4 (with gaps at H1, H3) -->
+    <path d="M 44 12 L 44 40"/>
+    <path d="M 44 48 L 44 80"/>
+    <path d="M 44 88 L 44 116"/>
+
+    <!-- V2 (x=64): U O U O U -->
+    <path d="M 64 40 L 64 48"/>
+    <path d="M 64 80 L 64 88"/>
+
+    <!-- V3 (x=84): O U O U O -->
+    <path d="M 84 12 L 84 40"/>
+    <path d="M 84 48 L 84 80"/>
+    <path d="M 84 88 L 84 116"/>
+
+    <!-- V4 (x=104): U O U O U -->
+    <path d="M 104 40 L 104 48"/>
+    <path d="M 104 80 L 104 88"/>
+
+  </g>
+</svg>

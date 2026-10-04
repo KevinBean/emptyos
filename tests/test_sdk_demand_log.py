@@ -1,0 +1,241 @@
+"""Tests for demand_log + BaseApp hooks (search, vault_query, think with_confidence).
+
+Pure in-process — no daemon required.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+from emptyos.sdk import BaseApp, demand_log
+
+
+def _mk_app(tmp_path: Path, vault_index=None):
+    config = MagicMock()
+    config.notes_path = tmp_path / "vault"
+    config.data_dir = tmp_path / "data"
+    services = MagicMock()
+    services.get_optional = MagicMock(
+        side_effect=lambda name: vault_index if name == "vault_index" else None
+    )
+    kernel = SimpleNamespace(config=config, services=services, vault_map=MagicMock())
+    manifest = SimpleNamespace(id="testapp")
+    app = BaseApp.__new__(BaseApp)
+    app.kernel = kernel
+    app.manifest = manifest
+    return app
+
+
+# ---------- demand_log module ----------
+
+def test_append_creates_file_and_writes_one_line(tmp_path):
+    demand_log.append(tmp_path, {"kind": "search", "query": "foo"})
+    entries = demand_log.read_all(tmp_path)
+    assert len(entries) == 1
+    assert entries[0]["kind"] == "search"
+    assert entries[0]["query"] == "foo"
+    assert "ts" in entries[0]
+
+
+def test_append_is_append_only(tmp_path):
+    demand_log.append(tmp_path, {"kind": "search", "query": "a"})
+    demand_log.append(tmp_path, {"kind": "vault_query", "query": "b"})
+    entries = demand_log.read_all(tmp_path)
+    assert len(entries) == 2
+    assert entries[0]["query"] == "a"
+    assert entries[1]["query"] == "b"
+
+
+def test_append_never_raises_on_bad_dir(tmp_path):
+    # Pass a nonsense data dir path — should swallow, not raise.
+    demand_log.append(tmp_path / "nul" / "0", {"kind": "x", "query": "y"})
+
+
+def test_read_all_skips_malformed_lines(tmp_path):
+    path = tmp_path / demand_log.LOG_FILENAME
+    path.write_text('{"ok": 1}\n{not json}\n{"ok": 2}\n', encoding="utf-8")
+    entries = demand_log.read_all(tmp_path)
+    assert [e["ok"] for e in entries] == [1, 2]
+
+
+def test_summarize_groups_soil_requests(tmp_path):
+    demand_log.append(
+        tmp_path,
+        {"app": "podcast", "kind": "unmet_dependency", "missing": ["connector:telegram"]},
+    )
+    demand_log.append(
+        tmp_path,
+        {
+            "app": "rooms",
+            "kind": "unmet_dependency",
+            "missing": ["connector:telegram", "app:people"],
+        },
+    )
+    demand_log.append(tmp_path, {"app": "kb", "kind": "search", "query": "missing"})
+
+    summary = demand_log.summarize(tmp_path)
+
+    assert summary["total"] == 3
+    assert summary["by_kind"]["unmet_dependency"] == 2
+    assert summary["top_missing"][0] == {"item": "connector:telegram", "count": 2}
+    assert summary["recent_unmet_dependencies"][0]["app"] == "rooms"
+    # No window requested -> all-time, unchanged.
+    assert summary["window_days"] is None
+
+
+def test_summarize_window_drops_stale_demand(tmp_path):
+    """Demand decays: a dependency met months ago must stop driving a
+    'build this' growth signal, while cumulative volume stays honest.
+
+    Regression for the news-center signal, which kept recommending a retired
+    app for seven weeks after briefing/opportunity-radar migrated away.
+    """
+    stale = (datetime.now(timezone.utc) - timedelta(days=50)).isoformat(timespec="seconds")
+    fresh = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(timespec="seconds")
+    demand_log.append(
+        tmp_path,
+        {"ts": stale, "app": "briefing", "kind": "unmet_dependency",
+         "missing": ["app:news-center"]},
+    )
+    demand_log.append(
+        tmp_path,
+        {"ts": fresh, "app": "radar", "kind": "unmet_dependency",
+         "missing": ["app:still-wanted"]},
+    )
+
+    windowed = demand_log.summarize(tmp_path, window_days=30)
+    items = [m["item"] for m in windowed["top_missing"]]
+    assert "app:news-center" not in items
+    assert "app:still-wanted" in items
+    assert [e["app"] for e in windowed["recent_unmet_dependencies"]] == ["radar"]
+    # Cumulative volume is history, not demand — it must NOT shrink.
+    assert windowed["total"] == 2
+    assert windowed["by_kind"]["unmet_dependency"] == 2
+    assert windowed["window_days"] == 30
+
+    # ...and the all-time view still sees everything.
+    assert "app:news-center" in [m["item"] for m in demand_log.summarize(tmp_path)["top_missing"]]
+
+
+def test_summarize_window_keeps_undated_entries(tmp_path):
+    """An entry we can't date counts as in-window — dropping it would
+    silently shrink the signal the window exists to sharpen."""
+    demand_log.append(tmp_path, {"kind": "unmet_dependency", "missing": ["app:undated"]})
+    # append() stamps ts, so strip it to simulate a hand-written/legacy line.
+    path = tmp_path / demand_log.LOG_FILENAME
+    rows = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    for r in rows:
+        r.pop("ts", None)
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    summary = demand_log.summarize(tmp_path, window_days=30)
+    assert [m["item"] for m in summary["top_missing"]] == ["app:undated"]
+
+
+# ---------- BaseApp._record_demand ----------
+
+def test_record_demand_writes_with_app_id(tmp_path):
+    app = _mk_app(tmp_path)
+    app._record_demand(kind="search", query="missing thing")
+    entries = demand_log.read_all(tmp_path / "data")
+    assert len(entries) == 1
+    assert entries[0]["app"] == "testapp"
+    assert entries[0]["kind"] == "search"
+    assert entries[0]["result"] == "empty"
+
+
+# ---------- search() hook ----------
+
+def test_search_empty_result_logs_demand(tmp_path):
+    app = _mk_app(tmp_path)
+    cap = MagicMock()
+    cap.execute = AsyncMock(return_value=SimpleNamespace(value=[]))
+    app.kernel.capability = MagicMock(return_value=cap)
+
+    asyncio.run(app.search("nothing matches"))
+    entries = demand_log.read_all(tmp_path / "data")
+    assert len(entries) == 1
+    assert entries[0]["kind"] == "search"
+    assert entries[0]["query"] == "nothing matches"
+
+
+def test_search_with_results_does_not_log(tmp_path):
+    app = _mk_app(tmp_path)
+    cap = MagicMock()
+    cap.execute = AsyncMock(return_value=SimpleNamespace(value=[{"hit": 1}]))
+    app.kernel.capability = MagicMock(return_value=cap)
+
+    asyncio.run(app.search("something"))
+    assert demand_log.read_all(tmp_path / "data") == []
+
+
+# ---------- vault_query() hook ----------
+
+def test_vault_query_empty_logs_demand(tmp_path):
+    vi = MagicMock()
+    vi.find = MagicMock(return_value=[])
+    app = _mk_app(tmp_path, vault_index=vi)
+
+    rows = app.vault_query(tags=["job-application"], company="Atlassian")
+    assert rows == []
+    entries = demand_log.read_all(tmp_path / "data")
+    assert len(entries) == 1
+    assert entries[0]["kind"] == "vault_query"
+    assert "job-application" in entries[0]["query"]
+
+
+def test_vault_query_with_results_does_not_log(tmp_path):
+    vi = MagicMock()
+    vi.find = MagicMock(return_value=[{"path": "foo.md"}])
+    app = _mk_app(tmp_path, vault_index=vi)
+
+    app.vault_query(tags=["x"])
+    assert demand_log.read_all(tmp_path / "data") == []
+
+
+# ---------- _finalize_think ----------
+
+def test_finalize_passthrough_when_off(tmp_path):
+    app = _mk_app(tmp_path)
+    out = app._finalize_think("plain string", with_confidence=False, prompt="", threshold=3.0)
+    assert out == "plain string"
+
+
+def test_finalize_parses_envelope_and_returns_dict(tmp_path):
+    app = _mk_app(tmp_path)
+    raw = '{"answer": "yes", "confidence": 5, "missing": [], "assumed": []}'
+    out = app._finalize_think(raw, with_confidence=True, prompt="q", threshold=3.0)
+    assert isinstance(out, dict)
+    assert out["answer"] == "yes"
+    assert out["confidence"] == 5.0
+    # Confidence above threshold — no demand log entry.
+    assert demand_log.read_all(tmp_path / "data") == []
+
+
+def test_finalize_logs_low_confidence(tmp_path):
+    app = _mk_app(tmp_path)
+    raw = '{"answer": "maybe", "confidence": 2, "missing": ["term X"], "assumed": []}'
+    out = app._finalize_think(raw, with_confidence=True, prompt="why?", threshold=3.0)
+    assert out["confidence"] == 2.0
+    entries = demand_log.read_all(tmp_path / "data")
+    assert len(entries) == 1
+    assert entries[0]["kind"] == "think"
+    assert entries[0]["result"] == "low_confidence"
+    assert entries[0]["confidence"] == 2.0
+    assert entries[0]["missing"] == ["term X"]
+
+
+def test_finalize_falls_back_when_unparseable(tmp_path):
+    app = _mk_app(tmp_path)
+    out = app._finalize_think(
+        "totally not json", with_confidence=True, prompt="", threshold=3.0
+    )
+    assert out["answer"] == "totally not json"
+    assert out["confidence"] is None
+    # No confidence to compare — no log.
+    assert demand_log.read_all(tmp_path / "data") == []

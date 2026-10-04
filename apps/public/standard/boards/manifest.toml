@@ -1,0 +1,100 @@
+[app]
+id = "boards"
+icon_id = "boards"
+store_category = "productivity"
+name = "Boards"
+version = "1.0.0"
+description = "Visual Work OS: Flexible boards with multiple views, automations, and offline export — backed by your Markdown Vault."
+
+[app.entry]
+module = "app"
+class = "BoardsApp"
+
+[requires]
+capabilities = ["read", "write", "think"]
+# projects — project-tracker preset sources from it (source.type = "app") and
+# link-record inverse maintenance writes through it. journal — automation
+# actions ("journal_entry") dispatch to it.
+apps = ["journal", "projects"]
+# people — Planner-import assignee create-or-match; absence degrades to raw
+# name strings (planner_sync.py try/except).
+optional_apps = ["people"]
+
+[provides.web]
+prefix = "/boards"
+# The public Form view (.claude/rules/boards-as-view-layer.md) — a stranger
+# with no login opens /boards/f/<id>, reads only the fillable schema, and
+# submits one record. Narrow prefixes only, never /api/boards (the owner's
+# full CRUD/automation surface) — see apps/public/standard/boards/public_form.py.
+public_routes = ["/f", "/api/public"]
+
+[provides.cli]
+commands = ["boards"]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+# Ship only what the pages use — pages load eos-map.js. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["maps"]
+hook = "export"
+# Standalone distribution targets built by scripts/build_standalone_release.py
+# (.claude/rules/standalone-distribution.md). "extension" requires the export
+# surface to pass scripts/check-csp-inline.py --app boards.
+targets = ["single-html", "extension"]
+# Ordered strategies the shim applies at runtime, per capability.
+fallbacks = [
+    "vault:indexeddb",           # persist boards + items in browser IDB
+    "think:byok-openai",         # user pastes an OpenAI key in the offline panel
+    "events:local-bus",          # in-tab CustomEvent bus (no WebSocket)
+    "call_app:stub",             # journal/automation hooks become no-ops
+    "search:local",              # search over the bundled snapshot only
+    "viewer:none",               # "copy path" instead of open-in-external-viewer
+    "speak:web-speech",
+    "listen:web-speech",
+]
+
+[provides.events]
+emits = [
+    "board:created",
+    "board:config_updated",
+    "board:column_added",
+    "board:column_updated",
+    "board:column_deleted",
+    "board:item_created",
+    "board:item_updated",
+    "board:item_moved",
+    "board:item_archived",
+    "board:view_saved",
+    "board:view_deleted",
+    "board:item_auto_slipped",
+    "board:comment_added",
+    "board:comment_deleted",
+    "board:attachment_added",
+    "board:attachment_deleted",
+    "board:planner_imported",
+    # Emitted via BaseApp.emit_assignment() when an assignee/reviewer column
+    # changes (items.py) — the people app listens and rebuilds its workload index.
+    "people:assigned",
+    "people:unassigned",
+]
+# Auto-slip bookkeeping — the board view is the surface — no cross-app listener by design.
+internal = [
+    "board:item_auto_slipped",
+]
+
+[provides.settings]
+schema = [
+    {key = "boards.items_dir", label = "Items Directory", type = "text", default = "30_Resources/EmptyOS/boards-data", hint = "Vault folder for board item notes"},
+    {key = "boards.me", label = "Your name", type = "text", default = "", hint = "Stamped as author on comments + activity entries"},
+    {key = "boards.me_person", label = "Your person id", type = "text", default = "", hint = "People-app person matched by the ★ Mine quick filter"},
+]
+
+[[contributes.hub.panel]]
+id = "boards-pinned"
+method = "panel_pinned_boards"
+renderer = "chips"
+priority = 85
+group = "shortcuts"
+title = "Pinned boards"

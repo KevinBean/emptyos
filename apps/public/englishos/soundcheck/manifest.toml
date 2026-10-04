@@ -1,0 +1,95 @@
+[app]
+id = "soundcheck"
+store_category = "productivity"
+name = "Sound Check"
+version = "0.1.0"
+description = "Train your ear on English sounds — hear or read a word, pick the sound it has, and see a grid of which sounds you actually mix up"
+dimensions = ["intellectual"]
+user_intent = [
+    "I want to train my ear",
+    "which English sounds do I confuse",
+    "practise minimal pairs",
+    "test my word stress",
+    "can I hear the difference between these sounds",
+    "练听音辨音",
+    "我总是分不清这几个音",
+    "最小对立体训练",
+    "重音练习",
+]
+
+[app.entry]
+module = "app"
+class = "SoundcheckApp"
+
+[requires]
+# speak → the stimulus clips. The app probes it at session start and runs its
+#         eye-only half when no voice engine answers, so this is a soft need.
+capabilities = ["read", "write", "speak"]
+apps = []
+# dictionary → the shared pronunciation telemetry, read for item selection and
+#              written back to. Absent = a cold start, which is supported.
+# learn      → the cross-app review queue. Absent = our cards just don't appear.
+optional_apps = ["dictionary", "learn"]
+connectors = []
+
+[provides.cli]
+commands = ["soundcheck"]
+
+[provides.web]
+prefix = "/soundcheck"
+
+[provides.events]
+emits = [
+    "soundcheck:session_started",
+    "soundcheck:session_completed",
+    "soundcheck:contrast_cleared",
+]
+
+[provides.settings]
+schema = [
+    { key = "soundcheck.lives", label = "Lives", type = "number", default = 3, hint = "Wrong answers before the set ends. 0 = unlimited (practice mode)." },
+    { key = "soundcheck.deadline_s", label = "Seconds per round", type = "select", default = "12", options = ["0", "8", "12", "20"], hint = "0 turns the clock off. On listening rounds the clock starts when the clip finishes, not when the round appears." },
+    { key = "soundcheck.audio", label = "Use audio", type = "toggle", default = true, hint = "Off runs the spelling, stress and syllable half only — no voice engine needed." },
+    { key = "soundcheck.voice", label = "Voice", type = "text", default = "", hint = "Leave empty for the system default. Clips are cached per voice, so switching re-synthesises once." },
+    { key = "soundcheck.speed", label = "Clip speed", type = "select", default = "1.0", options = ["0.8", "0.9", "1.0", "1.1"] },
+    { key = "soundcheck.merger_contrasts", label = "Include cot–caught", type = "toggle", default = false, hint = "The reference dictionary merges this pair inconsistently, so scoring it can mark you wrong on a distinction your own reference speaker does not make." },
+]
+
+[[contributes.hub.panel]]
+id = "soundcheck-drill"
+title = "👂 Sound Check"
+method = "panel_drill"
+renderer = "plain-list"
+priority = 132
+limit = 3
+lazy = true
+
+[[provides.verbs]]
+verb = "soundcheck.start"
+method = "voice_start"
+summary = "Start a pronunciation-perception set"
+args = { dimension = "string?", length = "number?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant"]
+voice = { method = "voice_start", example = "train my ear", description = "Start a Sound Check set and say what it will drill.", always = false, card = "entity-card" }
+assistant = { slash = "/ear", method = "voice_start", arg = "dimension" }
+
+[[provides.verbs]]
+verb = "soundcheck.weak"
+method = "voice_weak"
+summary = "Name the sound pairs you confuse most"
+args = { limit = "number?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant"]
+voice = { method = "voice_weak", example = "which sounds do I confuse", description = "Read back the contrasts missed most often across recent sets.", always = false, card = "stat-tile" }
+assistant = { slash = "/my-sounds", method = "voice_weak" }
+
+[[provides.verbs]]
+verb = "soundcheck.progress"
+method = "voice_progress"
+summary = "Report accuracy and streak across recent sets"
+args = { days = "number?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant"]
+voice = { method = "voice_progress", example = "how is my ear training going", description = "Report sets played, accuracy and best streak.", always = false, card = "stat-tile" }
+assistant = { slash = "/ear-progress", method = "voice_progress" }

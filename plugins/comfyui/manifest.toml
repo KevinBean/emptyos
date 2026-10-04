@@ -1,0 +1,18 @@
+[plugin]
+id = "comfyui"
+name = "ComfyUI"
+version = "1.0.0"
+description = "Local GPU image, video, depth, and audio generation via ComfyUI"
+
+[plugin.entry]
+module = "plugin"
+class = "ComfyUIPlugin"
+
+[requires]
+plugins = []   # health is a SOFT dep — the VRAM pre-flight resolves it at
+               # runtime via services.get("health") and no-ops when absent,
+               # so it must not become a load-order constraint.
+
+[provides]
+services = ["comfyui"]
+tags = ["gpu", "image", "video", "audio", "connector"]

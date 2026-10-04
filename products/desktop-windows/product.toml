@@ -1,0 +1,45 @@
+# EmptyOS Desktop — the distributable Windows program.
+#
+# A product is a config, not a codebase: this file is the whole declaration.
+# The launcher, the PyInstaller spec, and the update manifest all read it, so
+# adding a second product (e.g. reviving Plekto) means adding a product.toml —
+# not a second pipeline.
+
+[product]
+id = "emptyos-desktop"
+display_name = "EmptyOS Desktop"
+
+# Basename of the built exe + its one-dir folder. No spaces: it ends up in
+# shortcut targets, log lines and (Phase 3) update paths.
+exe_name = "EmptyOS"
+
+# Which slice of EmptyOS to bundle. Any tier in release.toml — "standard" is
+# the public release scope (same tier as [targets.public]).
+tier = "standard"
+
+# Where the window lands.
+start_url = "/hub/"
+
+# Opened instead of start_url when the launcher just created the config — i.e.
+# only on a genuine first run. Empty would mean "no wizard", so a product can
+# never open a route it doesn't serve.
+welcome_url = "/settings/pages/welcome.html"
+
+# %APPDATA%\EmptyOS\ (config, data, logs) and ~/Documents/EmptyOSVault\.
+appdata_name = "EmptyOS"
+
+brand_dir = "brand/emptyos"
+
+[product.window]
+width = 1440
+height = 900
+
+[update]
+# Checked in the background ~30s after boot; anything newer is downloaded,
+# verified and staged, and applied only when the user restarts.
+#
+# The PUBLIC repo, deliberately: assets on a private repo are not anonymously
+# downloadable, and a pilot user has no token — the feed would 404 for exactly
+# the people it exists for. `releases/latest/download/<name>` always resolves to
+# the newest release, so this URL never has to change.
+feed = "https://github.com/KevinBean/emptyos/releases/latest/download/latest-emptyos-desktop.json"

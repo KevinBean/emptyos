@@ -1,0 +1,22 @@
+{
+  "cmudict_sha256": "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22",
+  "counts": {
+    "connected": 54,
+    "consonant": 78,
+    "spelling": 98,
+    "stress": 46,
+    "syllable": 91,
+    "vowel": 114
+  },
+  "crosswalk_audit": {
+    "match": 304,
+    "mismatch": 12,
+    "new_mismatch": 0,
+    "oov": 2
+  },
+  "generated": "2026-09-28",
+  "generator": "scripts/build_soundcheck_bank.py",
+  "pending": 1598,
+  "zipf_core": 3.5,
+  "zipf_rescue": 3.0
+}

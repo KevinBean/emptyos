@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EmptyOS — Offline</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a1a2e">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+html, body { min-height: 100dvh; margin: 0; }
+body { display: flex; align-items: center; justify-content: center;
+       font-family: system-ui, -apple-system, sans-serif;
+       background: var(--bg, #0f0f1a); color: var(--fg, #e6edf3);
+       padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+                max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+.wrap { max-width: 420px; width: 100%; padding: 28px 24px; text-align: center;
+        background: var(--bg-card, rgba(255,255,255,0.03));
+        border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 14px; }
+.icon { font-size: 40px; line-height: 1; margin-bottom: 14px; }
+h1 { margin: 0 0 12px; font-size: 22px; font-weight: 600; }
+p { margin: 0 0 18px; line-height: 1.5; color: var(--muted, #8b949e); }
+code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+button { width: 100%; padding: 13px 20px; background: var(--accent, #238636); color: #fff; border: 0;
+         border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;
+         min-height: 44px; -webkit-tap-highlight-color: transparent; }
+button:hover { filter: brightness(1.1); }
+button:disabled { opacity: 0.6; cursor: default; }
+.status { margin-top: 16px; font-size: 13px; color: var(--muted, #8b949e);
+          display: flex; align-items: center; justify-content: center; gap: 7px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted, #8b949e);
+       flex: 0 0 auto; transition: background 0.2s; }
+.dot.checking { background: #d29922; animation: pulse 1s ease-in-out infinite; }
+.dot.online { background: var(--accent, #238636); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.hint { margin-top: 16px; font-size: 12px; color: var(--muted, #8b949e); opacity: 0.8; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="icon" aria-hidden="true">&#128268;</div>
+  <h1>EmptyOS is unreachable</h1>
+  <p>The daemon isn't responding. If you're off your home network, check that your laptop is on and reachable over your tailnet.</p>
+  <button id="retry" onclick="checkNow()">Try again</button>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Waiting to reconnect&hellip;</span></div>
+  <div class="hint">This page is cached locally so you can see it even when the daemon is down. It re-checks automatically and reloads the moment your laptop is reachable again.</div>
+</div>
+<script>
+(function () {
+  var dot = document.getElementById('dot');
+  var statusText = document.getElementById('statusText');
+  var retry = document.getElementById('retry');
+  var checking = false;
+
+  function setState(cls, text) {
+    dot.className = 'dot' + (cls ? ' ' + cls : '');
+    statusText.textContent = text;
+  }
+
+  function probe() {
+    if (checking) return Promise.resolve(false);
+    checking = true;
+    setState('checking', 'Checking connection…');
+    // /api/health is auth-exempt — reachable even in private/public (tailnet) mode
+    // without a token. cache:'no-store' so a cached 200 can't fake reachability.
+    return fetch('/api/health', { method: 'GET', cache: 'no-store' })
+      .then(function (resp) {
+        checking = false;
+        if (resp && resp.ok) {
+          setState('online', 'Reconnected — reloading…');
+          // Reload back into the page the user was trying to reach.
+          setTimeout(function () { location.reload(); }, 350);
+          return true;
+        }
+        setState('', 'Still unreachable. Retrying…');
+        return false;
+      })
+      .catch(function () {
+        checking = false;
+        setState('', 'Still unreachable. Retrying…');
+        return false;
+      });
+  }
+
+  function checkNow() {
+    probe();
+  }
+  window.checkNow = checkNow;
+
+  // Poll every 5s while the page is visible; pause when backgrounded to save battery.
+  var timer = null;
+  function startPolling() {
+    if (timer) return;
+    timer = setInterval(function () {
+      if (document.visibilityState === 'visible') probe();
+    }, 5000);
+  }
+  function stopPolling() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') { probe(); startPolling(); }
+    else { stopPolling(); }
+  });
+  // The browser's own online event is a fast first signal on flaky mobile links.
+  window.addEventListener('online', probe);
+
+  // Kick off immediately, then poll.
+  probe();
+  startPolling();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+[app]
+id = "conversation-ingest"
+name = "Conversation Ingest"
+version = "0.1.0"
+description = "Inspect and resume evidence-preserving AI conversation ingestion"
+# Intentional leaf — inspect/resume viewer over ingestion state; owns no data others need.
+leaf = true
+icon = "⛓"
+store_category = "ai"
+dimensions = ["intellectual", "occupational"]
+
+[app.entry]
+module = "app"
+class = "ConversationIngestApp"
+
+[provides.cli]
+commands = ["conversation-ingest"]
+
+[provides.web]
+prefix = "/conversation-ingest"
+
+[provides.settings]
+schema = [
+    {key = "conversation-ingest.import_root", label = "Import root", type = "text", default = "", hint = "Optional absolute directory containing conversation export folders. Empty uses the active EmptyOS data/imports directory."},
+    {key = "conversation-ingest.backlog_threshold", label = "Backlog nudge threshold", type = "number", default = 20, hint = "Proactively nudge when an import's pending count reaches this many conversations. Requires the backlog-nudge feature flag on (dark by default) and the proactive-notifications master toggle enabled in Settings."},
+]
+
+[requires]
+capabilities = ["read"]
+apps = []
+services = []
+events = []

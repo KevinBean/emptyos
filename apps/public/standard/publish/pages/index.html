@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Publish - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.pub-hero { padding:32px 0 8px; animation:fadeDown 0.4s ease }
+.pub-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.pub-hero .desc { font-size:14px; color:var(--text-secondary) }
+
+.site-tabs { display:flex; gap:4px; margin-bottom:16px; flex-wrap:wrap; align-items:center; animation:fadeDown 0.4s ease 0.03s both }
+.site-tab { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); transition:all 0.15s }
+.site-tab:hover { border-color:color-mix(in srgb,var(--accent) 40%,transparent); color:var(--text) }
+.site-tab.active { background:var(--accent); color: var(--accent-ink); border-color:var(--accent) }
+.site-tab-add { padding:8px 12px; border-radius:8px; font-size:16px; cursor:pointer; border:1px dashed var(--border); background:transparent; color:var(--text-muted); transition:all 0.15s; line-height:1 }
+.site-tab-add:hover { border-color:var(--accent); color:var(--accent) }
+.site-mode { display:inline-block; font-size:10px; padding:2px 8px; border-radius:4px; margin-left:8px; vertical-align:middle; font-weight:500 }
+/* Solid ground (mix with --bg, not transparent) so the chip stays readable on accent-selected rows */
+.site-mode.project { background:color-mix(in srgb,var(--accent) 15%,var(--bg)); color:var(--accent) }
+.site-mode.blog { background:color-mix(in srgb,var(--success) 15%,var(--bg)); color:var(--success) }
+
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+
+.toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.1s both }
+.toolbar .eos-btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:transform 0.1s }
+.toolbar .eos-btn:active { transform:scale(0.95) }
+.toolbar .info { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center }
+/* Toolbar grouping: thin divider between clusters + an overflow for config */
+.tb-sep { width:1px; align-self:stretch; background:var(--border); margin:2px 2px }
+.tb-more { position:relative; align-self:center }
+.tb-more > summary { list-style:none; cursor:pointer; padding:8px 12px; border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text-muted) }
+.tb-more > summary::-webkit-details-marker { display:none }
+.tb-more[open] > summary { border-color:var(--accent); color:var(--accent) }
+.tb-more-menu { position:absolute; right:0; top:calc(100% + 4px); z-index:40; display:flex; flex-direction:column; gap:4px; min-width:180px; padding:6px; background:var(--bg); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.35) }
+.tb-more-menu > * { text-align:left; justify-content:flex-start; text-decoration:none }
+
+.filter-pills { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.12s both }
+
+.post-list { display:flex; flex-direction:column; gap:8px; animation:cardIn 0.35s ease 0.15s both }
+.post-list .eos-entity-card { margin-bottom:0 }
+.post-list .eos-entity-card.is-draft { border-style:dashed; background:color-mix(in srgb,var(--warning) 4%,var(--bg-card)) }
+.pi-summary { font-size:12px; color:var(--text-secondary); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+.pi-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--accent); font-size:13px; padding:4px 8px; cursor:pointer; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; min-width:32px; min-height:32px }
+.pi-btn:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent) }
+
+.preview-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(600px,85vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); animation:slideIn 0.25s ease }
+.preview-panel.open { display:block }
+.preview-header { display:flex; align-items:center; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border) }
+.preview-header h3 { font-size:16px; font-weight:600; color:var(--text-heading) }
+.preview-close { font-size:22px; color:var(--text-muted); cursor:pointer; padding:4px 8px; border-radius:6px; background:none; border:none }
+.preview-close:hover { color:var(--text); background:color-mix(in srgb,var(--text) 5%,transparent) }
+.preview-body { padding:24px }
+.preview-body .article { line-height:1.7 }
+.preview-body .article h1 { font-size:1.5rem; color:var(--text-heading); margin:24px 0 8px }
+.preview-body .article h2 { font-size:1.2rem; color:var(--text-heading); margin:16px 0 8px }
+.preview-body .article p { margin:12px 0 }
+.preview-body .article code { font-family:var(--mono); font-size:0.85em; background:var(--bg-card); padding:2px 8px; border-radius:4px }
+.preview-body .article pre { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:16px; overflow-x:auto; margin:12px 0 }
+.preview-body .article pre code { background:none; padding:0 }
+.preview-body .article blockquote { border-left:3px solid var(--accent); padding:8px 16px; margin:12px 0; color:var(--text-secondary); background:var(--bg-card); border-radius:0 8px 8px 0 }
+.preview-body .article img { max-width:100%; border-radius:8px }
+.preview-body .article table { width:100%; border-collapse:collapse; margin:12px 0 }
+.preview-body .article th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:var(--tracking-meta); padding:8px 8px; border-bottom:1px solid var(--border) }
+.preview-body .article td { padding:8px 8px; border-bottom:1px solid var(--border); font-size:13px }
+
+.overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199; cursor:pointer; -webkit-tap-highlight-color:transparent }
+.overlay.open { display:block }
+
+.empty-state { text-align:center; padding:48px 24px; color:var(--text-muted) }
+.empty-state .icon { font-size:48px; margin-bottom:12px; opacity:0.3 }
+.empty-state p { font-size:14px; margin-top:8px }
+.empty-state code { font-family:var(--mono); font-size:12px; background:var(--bg-card); padding:2px 8px; border-radius:4px }
+
+.log { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--text-secondary); max-height:200px; overflow-y:auto; display:none }
+
+/* Live generation banner (cover image + podcast jobs) */
+.gen-banner { display:none; flex-direction:column; gap:8px; margin-bottom:16px }
+.gen-banner.active { display:flex; position:sticky; top:8px; z-index:50; animation:fadeDown 0.3s ease }
+.gen-job { display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:12px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); background:color-mix(in srgb,var(--accent) 7%,var(--bg-card)); box-shadow:0 4px 16px var(--shadow) }
+.gen-job.is-done { border-color:color-mix(in srgb,var(--success) 45%,var(--border)); background:color-mix(in srgb,var(--success) 8%,var(--bg-card)) }
+.gen-job.is-error { border-color:color-mix(in srgb,var(--danger) 45%,var(--border)); background:color-mix(in srgb,var(--danger) 8%,var(--bg-card)) }
+/* sizing local; reuses the shared @keyframes spin from eos-components.css */
+.gen-spinner { width:16px; height:16px; border-radius:50%; border:2px solid color-mix(in srgb,var(--accent) 25%,transparent); border-top-color:var(--accent); animation:spin 0.7s linear infinite; flex:0 0 auto }
+.gen-icon { font-size:16px; line-height:1; flex:0 0 auto }
+.gen-job.is-done .gen-icon { color:var(--success) }
+.gen-job.is-error .gen-icon { color:var(--danger) }
+.gen-body { flex:1 1 auto; min-width:0 }
+.gen-title { font-size:13px; font-weight:600; color:var(--text-heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.gen-sub { font-size:11px; color:var(--text-muted); margin-top:2px }
+.gen-elapsed { font-family:var(--mono); font-size:12px; color:var(--text-muted); flex:0 0 auto }
+.gen-close { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:16px; line-height:1; padding:2px 6px; border-radius:6px; flex:0 0 auto }
+.gen-close:hover { color:var(--text); background:color-mix(in srgb,var(--text) 8%,transparent) }
+
+/* Suggestion cards */
+.suggest-card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; cursor:pointer; transition:border-color 0.15s,transform 0.15s; text-decoration:none; display:block; color:var(--text) }
+.suggest-card:hover { border-color:var(--accent); transform:translateY(-1px); text-decoration:none }
+.suggest-title { font-size:13px; font-weight:600; color:var(--text-heading); margin-bottom:4px }
+.suggest-pitch { font-size:11px; color:var(--text-secondary); line-height:1.4 }
+.suggest-type { display:inline-block; font-size:10px; color:var(--accent); background:var(--accent-bg); padding:2px 8px; border-radius:4px; margin-top:8px }
+
+/* Settings panel chrome comes from shared .eos-settings-panel */
+.sf-actions { display:flex; gap:8px; margin-top:24px; padding-top:16px; border-top:1px solid var(--border) }
+.sf-save { padding:8px 24px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit }
+.sf-save:active { transform:scale(0.95) }
+.sf-cancel { padding:8px 24px; background:transparent; border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text-secondary); cursor:pointer; font-family:inherit }
+
+@media (max-width:600px) {
+  .stats-row { grid-template-columns:repeat(2,1fr) }
+  .preview-panel { width:100vw }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('publish');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publish vault notes as a static website — blog, projects, digital garden.",quickActions:[{label:"Draft idea",msg:"I want to draft a new blog post. Ask me the topic and help me outline it."},{label:"Ready to publish",msg:"Which of my drafts look ready to publish and which need more work?"},{label:"Improve title",msg:"Suggest a better title and hook for the post I am editing."}]});}
+</script>
+
+<div class="page">
+  <div class="pub-hero">
+    <h1>Publish</h1>
+    <div class="desc" id="source-info">Loading...</div>
+  </div>
+
+  <div class="site-tabs" id="site-tabs"></div>
+
+  <div class="stats-row" id="stats-row">
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-posts">-</div><div class="eos-stat-lbl" id="s-posts-lbl">Content</div></div>
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-tags">-</div><div class="eos-stat-lbl">Tags</div></div>
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-built">-</div><div class="eos-stat-lbl">Last Build</div></div>
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-deployed">-</div><div class="eos-stat-lbl" id="s-deployed-lbl">Deployed</div></div>
+  </div>
+
+  <div class="toolbar">
+    <!-- Author -->
+    <a class="eos-btn eos-btn-primary" href="/publish/pages/writer.html" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">&#9998; New Post</a>
+    <span class="tb-sep"></span>
+    <!-- Publish: build → preview → deploy → visit -->
+    <button class="eos-btn eos-btn-primary" onclick="doBuild()">Build Site</button>
+    <button class="eos-btn eos-btn-warning" id="btn-preview-site" onclick="previewSite()" disabled>Preview Site</button>
+    <button class="eos-btn eos-btn-success" id="btn-deploy" onclick="doDeploy()" disabled title="Deploy the built site to the host configured in Site settings">Deploy</button>
+    <a class="eos-btn eos-btn-primary" id="btn-visit" href="#" target="_blank" style="display:none;text-decoration:none">Visit Site &#8599;</a>
+    <span class="tb-sep"></span>
+    <!-- Assets -->
+    <button class="btn-settings" onclick="doRasterizeDiagrams()" title="Re-render stale SVG diagram sources to their shipped 2x PNGs">&#11041; Diagrams</button>
+    <!-- Config (low-frequency) tucked behind an overflow -->
+    <details class="tb-more" id="tb-more">
+      <summary title="Settings &amp; help">&#8943; More</summary>
+      <div class="tb-more-menu">
+        <button class="btn-settings" onclick="closeMore();openSettings()">&#9881; Site settings</button>
+        <button class="btn-settings" onclick="closeMore();openAppSettings()">&#9881; App settings</button>
+        <button class="btn-settings" id="btn-chatbot-qa" onclick="closeMore();openChatbotQA()" style="display:none">&#128172; Chatbot Q&amp;A</button>
+        <a class="btn-settings" href="/publish/pages/guide.html" style="display:inline-flex;align-items:center">Format Guide</a>
+      </div>
+    </details>
+    <span class="info" id="toolbar-info"></span>
+  </div>
+
+  <div class="gen-banner" id="gen-banner" aria-live="polite"></div>
+
+  <div class="filter-pills" id="filter-pills"></div>
+  <div class="post-list" id="post-list"></div>
+  <div class="eos-empty-state" id="empty" style="display:none">
+    <span class="eos-empty-state-icon">&#128221;</span>
+    <p class="eos-empty-state-message" id="empty-msg">No publishable notes found</p>
+    <p id="empty-hint" style="font-size:12px;margin:0">Create notes in your source folder with <code>publish: true</code> in frontmatter</p>
+  </div>
+
+  <!-- Vault Suggestions -->
+  <div id="suggestions-section" style="margin-top:24px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Ideas from your vault</span>
+      <button class="pi-btn" onclick="loadSuggestions()" title="Refresh suggestions" style="font-size:11px;padding:2px 8px">&#8635; Refresh</button>
+    </div>
+    <div id="suggestions-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px"></div>
+  </div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeAll()"></div>
+
+<div class="eos-settings-panel" id="settings-panel">
+  <div class="sp-head">
+    <h3>Site Settings — <span id="sf-site-label">Site</span></h3>
+    <button class="preview-close" onclick="closeSettings()" aria-label="Close settings">&times;</button>
+  </div>
+  <div class="sp-body">
+    <div class="sf-group">
+      <label class="sf-label">Profile Name</label>
+      <input class="sf-input" id="sf-name" placeholder="My Blog">
+      <div class="sf-hint">Internal name shown in the site switcher tabs.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Site Title</label>
+      <input class="sf-input" id="sf-site-name" placeholder="My Site">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Description</label>
+      <input class="sf-input" id="sf-site-desc" placeholder="A few words about your site">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Author</label>
+      <input class="sf-input" id="sf-author" placeholder="Your name">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Source Folder</label>
+      <input class="sf-input" id="sf-source" placeholder="30_Resources/Published">
+      <div class="sf-hint">Relative to vault root. Only notes here with <code>publish: true</code> are included.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Theme</label>
+      <select class="sf-select" id="sf-theme">
+        <option value="eos">EOS</option>
+        <option value="void-dark">Void Dark</option>
+        <option value="warm-dark">Warm Dark</option>
+        <option value="nord">Nord</option>
+        <option value="soft-light">Soft Light</option>
+      </select>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">GitHub Repo</label>
+      <input class="sf-input" id="sf-repo" placeholder="username/repo">
+      <div class="sf-hint">For static-hosting deploys (e.g. via git push). Leave empty if not deploying yet.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Deploy Target</label>
+      <select class="sf-input" id="sf-deploy-target" onchange="toggleDeployFields()">
+        <option value="github">GitHub</option>
+        <option value="firebase">Firebase</option>
+      </select>
+      <div class="sf-hint">Which host the single Deploy button pushes to. Add more hosts here later.</div>
+    </div>
+    <div class="sf-group" id="sf-firebase-group" style="display:none">
+      <label class="sf-label">Firebase Project ID</label>
+      <input class="sf-input" id="sf-firebase-project" placeholder="my-project-id">
+      <div class="sf-hint">Required when the deploy target is Firebase Hosting (<code>firebase deploy --only hosting</code>).</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Author Bio</label>
+      <input class="sf-input" id="sf-bio" placeholder="One-line description about you">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Social Links</label>
+      <input class="sf-input" id="sf-social" placeholder="https://linkedin.com/in/you, https://github.com/you, mailto:you@email.com">
+      <div class="sf-hint">Comma-separated URLs. Shows on homepage hero and author card.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Custom Domain</label>
+      <input class="sf-input" id="sf-domain" placeholder="example.com">
+      <div class="sf-hint">Writes a CNAME file for custom-domain static hosting. Also enables absolute URLs in RSS + OG:image.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Favicon</label>
+      <input class="sf-input" id="sf-favicon" placeholder="favicon.svg">
+      <div class="sf-hint">Filename inside the source folder. Supports .svg, .png, .ico. Leave empty for no favicon.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sf-search-engines" style="width:auto;margin:0">
+        <span>Allow search engines to index this site</span>
+      </label>
+      <div class="sf-hint">When off: adds <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code> to every page and writes a <code>robots.txt</code> that blocks all crawlers.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sf-analytics-enabled" style="width:auto;margin:0">
+        <span>Enable privacy-first analytics</span>
+      </label>
+      <div class="sf-hint">Injects a tiny beacon into every page. No cookies, no fingerprinting.</div>
+      <input class="sf-input" id="sf-analytics-url" placeholder="Collector URL (leave empty to inherit global)" style="margin-top:6px">
+      <div class="sf-hint">For real visitors, point this at a public Cloudflare Worker. For local preview testing, leave empty.</div>
+      <a id="sf-analytics-link" href="#" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--accent);text-decoration:none">View analytics for this site &rarr;</a>
+    </div>
+    <div class="sf-group" style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px">
+      <label class="sf-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sf-chatbot-enabled" style="width:auto;margin:0">
+        <span>Enable site chatbot</span>
+      </label>
+      <div class="sf-hint">When on: ships <code>chatbot-widget.js</code> + meta tags into every built page; emits <code>corpus.json</code> with site content. Visitors see a floating bubble bottom-right. Requires a deployed chatbot service (see <code>services/chatbot/</code>).</div>
+    </div>
+    <div id="sf-chatbot-fields" style="display:none">
+      <div class="sf-group">
+        <label class="sf-label">Chatbot service endpoint <span style="color:var(--danger);font-weight:400;font-size:11px">required</span></label>
+        <input class="sf-input" id="sf-chatbot-endpoint" placeholder="https://chat.binbian.net">
+        <div class="sf-hint">Public URL of the standalone chatbot service. Same URL across all sites that share one service. Without this, the build silently skips widget injection.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Model <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
+        <select class="sf-input" id="sf-chatbot-model">
+          <option value="gpt-5-nano">gpt-5-nano (cheapest, default)</option>
+          <option value="gpt-5-mini">gpt-5-mini (better quality, ~5× cost)</option>
+          <option value="gpt-5">gpt-5 (highest quality, ~25× cost)</option>
+          <option value="gpt-4.1-mini">gpt-4.1-mini (legacy fallback)</option>
+        </select>
+        <div class="sf-hint">Picks the LLM tier the chatbot service uses for this site.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Daily $ cap <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
+        <input class="sf-input" id="sf-chatbot-cap" type="number" step="0.10" min="0" placeholder="2.0">
+        <div class="sf-hint">Hard ceiling per UTC day. When hit, the service returns 429 until midnight. With nano + low traffic, $0.30–1.00 is plenty.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Persona <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
+        <textarea class="sf-input" id="sf-chatbot-persona" rows="3" style="font-family:inherit" placeholder="You are a helpful guide to {site}. Keep answers concise..."></textarea>
+        <div class="sf-hint">Extra system-prompt context appended at service side. Tone, scope, what to emphasize.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Starter questions <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
+        <input class="sf-input" id="sf-chatbot-starters" placeholder="What is this site? · How do I install? · Show me recent posts">
+        <div class="sf-hint"><code>·</code>-separated. 3–4 short prompts shown as chips on first widget open.</div>
+      </div>
+      <div class="sf-hint" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;line-height:1.5">
+        <strong style="color:var(--success)">● synced</strong> fields are pushed to the chatbot service when you Save (rewrites <code>sites.toml</code> on the VPS, hot-reloads).
+      </div>
+      <details style="margin-top:10px;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.5">
+        <summary style="cursor:pointer;font-weight:600">First-time service-side setup for this site</summary>
+        <p style="margin:8px 0 6px;color:var(--text-secondary)">Before sync works, the chatbot service needs an entry for this site. SSH to your VPS once and add this block to <code>sites.toml</code>:</p>
+        <pre id="sf-chatbot-toml-snippet" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;overflow-x:auto;font-family:var(--mono,monospace);font-size:11px;margin:0">[sites.<span id="sf-chatbot-id-echo">&lt;id&gt;</span>]</pre>
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+          <button class="pi-btn" onclick="copyChatbotToml()" style="font-size:11px">Copy</button>
+          <span style="color:var(--text-muted);font-size:11px">Then on VPS: <code>bash scripts/deploy-service.sh chatbot</code></span>
+        </div>
+      </details>
+    </div>
+
+    <div class="sf-group" id="sf-framework-group" style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px;display:none">
+      <label class="sf-label">Branding framework <span id="sf-framework-state" style="font-weight:400;font-size:11px;color:var(--text-muted)"></span></label>
+      <div class="sf-hint">A vault note <code>_framework.md</code> in this site's source folder. The draft evaluator grades each post against it. Never published (<code>_</code>-prefixed, kept out of the build).</div>
+      <div id="sf-framework-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"></div>
+    </div>
+
+    <div id="sf-mode-hint" style="padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:4px"></div>
+    <div class="sf-actions">
+      <button class="sf-save" onclick="saveSettings()">Save</button>
+      <button class="sf-cancel" onclick="closeSettings()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="preview-panel" id="preview-panel">
+  <div class="preview-header">
+    <h3 id="preview-title">Preview</h3>
+    <button class="preview-close" onclick="closePreview()" aria-label="Close preview">&times;</button>
+  </div>
+  <div class="preview-body" id="preview-body"></div>
+</div>
+
+<script src="/publish/pages/publish.js"></script>
+<script src="/publish/pages/assets-studio.js"></script>
+</body>
+</html>

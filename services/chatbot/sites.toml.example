@@ -1,0 +1,87 @@
+# Per-site config for the EmptyOS chatbot service.
+# Copy to sites.toml and edit for your deployment.
+#
+# Each [sites.<id>] block declares one site the service answers for. The site_id
+# in the chat request must match a key here, and the request's Origin header
+# must be in allowed_origins, or the request is rejected.
+
+[defaults]
+# Daily $ cap applied per site unless overridden below.
+daily_cap_usd = 2.0
+# Global daily $ cap across all sites (last-line defense).
+global_cap_usd = 10.0
+# Default model when a site doesn't override.
+model = "gpt-5-nano"
+# Hard cap on output tokens per turn — keeps replies short and bounded.
+max_output_tokens = 300
+# Hard cap on input message length (chars). Reject anything larger.
+max_input_chars = 4000
+# Per-IP rate limit windows.
+rate_limit_per_hour = 20
+rate_limit_per_day = 60
+# Corpus cache TTL in seconds.
+corpus_ttl_seconds = 3600
+
+# ─── EmptyOS product site ───
+[sites.eos]
+name = "EmptyOS"
+allowed_origins = ["https://eos.binbian.net"]
+corpus_url = "https://eos.binbian.net/corpus.json"
+daily_cap_usd = 2.0
+model = "gpt-5-nano"
+persona = """
+You are a knowledgeable guide to EmptyOS, a mind companion that helps people
+think and create. You answer based on the site's published content. You're
+warm, concise, and direct — not salesy. Use plain language."""
+
+# Optional: starter questions shown as chips on first widget open.
+# (The widget reads these from the site's chatbot config in publish app, but
+# the service can also expose them via /sites/<id>/meta.)
+starter_questions = [
+    "What is EmptyOS?",
+    "How does it differ from a normal note app?",
+    "Can I run it locally?",
+]
+# Welcome copy should TEACH the visitor how to ask — one hint line here saves
+# a whole disambiguation turn (e.g. "mention the app or feature name").
+welcome_message = "Ask me anything about EmptyOS — mentioning the feature or app name gets the best answers."
+managed_by = "publish"
+enabled = true
+commerce_enabled = false
+
+# Optional: content-site lead capture. When true, "talk to a human" /
+# "get in touch"-style messages return a name/email/message form; submissions
+# are stored in the service ledger and (when helpdesk_endpoint is set) also
+# POSTed there. Contact details go to the team, never the language model.
+# lead_capture_enabled = true
+# helpdesk_endpoint = "https://example.com/api/leads"
+
+# Optional: retired/unavailable products or pages the model must never
+# recommend. Pair with `corpus: false` frontmatter on the page itself —
+# deprecation needs BOTH levers (prompt + corpus) or stale answers leak back.
+# avoid_topics = ["Cable Pro PC (retired desktop product)"]
+
+# Studio-managed commerce example (normally created through Chatbot Studio):
+# [sites.office-shop]
+# name = "Northstar Office"
+# managed_by = "studio"
+# enabled = false
+# allowed_origins = ["https://shop.example.com"]
+# corpus_url = ""
+# knowledge_sources = ["https://shop.example.com/sitemap.xml"]
+# catalog_url = "https://shop.example.com/products.json"
+# catalog_stale_seconds = 3600
+# commerce_enabled = true
+# allowed_actions = ["inventory.lookup", "cart.add", "order.lookup", "return.check", "handoff.create"]
+# action_endpoint = "https://shop.example.com/api/chatbot-actions"
+# model = "gpt-5-nano"
+# daily_cap_usd = 2.0
+
+# ─── Example: portfolio site ───
+# [sites.portfolio]
+# name = "Kevin's Portfolio"
+# allowed_origins = ["https://kevin.binbian.net"]
+# corpus_url = "https://kevin.binbian.net/corpus.json"
+# daily_cap_usd = 1.0
+# model = "gpt-4.1-mini"
+# persona = "You are a recruiter-facing guide to Kevin's portfolio..."

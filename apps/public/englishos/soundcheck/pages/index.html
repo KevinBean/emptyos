@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound Check</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/soundcheck/pages/soundcheck.css">
+</head>
+<body>
+<!-- .page, not .container: .container is styled nowhere, so the page rendered
+     edge-to-edge. .page (theme.css) carries the max-width, centring and edges. -->
+<div class="page">
+
+  <header class="sc-head">
+    <div>
+      <h1 id="page-title">Sound Check</h1>
+      <p class="sc-sub" id="sc-sub">Can you hear the difference?</p>
+    </div>
+    <div class="right">
+      <button class="eos-btn-sm" onclick="openSettings()"
+              title="Lives, clock, voice and which contrasts to include">&#9881; Settings</button>
+    </div>
+  </header>
+
+  <nav class="eos-tabs" id="sc-tabs" role="tablist">
+    <button class="eos-tab active" role="tab" data-view="home" onclick="showView('home')"
+            title="The sounds you can drill and how you have scored on each">Home</button>
+    <button class="eos-tab" role="tab" data-view="history" onclick="showView('history')"
+            title="Every set you have played">History</button>
+    <button class="eos-tab" role="tab" data-view="review" onclick="showView('review')"
+            title="Sound pairs you confuse, with accent differences separated out">Your slips</button>
+  </nav>
+
+  <!-- ── Home ─────────────────────────────────────────────── -->
+  <section id="view-home">
+    <div id="sc-bank-note"></div>
+    <div id="sc-dimensions" class="sc-dims"></div>
+
+    <div class="sc-start">
+      <button class="eos-btn eos-btn-primary" id="sc-go" onclick="startSet('quick')"
+              title="A short set drawn from the sounds you miss most">
+        Start a quick set
+      </button>
+      <button class="eos-btn" onclick="startSet('diagnostic')"
+              title="A longer set with no lives, then the same questions again by ear">
+        Full diagnostic
+      </button>
+      <span class="sc-hint">or press <kbd>p</kbd></span>
+    </div>
+  </section>
+
+  <!-- ── Play ─────────────────────────────────────────────── -->
+  <section id="view-play" hidden>
+    <div class="sc-hud">
+      <span id="sc-lives" class="sc-lives"></span>
+      <span id="sc-streak" class="sc-chip"></span>
+      <span id="sc-count" class="sc-chip"></span>
+      <button class="eos-btn-sm" onclick="quitSet()"
+              title="End this set — it will not count toward your best streak">Quit</button>
+    </div>
+    <div class="sc-clock"><div id="sc-clock-bar"></div></div>
+
+    <p class="sc-prompt" id="sc-prompt"></p>
+    <div id="sc-round" class="sc-round" tabindex="0"></div>
+    <div id="sc-verdict" class="sc-verdict" hidden></div>
+  </section>
+
+  <!-- ── Summary ──────────────────────────────────────────── -->
+  <section id="view-summary" hidden>
+    <div id="sc-summary"></div>
+  </section>
+
+  <!-- ── History ──────────────────────────────────────────── -->
+  <section id="view-history" hidden>
+    <div id="sc-heatmap"></div>
+    <div id="sc-sessions"></div>
+  </section>
+
+  <!-- ── Review ───────────────────────────────────────────── -->
+  <section id="view-review" hidden>
+    <div id="sc-review"></div>
+  </section>
+
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/soundcheck/pages/soundcheck.js"></script>
+</body>
+</html>

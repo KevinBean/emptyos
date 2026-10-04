@@ -1,0 +1,13 @@
+[service]
+name = "emptyos-codoc"
+description = "Live real-time collaboration — ACL-gated CRDT co-editing, reached behind the control-plane proxy (auth-by-trusted-hop)."
+# Internal service: no public vhost. The control-plane proxy routes to it on
+# the loopback port below; it never terminates TLS itself.
+vhost = "internal"
+port = 9400
+healthcheck = "/health"
+healthcheck_timeout = 30
+
+[deploy]
+build = true
+restart = "unless-stopped"

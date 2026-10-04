@@ -1,0 +1,446 @@
+{
+  "academy": {
+    "hash": "9e6fb33f688cb48b",
+    "summary": "Helps you learn English with onboarding, progress tracking, reviews, and practice launchers"
+  },
+  "actions": {
+    "hash": "98326fe1ea28fa84",
+    "summary": "Runs templates and chained workflows on selected vault items, with optional AI"
+  },
+  "agent": {
+    "hash": "7bbda88ffe7750bb",
+    "summary": "Runs a permission-gated AI agent that uses tools in terminal and web"
+  },
+  "app-analytics": {
+    "hash": "f0e7523a834f8553",
+    "summary": "Tracks app usage and vault health to show what to fix or delete"
+  },
+  "app-builder": {
+    "hash": "24c3948dc97939d8",
+    "summary": "Scaffolds a new EmptyOS app from app-spec notes in an isolated git worktree"
+  },
+  "app-gen": {
+    "hash": "65c922884b176e2b",
+    "summary": "Creates and evolves system apps and tools from your needs"
+  },
+  "architecture-map": {
+    "hash": "d7b0d8381898f3b4",
+    "summary": "Generates, stores, and compares narrative architecture maps of your EmptyOS repo"
+  },
+  "assistant": {
+    "hash": "6328dc7e583a35f2",
+    "summary": "Helps you search your vault, compare agents, and use voice conversations"
+  },
+  "bess-analyser": {
+    "hash": "7fa6c0eee2c9fa74",
+    "summary": "Optimises battery charging and discharging against NEM prices to estimate arbitrage revenue"
+  },
+  "billing": {
+    "hash": "909f6fb99fa71230",
+    "summary": "Tracks token usage, daily stats, and budget alerts"
+  },
+  "boards": {
+    "hash": "a01f3d85bfaccfb9",
+    "summary": "Organizes work in flexible boards with multiple views, automations, and offline export"
+  },
+  "bookme": {
+    "hash": "a3a91c1042562a20",
+    "summary": "Share your availability and let others book meetings on a self-hosted scheduling page"
+  },
+  "cable-library": {
+    "hash": "3263ea14513d7a78",
+    "summary": "Store and edit detailed cable layer data, dimensions, limits, and electrical parameters"
+  },
+  "cable-network": {
+    "hash": "e531ccacf1192484",
+    "summary": "Plans cable networks with scheduling, topology, load flow, short circuit, and batch ampacity calculations"
+  },
+  "cable-stress": {
+    "hash": "ae282e4a51acc04e",
+    "summary": "Calculates coaxial cable insulation electric-field stress and sizing under service and impulse voltages"
+  },
+  "cad": {
+    "hash": "c6a728c96b8ad40a",
+    "summary": "Create parameter-driven 3D models with direct editing and conversational feature generation"
+  },
+  "calendar": {
+    "hash": "479f08027d105ec9",
+    "summary": "Shows your schedule by combining tasks, journal entries, and external events"
+  },
+  "canvas": {
+    "hash": "9495581e0460555c",
+    "summary": "Creates infinite vault-backed boards for note cards, connections, and pan-and-zoom exploration"
+  },
+  "code": {
+    "hash": "c3a3e20bfa9160ca",
+    "summary": "Edit files with chat, terminal, previews, and diffs in an IDE-style workspace"
+  },
+  "company": {
+    "hash": "a54939c55f93cc07",
+    "summary": "Manage organizations with human and AI members, and run simulated team scenarios"
+  },
+  "daily-brief": {
+    "hash": "e0b21dc581554e5b",
+    "summary": "Summarizes selected feeds with AI into one daily note"
+  },
+  "design-package": {
+    "hash": "4e16d21eade30e69",
+    "summary": "Combines substation, transmission line, and cable studies into one markdown and PDF deliverable"
+  },
+  "designer": {
+    "hash": "5310f378e2c61c92",
+    "summary": "Creates styled standalone HTML page mockups from your prompts and chosen design systems"
+  },
+  "dharma-log": {
+    "hash": "afe8864e8ed15982",
+    "summary": "Capture study notes, log confusions, and reflect with AI to form your understanding"
+  },
+  "dictionary": {
+    "hash": "d2081f3044de71e5",
+    "summary": "Looks up words, saves them to your vault, and turns them into flashcards and quizzes"
+  },
+  "dogfood-agent": {
+    "hash": "f6283ad797413165",
+    "summary": "Uses a Claude persona to operate EmptyOS and reveal usability friction and behavior patterns"
+  },
+  "earthing": {
+    "hash": "c3a8c080f081f6e8",
+    "summary": "Design grounding grids by analyzing soil, safety limits, layouts, and cost-optimized scenarios"
+  },
+  "eink-bridge": {
+    "hash": "d4426c3e9d167276",
+    "summary": "Shows your terminal on an e-ink reader's browser over your local network"
+  },
+  "engineering-scene": {
+    "hash": "db8c547648d9686a",
+    "summary": "Places yard equipment, georeferences it, and links each item to electrical nodes"
+  },
+  "expense": {
+    "hash": "e6eec1ace6c538e9",
+    "summary": "Track, summarize, and analyze your spending"
+  },
+  "feature-pipeline": {
+    "hash": "c1373ec2ae1cb7c8",
+    "summary": "Moves feature briefs through research, design, implementation, dogfooding, and release with review gating"
+  },
+  "fix-agent": {
+    "hash": "0e52a79d26bb47a2",
+    "summary": "Processes queued fix prompts in isolated git worktrees with separate branches for review"
+  },
+  "focus": {
+    "hash": "9e5f6a068ae4ce84",
+    "summary": "Times focused work sessions and suggests tasks to tackle next"
+  },
+  "forge": {
+    "hash": "d2a8af30272fd248",
+    "summary": "Scaffold and track native apps whose code lives outside the daemon"
+  },
+  "garden": {
+    "hash": "f2c13513b915a8c5",
+    "summary": "Creates a programmatic SVG garden reflecting your vault entities across four wellbeing plots"
+  },
+  "geo-cad": {
+    "hash": "e3acd36bf6e57949",
+    "summary": "Edit georeferenced drawings on maps with feature attributes and GeoJSON import/export"
+  },
+  "geocode": {
+    "hash": "54fa3a5d059387e1",
+    "summary": "Looks up addresses and coordinates using OpenStreetMap geocoding"
+  },
+  "gesture": {
+    "hash": "e763bb538c430a9f",
+    "summary": "Detects hand gestures with your camera and triggers actions locally"
+  },
+  "git": {
+    "hash": "4cd505c276819d0b",
+    "summary": "Tracks versions of your notes and projects so you can review or restore changes"
+  },
+  "github-connector": {
+    "hash": "bf6a975ccc6e043a",
+    "summary": "Syncs GitHub issues and pull requests into EmptyOS projects"
+  },
+  "grill": {
+    "hash": "a5358abedc949845",
+    "summary": "Helps you define risky implementation details early by writing a structured spec note"
+  },
+  "guideline": {
+    "hash": "8ca56728ab995696",
+    "summary": "Organize rules, principles, and conventions into categories"
+  },
+  "hands-free": {
+    "hash": "3887d82b91daa91d",
+    "summary": "Control EmptyOS by raising your hand, speaking, then confirming with a gesture"
+  },
+  "hub": {
+    "hash": "0d2283594ca7621f",
+    "summary": "Combines panel content from installed apps into one hub"
+  },
+  "improv": {
+    "hash": "0edeba0d3399c3dd",
+    "summary": "Practice improv scenes with an AI partner and get feedback on dropped offers"
+  },
+  "interference": {
+    "hash": "dd3004615ac3ecc3",
+    "summary": "Analyzes electric and magnetic fields around overhead lines and buried cables"
+  },
+  "journal": {
+    "hash": "6fd0abf3366d9569",
+    "summary": "Capture journal entries, milestones, moods, and reflections over time"
+  },
+  "kb": {
+    "hash": "b57e693bae7e0c64",
+    "summary": "Stores concepts, formulas, standards, cases, and lessons for quick reference"
+  },
+  "kb-butler": {
+    "hash": "f3cf0e03ea40a4ad",
+    "summary": "Monitors knowledge base health, fixes broken reciprocal links, and summarizes structural issues"
+  },
+  "learn": {
+    "hash": "155c3a5ab7a91f04",
+    "summary": "Turns your notes into structured courses with lessons, quizzes, and progress tracking"
+  },
+  "lightning": {
+    "hash": "109df6b07ef0dc83",
+    "summary": "Analyzes 2D lightning shielding along a profile using rolling-sphere protection standards"
+  },
+  "link": {
+    "hash": "1e5e07d491fe3229",
+    "summary": "Finds and manages links between your notes"
+  },
+  "model-bench": {
+    "hash": "78ac5c02aefd77fb",
+    "summary": "Compares LLM models using real scenarios from your system"
+  },
+  "model-serving": {
+    "hash": "6021efd067f907f0",
+    "summary": "Browse local Ollama models and serve one with VRAM-aware setup without terminal editing"
+  },
+  "music-library": {
+    "hash": "a164ba828766a5dc",
+    "summary": "Browse, play, and edit songs in your vault, and generate AI lyrics"
+  },
+  "note": {
+    "hash": "f5951ebd55420656",
+    "summary": "Create, read, list, and update your notes"
+  },
+  "overhead-line": {
+    "hash": "277b5ba410638963",
+    "summary": "Calculates overhead line thermal rating, sag-tension, and ground clearance"
+  },
+  "pattern-harvester": {
+    "hash": "b350344bc392f5c4",
+    "summary": "Finds repeated code patterns across apps and highlights good SDK extraction candidates"
+  },
+  "people": {
+    "hash": "c24e1a62c066c2cc",
+    "summary": "Manage people, relationships, workload, capacity, birthdays, and interaction history"
+  },
+  "pocket": {
+    "hash": "b253c40ea7217d50",
+    "summary": "Reviews background runs and pending actions from your phone with reachability status"
+  },
+  "portal": {
+    "hash": "e334df0010cf7a5d",
+    "summary": "Routes thinking, capture, search, and learning into organized rooms with shared context"
+  },
+  "power-study": {
+    "hash": "8a0dd8e4d223400d",
+    "summary": "Performs load-flow and 3-phase or single-phase short-circuit analysis with single-line reports"
+  },
+  "ppt": {
+    "hash": "37230c288bad62ec",
+    "summary": "Create presentations from Markdown notes, present fullscreen, and export standalone HTML"
+  },
+  "projects": {
+    "hash": "ade0bf6e514399d6",
+    "summary": "Scans your vault to parse project status and track progress"
+  },
+  "promote": {
+    "hash": "70523198ad9fdd7d",
+    "summary": "Drafts review-ready release promos from devlogs and git, with approval before publishing"
+  },
+  "providers": {
+    "hash": "f34e3bdc38ed81c1",
+    "summary": "Manage local models, cloud APIs, and Claude CLI in the live capability chain"
+  },
+  "publish": {
+    "hash": "4c671a4e8c30f89f",
+    "summary": "Publishes vault notes as a static website for blogs, projects, or a digital garden"
+  },
+  "quick-action": {
+    "hash": "a730402955e0287f",
+    "summary": "Turns one input into the right capture, routing, or action"
+  },
+  "quotes": {
+    "hash": "60327f3ff016b21a",
+    "summary": "Shows a random inspirational quote from your stored collection each day"
+  },
+  "radio": {
+    "hash": "49c676014b46a18b",
+    "summary": "Plays music, podcasts, devlogs, and DJ chatter"
+  },
+  "rag-eval": {
+    "hash": "ef65a8e490cf588a",
+    "summary": "Benchmarks vault retrieval quality using hit@k, MRR, and source precision/recall"
+  },
+  "reactor": {
+    "hash": "9f20bf9e92ed4884",
+    "summary": "Manages the system's internal activity and state changes"
+  },
+  "reader": {
+    "hash": "b2a766d393a4bba2",
+    "summary": "Reads books with AI scene visualization, concept maps, and dictionary lookup"
+  },
+  "release": {
+    "hash": "be494a58446383f4",
+    "summary": "Runs safety checks and packages releases into deployment tiers"
+  },
+  "reliability": {
+    "hash": "11a1a30fbf2d810a",
+    "summary": "Calculates power-system reliability, availability, breaker failure impacts, and annual outage costs"
+  },
+  "repo": {
+    "hash": "9e8deb943ad4a72e",
+    "summary": "Read, edit, and run codebase actions through chat-style room commands"
+  },
+  "reports": {
+    "hash": "2fedd668789f4d09",
+    "summary": "Creates structured technical reports, proposals, and specs with signoff and PDF/DOCX export"
+  },
+  "rooms": {
+    "hash": "0cf90e36178e0923",
+    "summary": "Create persistent one-on-one or shared AI rooms with prompts, files, and history"
+  },
+  "routing": {
+    "hash": "bc51075f9dbda6b9",
+    "summary": "Plans multi-stop routes for trip planning using cached OSRM directions"
+  },
+  "run": {
+    "hash": "4e50d73452a72e1a",
+    "summary": "Execute shell commands and scripts locally"
+  },
+  "run-center": {
+    "hash": "224f81e2a06e1885",
+    "summary": "Monitor, review, merge, verify, and revert background agent runs in one place"
+  },
+  "runbook": {
+    "hash": "9992e7eb2ac35392",
+    "summary": "Builds, schedules, and publishes typed block pipelines"
+  },
+  "sandbox": {
+    "hash": "d0c75c277d1283b8",
+    "summary": "Leases and restarts temporary EmptyOS daemons through an HTTP API and status page"
+  },
+  "scroll": {
+    "hash": "bf4e4e29155d1a5b",
+    "summary": "Shows an AI-generated short video feed tailored to your chosen personas"
+  },
+  "search": {
+    "hash": "205c0e64e15d497b",
+    "summary": "Searches your vault and answers questions using AI"
+  },
+  "settings": {
+    "hash": "6bcfe0a47f9ea1fc",
+    "summary": "View and manage EmptyOS settings"
+  },
+  "short-circuit": {
+    "hash": "0a3698678c6ac58f",
+    "summary": "Calculates conductor short-circuit thermal withstand, permissible current, fault pass/fail, and minimum cross-section"
+  },
+  "sim": {
+    "hash": "411816cfa0ac6937",
+    "summary": "View and run EMTP-class power-system simulations, with runs saved in your vault"
+  },
+  "skill": {
+    "hash": "8f6cb518f0b3c2c6",
+    "summary": "Invokes slash commands that apply prompt overlays and allowed actions"
+  },
+  "soil": {
+    "hash": "b90551c301918da4",
+    "summary": "Inverts Wenner sounding measurements into multilayer soil resistivity models with fit diagnostics"
+  },
+  "store": {
+    "hash": "00b9f4850abbb846",
+    "summary": "Browse, install, and uninstall local apps, plugins, and skills for your account"
+  },
+  "synth": {
+    "hash": "87b31a4b0757d354",
+    "summary": "Iteratively generates, checks, calibrates, and fixes outputs until quality and coverage goals are met"
+  },
+  "system-log": {
+    "hash": "9c14eda7eaa94962",
+    "summary": "Shows all system and app events in one place"
+  },
+  "task": {
+    "hash": "e67e442cca9decdc",
+    "summary": "Add, complete, and search tasks across your notes"
+  },
+  "test-app": {
+    "hash": "91366fc98926a34a",
+    "summary": "Runs a basic test app"
+  },
+  "tests": {
+    "hash": "bd783448b4f2238b",
+    "summary": "Discovers and runs pytest files, tracking the most recent test results"
+  },
+  "tiers": {
+    "hash": "a0417dd59a3ff44f",
+    "summary": "View and edit which release tiers apps and plugins belong to"
+  },
+  "tmpl": {
+    "hash": "82623bf3c2c4bb10",
+    "summary": "Creates notes from templates with placeholders to fill in"
+  },
+  "tour": {
+    "hash": "14f9c5e90060b425",
+    "summary": "Guides you through EmptyOS features with interactive steps across real screens"
+  },
+  "trace-miner": {
+    "hash": "dc4d2f57b0f93c4c",
+    "summary": "Groups recurring errors into prioritized, evidence-backed issues for the fix-agent loop"
+  },
+  "vault-backup": {
+    "hash": "24cfc0f596c36b07",
+    "summary": "Creates scheduled vault snapshots with retention rules and alerts when backups become outdated"
+  },
+  "vault-graph": {
+    "hash": "a1c9e020755245cd",
+    "summary": "Visualizes your vault notes, links, and references as an interactive graph"
+  },
+  "video-digest": {
+    "hash": "ef1d7b14a5ea1be8",
+    "summary": "Turns queued YouTube links into Web-Clip digests with AI summaries"
+  },
+  "viz": {
+    "hash": "7884cafa7595e7bf",
+    "summary": "Creates standalone visual explainers, diagrams, charts, and Three.js scenes from plain-language briefs"
+  },
+  "voice-assistant": {
+    "hash": "5a288255bd8c5b89",
+    "summary": "Talks with you by listening, thinking, and speaking back"
+  },
+  "weather": {
+    "hash": "64bba22d8d3ffe75",
+    "summary": "Shows the weather using multiple forecast sources with automatic fallback"
+  },
+  "web-analytics": {
+    "hash": "8d0c4a3435b6f2a2",
+    "summary": "Tracks pageviews for published sites locally without cookies or fingerprinting"
+  },
+  "welcome": {
+    "hash": "3a262557417a4c3b",
+    "summary": "Shows visitors the public pages and links for your EmptyOS deployment"
+  },
+  "workflows": {
+    "hash": "802667676998451a",
+    "summary": "Build and run visual workflows with reversible actions and human approval steps"
+  },
+  "workspaces": {
+    "hash": "3f84118ce1c417ff",
+    "summary": "Organizes related apps into navigable spaces around a goal"
+  },
+  "writing-editor": {
+    "hash": "e5f48f1aa78cde9f",
+    "summary": "Revises drafts for your audience and tone, with explanations for each edit"
+  }
+}

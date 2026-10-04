@@ -1,0 +1,189 @@
+# EmptyOS — demo instance config
+#
+# This config powers the public live demo. Designed for $0/month AI cost:
+# every visitor gets a working local model (slow but free); strangers who
+# want quality paste their own OpenAI key in Settings (BYOK, session-scoped).
+#
+# Deploy with: docker compose -f docker-compose.demo.yml up -d
+
+[os]
+name = "EmptyOS Demo"
+# The demo lands on the hub, not portal: portal's UI is not demo-ready yet
+# (Kevin, 2026-10-03). Without this line "/" follows the default, /portal/.
+home = "/hub/"
+data_dir = "/app/data"
+log_level = "INFO"
+
+[notes]
+path = "/vault"
+watch = true
+
+# --- Deployment: public mode ---
+# Visitors hit /login and see the demo password inline on the page (rendered
+# server-side when demo.enabled is true). No ?token=... in the URL, no
+# pre-shared credential — first-time visitors copy/type "demo" and they're in.
+# The visible password is rate-limited like any other login (5 fails/60s →
+# 30s cooldown per IP) and gates only this demo's sample state, which is
+# wiped on every container restart.
+#
+# auth_token is still injected via env (EOS_NETWORK_AUTH_TOKEN) for operator
+# access via `Authorization: Bearer ...` — that's how redeploy-demo.sh's
+# health check and any CLI tooling get in without typing the password.
+[network]
+mode = "public"
+port = 9000
+password = "demo"
+
+# The browser user is a visitor, not the operator: operator-only routes
+# (host files, config, network, plugins, code install, generic dispatch) are
+# refused over the web, and read/write is confined to the vault. See
+# docs/AUTH.md § Operator vs user.
+[trust]
+web = "user"
+
+# --- Demo mode ---
+# Banner, GPU capabilities disabled, BYOK panel surfaced in Settings.
+[demo]
+enabled = true
+reset_on_restart = true
+seed_on_boot = true
+
+# Apps that genuinely can't work in a CPU-only public demo (no mic, no camera,
+# no GPU, no separate voice-api service). The kernel filters these out at load
+# time — they're invisible to nav and routing. Strangers see only what works.
+hide_apps = [
+    # --- Capability gaps in CPU-only demo ---
+    "hands-free",        # continuous-speech voice workflow — Web Speech API one-shot
+                         # mode isn't a great fit; revisit when streaming STT lands
+    "music-studio",      # personal-tier ComfyUI gen — not in repo at all
+
+    # --- Safety: surfaces a public visitor must never see ---
+    "run",               # arbitrary shell on the VPS — could exfiltrate the
+                         # auth token, wipe the vault, fork-bomb the box
+    "system-log",        # exposes prior visitors' captures + internal state +
+                         # error stacks (could leak BYOK keys if logs ever
+                         # included headers — defense in depth)
+    "git",               # vault git ops — could push to a remote we don't
+                         # want shared, or expose commit history beyond the
+                         # current snapshot
+    "providers",         # CRITICAL — edits the live capability chain without
+                         # restart. A visitor could POST a malicious provider
+                         # (host=attacker.com) to exfiltrate every prompt
+                         # AND every BYOK key, OR delete the ollama provider
+                         # to kill the demo's AI for everyone else.
+    "conversation-ingest", # exposes local import inventory and private note paths
+
+    # --- Safety: dev/personal apps (not loaded anyway, but explicit) ---
+    "staff",             # spawns long-running Claude CLI agents
+    "model-bench",       # benchmark runner; long jobs, expensive
+    "release",           # release packaging; could expose internal toml
+    "tests",             # test runner; could affect daemon state
+    "app-gen",           # generates new apps; could generate malicious ones
+]
+# Note from v0.2.12 onward, voice-assistant + gesture are both available:
+#   - listen   uses browser-speech (Web Speech API in the visitor's browser)
+#   - see      uses browser-webcam (getUserMedia in the visitor's browser)
+#   - speak    uses edge-tts (free Microsoft voices, in-process)
+# All three need only the visitor's device — no whisper, no voice-api, no GPU.
+
+# --- Cloud consent ---
+# Pre-approved: visitors opt in by entering their own key (BYOK) at runtime.
+# The key is session-scoped (browser localStorage), never persisted server-side.
+# DO NOT copy this setting into a real personal instance — there it should
+# stay "ask" so every cloud call surfaces a consent prompt.
+[cloud]
+consent = "always"
+
+# --- Think capability ---
+# Local Ollama (phi3:mini, ~3.8B params) is the default. Costs zero, runs on
+# the demo VPS's CPU, ~2-4s per response, output quality is "OK for proving
+# the system works". Visitors who want gpt-4-class quality paste their own
+# OpenAI/Anthropic key via the demo Settings panel — that key is sent
+# directly from their browser, never touches your server.
+#
+# Intentionally only `ollama` here. We do NOT list `openai` as a server-side
+# provider because we don't ship an OpenAI key in the demo image; if you
+# want server-side cloud as a fallback, add it explicitly + cap the spend
+# via [billing.budgets.openai] below.
+[capabilities.think]
+# openai first: when a visitor has set a BYOK key in Settings, the openai
+# provider becomes available and wins (faster + better quality). Without
+# BYOK, openai's available() returns false (no env var on the demo) and
+# the chain falls through to ollama (slow but free).
+providers = ["openai", "ollama"]
+
+[capabilities.think.openai]
+host = "https://api.openai.com"
+model = "gpt-4o-mini"
+# Note: OPENAI_API_KEY is intentionally NOT set in .env.demo — visitors
+# supply their own via Settings → Demo → BYOK. The provider's _api_key()
+# reads the BYOK contextvar (set by the X-User-OpenAI-Key middleware in
+# server.py) before falling back to env.
+api_key_env = "OPENAI_API_KEY"
+timeout = 30
+
+# --- Listen capability — browser-side STT via Web Speech API ---
+# No API key, no whisper service. The visitor's browser captures speech
+# (Chrome/Edge/Safari support it) and POSTs the transcript over the
+# realtime WebSocket. The mic is on the visitor's device, not the server.
+[capabilities.listen]
+providers = ["browser-speech"]
+
+[capabilities.listen.browser-speech]
+language = "en-US"
+timeout = 30
+
+# --- Speak capability — edge-tts (free Microsoft voices) ---
+# Pure-Python in-process TTS. No API key, no GPU.
+[capabilities.speak]
+providers = ["edge-tts"]
+
+# --- See capability — browser-side webcam snapshot via getUserMedia ---
+# Returns a base64 JPEG data URL. Apps that need raw bytes use
+# emptyos.sdk.utils.parse_data_url.
+[capabilities.see]
+providers = ["browser-webcam"]
+
+[capabilities.see.browser-webcam]
+timeout = 30
+
+[capabilities.think.ollama]
+host = "http://ollama:11434"
+# qwen2.5:1.5b — ~1GB on disk, ~2GB RAM at runtime. Fits a 4GB VPS once
+# you've added 4GB swap (see docker-compose.demo.yml header).
+# Why not qwen2.5:0.5b? At 500M params it can hold a conversation but
+# can't reliably emit the [INTENT:app.verb(...)] tokens the voice-assistant
+# uses for tool-calling — visitors get "I can't help with that" replies for
+# anything that needs an app integration. 1.5b is the sweet spot for CPU
+# inference + tool use.
+# Why not phi3:mini or qwen2.5:7b? OOM-killed on a 4GB VPS even with swap.
+# Visitors who want gpt-4-class quality paste their own OpenAI key
+# (Settings → Demo → BYOK) — the key stays browser-side, never touches
+# the server.
+model = "qwen2.5:1.5b"
+
+# Same host for the plugin-side health check (so the boot log shows
+# "Connected to http://ollama:11434" instead of warning about localhost).
+[plugins.ollama]
+host = "http://ollama:11434"
+
+# --- Spend cap (defense in depth) ---
+# Even with BYOK as the primary path, set a hard monthly budget on every
+# cloud provider so a misconfigured deployment can't surprise you with a
+# big bill. apps/billing/ enforces these by disabling the provider once
+# tripped. Numbers below are conservative — raise if you knowingly fund
+# the demo's AI from your own pocket.
+[billing.budgets]
+openai = 5      # USD/month
+anthropic = 5   # USD/month
+ollama = 0      # local — billed at $0 by definition
+
+[scheduler]
+enabled = true
+timezone = "UTC"
+
+[plugins]
+path = "./plugins"
+
+[apps]
+path = "./apps"

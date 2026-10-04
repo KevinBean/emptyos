@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Garden</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/garden/pages/_themes/sumi-e.css">
+<link rel="stylesheet" href="/garden/pages/_themes/appleton.css">
+<link rel="stylesheet" href="/garden/pages/_themes/scroll.css">
+<link rel="stylesheet" href="/garden/pages/_themes/cottage.css">
+<link rel="stylesheet" href="/garden/pages/_themes/edo.css">
+<style>
+  body { margin: 0; }
+  .eos-garden {
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--g-text);
+    padding: 48px max(24px, 6vw) 80px;
+    transition: background-color 0.3s ease;
+  }
+  .eos-g-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 48px;
+    gap: 24px;
+    flex-wrap: wrap;
+    max-width: 1240px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .eos-g-title-block { display: flex; flex-direction: column; gap: 4px; }
+  .eos-g-title { font-size: 18px; font-weight: 400; letter-spacing: 0.5px; margin: 0; }
+  .eos-g-lineage { color: var(--g-muted); font-size: 11px; }
+  .eos-g-meta { color: var(--g-muted); font-size: 12px; }
+  .eos-g-theme-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .eos-g-theme-picker label {
+    color: var(--g-muted);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: lowercase;
+  }
+  .eos-g-theme-select {
+    background: transparent;
+    color: var(--g-text);
+    border: 1px solid var(--g-border, currentColor);
+    padding: 4px 26px 4px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: right 10px top 50%, right 6px top 50%;
+    background-size: 4px 4px;
+    background-repeat: no-repeat;
+  }
+  .eos-g-gear {
+    background: transparent;
+    color: var(--g-text);
+    border: 1px solid var(--g-border, currentColor);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    opacity: 0.75;
+    transition: opacity 0.1s;
+  }
+  .eos-g-gear:hover { opacity: 1; }
+  .eos-g-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+  .eos-g-card { cursor: default; position: relative; }
+  .eos-g-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .eos-g-plot { width: 100%; height: 180px; display: block; }
+  .eos-g-card-items {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .eos-g-item {
+    color: var(--g-text);
+    font-size: 11px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    padding: 2px 0;
+    text-align: left;
+    font-family: inherit;
+    opacity: 0.75;
+    transition: opacity 0.1s;
+  }
+  .eos-g-item:hover { opacity: 1; }
+  /* The stage fade is the garden metaphor (dormant notes recede) — but a note
+     you cannot read is useless, so the ramp bottoms out at the legibility
+     floor rather than at invisibility. Order is preserved; only the floor moved. */
+  .eos-g-item[data-stage="wilting"] { opacity: 0.72; }
+  .eos-g-item[data-stage="dormant"] { opacity: 0.62; font-style: italic; }
+  .eos-g-item[data-stage="seedling"] { opacity: 0.85; }
+  .eos-g-item[data-stage="budding"] { opacity: 1; }
+  .eos-g-empty {
+    color: var(--g-muted);
+    font-size: 11px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+<div class="eos-garden" id="garden" data-theme="appleton">
+  <div class="eos-g-header">
+    <div class="eos-g-title-block">
+      <h1 class="eos-g-title">Garden</h1>
+      <div class="eos-g-lineage" id="theme-lineage">…</div>
+    </div>
+    <div class="eos-g-meta" id="garden-meta">…</div>
+    <div class="eos-g-theme-picker">
+      <label for="theme-select">theme</label>
+      <select id="theme-select" class="eos-g-theme-select"></select>
+      <button class="eos-g-gear" id="garden-settings-btn" title="Garden settings" aria-label="Garden settings">&#9881;</button>
+    </div>
+  </div>
+  <div class="eos-g-grid" id="garden-grid">…</div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+(function(){
+  var root = document.getElementById('garden');
+  var grid = document.getElementById('garden-grid');
+  var meta = document.getElementById('garden-meta');
+  var lineageEl = document.getElementById('theme-lineage');
+  var pickerEl = document.getElementById('theme-select');
+  var STATE = { theme: 'appleton', plots: {}, computed_at: 0, window_days: 30 };
+  var THEMES_MAP = {};
+
+  // Fixed plot order; no dimension names per CLAUDE.md rule 16.
+  var PLOT_ORDER = ['physical','social','intellectual','occupational'];
+  var PLOT_LABEL = {
+    physical:     'i.',
+    social:       'ii.',
+    intellectual: 'iii.',
+    occupational: 'iv.',
+  };
+
+  function applyTheme(name){
+    root.setAttribute('data-theme', name);
+    STATE.theme = name;
+    pickerEl.value = name;
+    var meta = THEMES_MAP[name] || {};
+    lineageEl.textContent = meta.lineage || '';
+    render();
+  }
+
+  function buildPicker(themesList){
+    pickerEl.innerHTML = '';
+    themesList.forEach(function(t){
+      THEMES_MAP[t.id] = t;
+      var o = document.createElement('option');
+      o.value = t.id;
+      o.textContent = t.name;
+      pickerEl.appendChild(o);
+    });
+    pickerEl.onchange = function(){
+      var t = pickerEl.value;
+      applyTheme(t);
+      fetch('/settings/api/set', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: 'garden.theme', value: t})
+      }).catch(function(){});
+    };
+  }
+
+  function plotPlaceholder(slug){
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 180" class="eos-g-plot"></svg>';
+  }
+
+  function renderPlants(slug, plants){
+    if (!plants || !plants.length) {
+      return '<div class="eos-g-empty">—</div>';
+    }
+    return '<div class="eos-g-card-items">' + plants.slice(0, 5).map(function(p){
+      var label = (p.label || '').slice(0, 40) || p.id || '';
+      var stage = p.stage || 'evergreen';
+      if (p.entity_path) {
+        return '<button class="eos-g-item" data-stage="'+stage+'" data-path="'+encodeURIComponent(p.entity_path)+'">'+esc(label)+'</button>';
+      }
+      return '<div class="eos-g-item" data-stage="'+stage+'">'+esc(label)+'</div>';
+    }).join('') + '</div>';
+  }
+
+  function render(){
+    grid.innerHTML = PLOT_ORDER.map(function(slug){
+      var p = STATE.plots[slug] || { species: 'grass', plants: [] };
+      var n = (p.plants || []).length;
+      var annot = n > 0 ? (n + ' growing') : 'dormant';
+      return ''
+        + '<div class="eos-g-card" data-plot="'+slug+'">'
+        +   '<div class="eos-g-card-head">'
+        +     '<span class="eos-g-label">'+esc(PLOT_LABEL[slug] || slug)+'</span>'
+        +     '<span class="eos-g-annot">'+esc(annot)+'</span>'
+        +   '</div>'
+        +   '<div class="eos-g-plot-mount" id="plot-'+slug+'">'+plotPlaceholder(slug)+'</div>'
+        +   renderPlants(slug, p.plants)
+        + '</div>';
+    }).join('');
+
+    PLOT_ORDER.forEach(function(slug){
+      fetch('/garden/api/plot/'+slug+'.svg?theme='+encodeURIComponent(STATE.theme), {cache: 'no-cache'})
+        .then(function(r){ return r.text(); })
+        .then(function(svg){
+          var mount = document.getElementById('plot-'+slug);
+          if (mount) mount.innerHTML = svg;
+        })
+        .catch(function(){});
+    });
+
+    Array.prototype.forEach.call(grid.querySelectorAll('.eos-g-item[data-path]'), function(btn){
+      btn.onclick = function(){
+        var path = decodeURIComponent(btn.dataset.path);
+        if (window.EOS_UI && window.EOS_UI.timeline4D) {
+          window.EOS_UI.timeline4D(path);
+        } else if (window.EOS && window.EOS.openNote) {
+          window.EOS.openNote(path);
+        }
+      };
+    });
+  }
+
+  var settingsPanel = EOS_UI.settingsPanel({
+    id: 'garden-settings-panel',
+    title: 'Garden Settings',
+    fields: [
+      {key: 'garden.theme', label: 'Theme', type: 'select',
+       options: ['sumi-e', 'appleton', 'scroll', 'cottage', 'edo'], default: 'appleton',
+       hint: 'Visual style'},
+      {key: 'garden.window_days', label: 'Signal window (days)', type: 'number', default: 30,
+       hint: 'How far back to look for activity signals'},
+    ],
+    onSave: function(){ load(); },
+  });
+  var gearBtn = document.getElementById('garden-settings-btn');
+  if (gearBtn) gearBtn.onclick = function(){ settingsPanel.open(); };
+
+  async function load(){
+    try {
+      var [state, themes] = await Promise.all([
+        fetch('/garden/api/state').then(function(r){ return r.json(); }),
+        fetch('/garden/api/themes').then(function(r){ return r.json(); })
+      ]);
+      STATE = Object.assign(STATE, state);
+      buildPicker((themes && themes.themes) || []);
+      applyTheme((themes && themes.active) || STATE.theme || 'appleton');
+      var when = state.computed_at ? new Date(state.computed_at * 1000).toLocaleTimeString() : '';
+      var totals = state.total_plants || 0;
+      meta.textContent = totals + ' plants · ' + (state.window_days || 30) + 'd window · ' + when;
+    } catch (e) {
+      meta.textContent = 'unable to load';
+    }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

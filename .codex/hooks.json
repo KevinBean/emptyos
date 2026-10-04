@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/run_codex_hook.py guard_daemon_safety.py",
+            "statusMessage": "Checking daemon safety"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/run_codex_hook.py check_daemon_restart_needed.py",
+            "statusMessage": "Checking daemon restart hint"
+          },
+          {
+            "type": "command",
+            "command": "python scripts/run_codex_hook.py suggest_skill_on_edit.py",
+            "statusMessage": "Checking EmptyOS edit advisories"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/run_codex_hook.py log_app_development.py"
+          }
+        ]
+      }
+    ]
+  }
+}

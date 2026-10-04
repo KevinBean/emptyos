@@ -1,0 +1,1372 @@
+// task -- page logic, extracted verbatim from pages/index.html (P4 Atomic
+// split, .claude/rules/multi-module-apps.md frontend pattern). Loaded at the
+// same position as the old inline <script>, so global scope and load order
+// vs eos.js / eos-components.js are unchanged.
+    EOS.nav('task');
+
+    EOS_UI.pageHeader({
+      mount: 'task-header-mount',
+      title: 'Tasks',
+      subtitle: 'Vault task manager with decay tracking',
+      actions: '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openAsBoard()" title="Open in Boards (kanban / table / calendar)">Open as Board</button>'
+        + '<button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>'
+        + '<button class="eos-btn eos-btn-sm eos-btn-ghost refresh-btn" onclick="doRefresh()" title="Rebuild index from vault"><span class="refresh-icon">&#x21bb;</span> Refresh</button>',
+    });
+
+    if(window.EOS&&EOS.registerActions){EOS.registerActions({
+        add_task:function(t){var i=document.getElementById("add-text");if(t)i.value=t;i.focus()},
+        refresh_tasks:function(){doRefresh()},
+        switch_tab:function(t){switchTab(t)},
+        complete_by_text:function(q){
+            if(!q)return;
+            var needle=String(q).toLowerCase();
+            var rows=document.querySelectorAll('#view-list .task-item');
+            for(var i=0;i<rows.length;i++){
+                var txt=rows[i].querySelector('.task-text');
+                if(txt&&txt.textContent.toLowerCase().indexOf(needle)!==-1){
+                    var cb=rows[i].querySelector('.task-cb');
+                    if(cb&&!cb.classList.contains('done'))cb.click();
+                    return;
+                }
+            }
+            showToast('No task matched "'+q+'"','err');
+        },
+        snooze_by_text:function(q){
+            if(!q)return;
+            var parts=String(q).split(',');var needle=parts[0].trim().toLowerCase();var days=parseInt(parts[1])||7;
+            for(var i=0;i<allTasks.length;i++){
+                if(allTasks[i].text.toLowerCase().indexOf(needle)!==-1){
+                    snoozeTask(allTasks[i].file,allTasks[i].line,days);return;
+                }
+            }
+            showToast('No task matched "'+needle+'"','err');
+        }
+    },[
+        {name:"add_task",description:"Focus task input with optional text",params:["text"]},
+        {name:"refresh_tasks",description:"Rescan vault for tasks",params:[]},
+        {name:"switch_tab",description:"Switch tab: focus, list, done, calendar",params:["tab_name"]},
+        {name:"complete_by_text",description:"Mark a task done by matching text in its title",params:["query"]},
+        {name:"snooze_by_text",description:"Snooze a task by matching text. Format: 'query' or 'query, days'",params:["query_and_days"]}
+    ],{description:"Task manager — focus/list/done tabs, calendar, snooze, vault-scan refresh.",quickActions:[{label:"What is overdue?",msg:"List my overdue tasks by urgency."},{label:"Focus now",msg:"Which task should I tackle right now?"},{label:"Refresh",msg:"Scan vault for new tasks."}]});}
+
+    var allTasks = [];
+    var calendarData = {};
+    // (calMonth/calYear now owned by EOS_UI.monthGrid)
+    var selectedCalDay = null;
+    var searchQuery = '';
+    var bucketFilter = '';
+    var tagFilter = '';         // active #tag filter on the List view
+    var recurringOnly = false;  // show only 🔁 recurring tasks on the List view
+    var allTags = {};           // {tag: count} from /api/tags — powers the filter strip
+    // Render cap: with a large vault the zombie bucket alone can be thousands
+    // of rows, producing a multi-hundred-thousand-pixel page. Cap each group
+    // and offer a per-group "Show all" expander. Search/bucket filters narrow
+    // the set first, so the cap only bites on the unfiltered firehose.
+    var ROW_CAP = 100;
+    // Per-group extra rows revealed this session ("Show 100 more" clicks).
+    var expandedGroups = {};
+    // Per-group header collapse, persisted across reloads.
+    var folds = {};
+    try { folds = JSON.parse(localStorage.getItem('task.folds') || '{}') || {}; } catch (e) { folds = {}; }
+    var focusBalance = {};  // inferred life-domain counts for the Focus readout
+    var zombieDays = 90;    // task.zombie_days setting — drives the decay-tier labels
+
+    // Actionability is the primary organizing axis. Someday starts collapsed
+    // (it's the backlog bin); Next + Waiting render expanded.
+    var ACTION_META = {
+      next:    { label: 'Next',    hint: 'committed — by urgency',        collapsed: false },
+      waiting: { label: 'Waiting', hint: 'blocked on someone / something', collapsed: false },
+      someday: { label: 'Someday', hint: 'captured ideas — review later',  collapsed: true  },
+    };
+    var _itemIdx = 0;
+
+    function setBucket(b) {
+      bucketFilter = (bucketFilter === b) ? '' : b;
+      document.querySelectorAll('#stats .eos-stat-card').forEach(function(el) {
+        el.classList.toggle('eos-stat-active', el.dataset.bucket === bucketFilter);
+      });
+      renderList();
+    }
+
+    function inBucket(t, bucket) {
+      var today = new Date(); today.setHours(0,0,0,0);
+      var todayS = today.toISOString().slice(0,10);
+      var tom = new Date(today.getTime() + 86400000).toISOString().slice(0,10);
+      var weekEnd = new Date(today.getTime() + 7*86400000).toISOString().slice(0,10);
+      var due = (t.due || '').slice(0,10);
+      if (bucket === 'overdue')   return due && due < todayS;
+      if (bucket === 'today')     return due === todayS;
+      if (bucket === 'tomorrow')  return due === tom;
+      if (bucket === 'this_week') return due && due > todayS && due <= weekEnd;
+      return true;
+    }
+
+    function projectBadge(file) {
+      var norm = file.replace(/\\/g, '/');
+      var m = norm.match(/10_Projects\/([^/]+?)(?:\.md|\/)/);
+      if (!m) return '';
+      var slug = m[1];
+      var name = slug.replace(/-/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+      return '<a href="/projects/workspace/' + escAttr(slug) + '" class="project-badge">' + esc(name) + '</a> ';
+    }
+
+    // ----- Init -----
+    async function init() {
+      await Promise.all([loadConfig(), loadTasks(), loadFocus(), loadCalendar()]);
+    }
+
+    // Pull the one setting the client renders literally (the zombie threshold)
+    // so the decay-tier labels can't lie when a user changes it in ⚙ Settings.
+    async function loadConfig() {
+      try {
+        var r = await EOS.api('/settings/api/config');
+        var s = (r && r.settings) || {};
+        var z = parseInt(s['task.zombie_days'], 10);
+        if (!isNaN(z) && z > 0) zombieDays = z;
+        // When NL quick-add is on, hint the syntax in the add box.
+        if (s['task.feature.nl-quickadd.enabled']) {
+          var ai = document.getElementById('add-text');
+          if (ai) ai.placeholder = 'Add a task… (try: call mom tomorrow p1)';
+        }
+      } catch (e) {}
+    }
+
+    // ----- Load tasks -----
+    async function loadTasks() {
+      try {
+        allTasks = await EOS.api('/task/api/tasks');
+        renderStats();
+        renderDecay();
+        renderList();
+        renderFocusView();
+        // Domain balance keywords live server-side (single source); fetch once
+        // per reload and re-render the strip when it arrives.
+        EOS.api('/task/api/focus-view').then(function(d) {
+          focusBalance = (d && d.balance) || {};
+          renderFocusView();
+        }).catch(function() {});
+        // Tag counts power the List-view filter strip (surfaces /api/tags).
+        EOS.api('/task/api/tags').then(function(d) {
+          allTags = d || {};
+          renderList();
+        }).catch(function() {});
+      } catch (e) {
+        document.getElementById('view-list').innerHTML =
+          EOS_UI.errorState({message:'Failed to load tasks'});
+      }
+    }
+
+    // ----- Focus view (actionability-first) -----
+    function renderFocusView() {
+      var el = document.getElementById('view-focus');
+      if (!el) return;
+      if (!allTasks.length) {
+        el.innerHTML = EOS_UI.emptyState({ icon: '✅', message: 'No open tasks' });
+        return;
+      }
+      // Group client-side off the actionability field so this stays in lockstep
+      // with allTasks (no stale view after an optimistic toggle).
+      var groups = { next: [], waiting: [], someday: [] };
+      for (var i = 0; i < allTasks.length; i++) {
+        var a = allTasks[i].actionability || 'someday';
+        (groups[a] || groups.someday).push(allTasks[i]);
+      }
+      // urgency first (matches server group_by_actionability), due as tiebreaker
+      groups.next.sort(function(a, b) {
+        return (b.focus_score || 0) - (a.focus_score || 0)
+            || (a.due || '9999').slice(0, 10).localeCompare((b.due || '9999').slice(0, 10));
+      });
+      groups.waiting.sort(function(a, b) {
+        return (a.due || '9999').slice(0, 10).localeCompare((b.due || '9999').slice(0, 10));
+      });
+      groups.someday.sort(function(a, b) { return (b.mtime || 0) - (a.mtime || 0); });
+
+      var html = '<div class="focus-toolbar">' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="loadSuggest(this)" ' +
+        'title="Ask the AI what to tackle today, ranked by urgency">✨ Suggest</button>' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openTriage()" ' +
+        'title="Find duplicates + stale tasks and clean them up in confirmed batches">🧹 Triage backlog</button>' +
+        '</div>';
+      html += suggestBoxHtml();
+      html += domainStripHtml();
+      _itemIdx = 0;
+      ['next', 'waiting', 'someday'].forEach(function(key) {
+        if (groups[key].length) html += renderActionGroup(key, groups[key]);
+      });
+      el.innerHTML = html || EOS_UI.emptyState({ icon: '✅', message: 'No open tasks' });
+    }
+
+    // ----- Triage backlog (conservative, confirm-per-batch) -----
+    var _triageData = null;
+
+    async function openTriage() {
+      var data;
+      try {
+        data = await EOS.api('/task/api/triage/scan');
+      } catch (e) {
+        showToast('Could not scan backlog', 'err');
+        return;
+      }
+      _triageData = data;
+      var c = data.counts || {};
+      var body = '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 12px">' +
+        'Nothing is changed until you confirm a batch. Archived tasks leave the active list ' +
+        '(kept in <code>40_Archive</code>, restorable from git).</p>';
+
+      // Duplicates
+      body += '<div class="triage-section"><b>Duplicates</b> — ' + (c.duplicate_groups || 0) +
+        ' group(s), ' + (c.duplicate_removable || 0) + ' redundant copies';
+      if (c.duplicate_removable) {
+        body += '<div style="margin-top:6px"><button class="eos-btn eos-btn-sm" ' +
+          'onclick="applyDedup(this)">Archive ' + c.duplicate_removable + ' duplicate copies</button></div>';
+      } else {
+        body += '<div style="color:var(--text-muted);font-size:12px;margin-top:4px">None found.</div>';
+      }
+      body += '</div>';
+
+      // Zombies by domain
+      body += '<div class="triage-section" style="margin-top:14px"><b>Stale / zombie</b> — ' +
+        (c.zombies || 0) + ' task(s)';
+      var zbd = data.zombies_by_domain || {};
+      var domains = Object.keys(zbd).sort(function(a, b) { return zbd[b].length - zbd[a].length; });
+      if (!domains.length) {
+        body += '<div style="color:var(--text-muted);font-size:12px;margin-top:4px">None found.</div>';
+      }
+      domains.forEach(function(dom) {
+        var items = zbd[dom];
+        body += '<div style="margin:10px 0;padding:8px;border:1px solid var(--border);border-radius:8px">' +
+          '<span class="domain-chip">' + esc(dom) + ' <b>' + items.length + '</b></span> ' +
+          '<button class="eos-btn eos-btn-sm eos-btn-ghost" ' +
+          'onclick="applyZombieArchive(' + escAttr(JSON.stringify(dom)) + ',this)">Archive these ' + items.length + '</button>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5">' +
+          items.slice(0, 8).map(function(t) { return '• ' + esc(t.text); }).join('<br>') +
+          (items.length > 8 ? '<br>… +' + (items.length - 8) + ' more' : '') +
+          '</div></div>';
+      });
+      body += '</div>';
+
+      // AI triage section (only when the dark flag is on)
+      var ai = null;
+      try { ai = await EOS.api('/task/api/triage/ai-status'); } catch (e) { ai = null; }
+      if (ai && ai.enabled) {
+        _aiTriageOffset = 0;
+        body += '<div class="triage-section" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">' +
+          '<b>✨ AI triage someday</b> — ' + (ai.someday_total || 0) + ' task(s)' +
+          '<div style="color:var(--text-muted);font-size:12px;margin:4px 0">A local model suggests promote / keep / archive in batches. You confirm each batch.</div>' +
+          '<div style="margin-top:6px"><button class="eos-btn eos-btn-sm" onclick="aiClassifyNext(this)">Classify next 50</button></div>' +
+          '<div id="ai-triage-out" style="margin-top:10px"></div>' +
+          '</div>';
+      }
+
+      EOS_UI.modal({ title: 'Triage backlog', body: body, width: '580px' });
+    }
+
+    // ----- AI triage: classify someday in pages, apply per disposition -----
+    var _aiTriageOffset = 0;
+    var _aiTriageProps = { promote: [], archive: [] };
+
+    async function aiClassifyNext(btn) {
+      var out = document.getElementById('ai-triage-out');
+      if (!out) return;
+      if (btn) { btn.disabled = true; btn.textContent = 'Thinking…'; }
+      out.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Classifying…</div>';
+      try {
+        var d = await EOS.api('/task/api/triage/classify?offset=' + _aiTriageOffset + '&limit=50');
+        if (d.disabled) { out.innerHTML = '<div style="color:var(--text-muted)">AI triage is disabled.</div>'; return; }
+        var props = d.dispositions || [];
+        _aiTriageProps = {
+          promote: props.filter(function(p) { return p.disposition === 'promote'; }),
+          archive: props.filter(function(p) { return p.disposition === 'archive'; }),
+        };
+        var keepN = props.filter(function(p) { return p.disposition === 'keep'; }).length;
+        var h = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">' +
+          'Batch of ' + props.length + ' — reviewed ' + Math.min(d.next_offset, d.total) + ' / ' + d.total + '</div>';
+        h += _aiDispBlock('promote', '⬆ Promote to Next', _aiTriageProps.promote);
+        h += _aiDispBlock('archive', '🗄 Archive', _aiTriageProps.archive);
+        h += '<div style="font-size:12px;color:var(--text-muted);margin:6px 0">keep (no change): ' + keepN + '</div>';
+        if (!d.done) {
+          h += '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="_aiTriageOffset=' + d.next_offset + ';aiClassifyNext(this)">Skip to next 50 →</button>';
+        } else {
+          h += '<div style="color:var(--text-muted);font-size:12px">End of someday backlog.</div>';
+        }
+        out.innerHTML = h;
+      } catch (e) {
+        out.innerHTML = '<div style="color:var(--danger)">Classify failed.</div>';
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Classify next 50'; }
+      }
+    }
+
+    function _aiDispBlock(kind, label, items) {
+      if (!items.length) return '';
+      var rows = items.slice(0, 10).map(function(p) {
+        return '• ' + esc(p.text) + (p.reason ? ' <span style="color:var(--text-muted)">— ' + esc(p.reason) + '</span>' : '');
+      }).join('<br>');
+      return '<div style="margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:8px">' +
+        '<b>' + esc(label) + ' (' + items.length + ')</b> ' +
+        '<button class="eos-btn eos-btn-sm" onclick="applyAiDisposition(' + escAttr(JSON.stringify(kind)) + ',this)">Apply ' + items.length + '</button>' +
+        '<div style="font-size:11px;color:var(--text-secondary);margin-top:6px;line-height:1.5">' + rows +
+        (items.length > 10 ? '<br>… +' + (items.length - 10) + ' more' : '') + '</div></div>';
+    }
+
+    async function applyAiDisposition(kind, btn) {
+      var items = (_aiTriageProps[kind] || []).map(function(p) { return { file: p.file, line: p.line, text: p.text }; });
+      if (!items.length) return;
+      var isArchive = kind === 'archive';
+      if (!await EOS_UI.confirm({
+        message: (isArchive ? 'Archive ' : 'Promote ') + items.length + ' task(s)?',
+        action: isArchive ? 'Archive' : 'Promote', danger: isArchive,
+      })) return;
+      if (btn) btn.disabled = true;
+      try {
+        var url = kind === 'archive' ? '/task/api/archive-batch' : '/task/api/triage/promote-batch';
+        var res = await EOS.post(url, { items: items });
+        var n = kind === 'archive' ? (res.archived || 0) : (res.promoted || 0);
+        showToast((kind === 'archive' ? 'Archived ' : 'Promoted ') + n, 'ok');
+        _aiTriageProps[kind] = [];
+        if (btn) { btn.textContent = 'Done'; }
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+      } catch (e) {
+        showToast('Apply failed', 'err');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function applyDedup(btn) {
+      if (btn) btn.disabled = true;
+      try {
+        var res = await EOS.post('/task/api/triage/dedup', {});
+        showToast('Archived ' + (res.archived || 0) + ' duplicates', 'ok');
+        EOS_UI.closeModal();
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+      } catch (e) {
+        showToast('Dedup failed', 'err');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function applyZombieArchive(dom, btn) {
+      if (!_triageData) return;
+      var items = (_triageData.zombies_by_domain || {})[dom] || [];
+      if (!items.length) return;
+      if (!await EOS_UI.confirm({
+        message: 'Archive ' + items.length + ' stale "' + dom + '" task(s)? They leave the active list (restorable from git).',
+        action: 'Archive', danger: true,
+      })) return;
+      if (btn) btn.disabled = true;
+      try {
+        var res = await EOS.post('/task/api/archive-batch', {
+          items: items.map(function(t) { return { file: t.file, line: t.line, text: t.text }; }),
+        });
+        showToast('Archived ' + (res.archived || 0), 'ok');
+        EOS_UI.closeModal();
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+      } catch (e) {
+        showToast('Archive failed', 'err');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function domainStripHtml() {
+      var keys = Object.keys(focusBalance || {});
+      if (!keys.length) return '';
+      var chips = keys.map(function(k) {
+        return '<span class="domain-chip">' + esc(k) + ' <b>' + focusBalance[k] + '</b></span>';
+      }).join('');
+      return '<div class="domain-strip" title="Open tasks by life domain — a balance readout, not a filter">'
+        + chips + '</div>';
+    }
+
+    function renderActionGroup(key, items) {
+      var meta = ACTION_META[key] || { label: key, hint: '', collapsed: false };
+      var gkey = 'act-' + key;
+      var folded = !!folds[gkey];
+      var cap = (meta.collapsed ? 0 : ROW_CAP) + (expandedGroups[gkey] || 0);
+      var shown = folded ? [] : items.slice(0, cap);
+      var h = '<div class="tier-group action-' + escAttr(key) + '">' +
+        '<div class="tier-header action-header fold-toggle" onclick="toggleFold(' + escAttr(JSON.stringify(gkey)) + ')" title="Click to collapse / expand">' +
+          '<span class="fold-chev">' + (folded ? '&#9656;' : '&#9662;') + '</span>' +
+          esc(meta.label) + ' <span class="tier-count">' + items.length + '</span>' +
+          '<span class="action-hint">' + esc(meta.hint) + '</span>' +
+          (key === 'someday' && items.length
+            ? '<button class="eos-btn eos-btn-sm eos-btn-ghost" style="margin-left:auto" ' +
+              'onclick="event.stopPropagation();openReview5()" ' +
+              'title="Review five of the oldest someday tasks — promote, snooze, archive, or keep">🎲 Review 5</button>'
+            : '') +
+        '</div>';
+      for (var j = 0; j < shown.length; j++) h += taskRow(shown[j], shown[j].tier || 'none', _itemIdx++);
+      if (!folded && items.length > shown.length) {
+        h += showMoreBtn(gkey, items.length - shown.length, 'expandFocusGroup');
+      }
+      h += '</div>';
+      return h;
+    }
+
+    // Reveal ROW_CAP more rows instead of dumping the whole group — a 2,228-row
+    // Someday bin expanding all at once painted a 200k-px page.
+    function showMoreBtn(key, remaining, fnName) {
+      return '<button class="eos-btn eos-btn-sm eos-btn-ghost" style="margin-top:4px" ' +
+        'onclick="' + fnName + '(' + escAttr(JSON.stringify(key)) + ')">Show ' +
+        Math.min(ROW_CAP, remaining) + ' more (' + remaining + ' left) ↓</button>';
+    }
+
+    function expandFocusGroup(gkey) {
+      expandedGroups[gkey] = (expandedGroups[gkey] || 0) + ROW_CAP;
+      renderFocusView();
+    }
+
+    function toggleFold(key) {
+      folds[key] = !folds[key];
+      try { localStorage.setItem('task.folds', JSON.stringify(folds)); } catch (e) {}
+      renderFocusView();
+      renderList();
+    }
+
+    // ----- Load focus -----
+    async function loadFocus() {
+      try {
+        var focus = await EOS.api('/task/api/focus');
+        renderFocus(focus);
+      } catch (e) {
+        document.getElementById('focus-section').innerHTML = '';
+      }
+    }
+
+    // ----- Load calendar data -----
+    async function loadCalendar() {
+      try {
+        calendarData = await EOS.api('/task/api/calendar');
+      } catch (e) {
+        calendarData = {};
+      }
+    }
+
+    // ----- Stats (4 counters) -----
+    function renderStats() {
+      var today = new Date().toISOString().slice(0, 10);
+      var weekEnd = new Date();
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      var weekStr = weekEnd.toISOString().slice(0, 10);
+
+      var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      var tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+      var overdue = allTasks.filter(function(t) { return t.due && t.due < today; }).length;
+      var todayCount = allTasks.filter(function(t) { return t.due === today; }).length;
+      var tomorrowCount = allTasks.filter(function(t) { return t.due === tomorrowStr; }).length;
+      var weekCount = allTasks.filter(function(t) { return t.due && t.due > today && t.due <= weekStr; }).length;
+
+      EOS_UI.statCards('stats', [
+        {value: overdue,       label: 'Overdue',    variant: 'danger'},
+        {value: todayCount,    label: 'Today',      variant: 'warning'},
+        {value: tomorrowCount, label: 'Tomorrow',   variant: 'accent'},
+        {value: weekCount,     label: 'This Week',  variant: 'accent'},
+        {value: '-',           label: 'Done Today', variant: 'success'},
+      ]);
+      var cards = document.querySelectorAll('#stats .eos-stat-card');
+      ['overdue','today','tomorrow','this_week'].forEach(function(b, i) {
+        if (cards[i]) {
+          cards[i].dataset.bucket = b;
+          cards[i].style.cursor = 'pointer';
+          cards[i].onclick = function() { setBucket(b); };
+          cards[i].classList.toggle('eos-stat-active', bucketFilter === b);
+        }
+      });
+      // The 5th card is "Done Today" — tag it with a stable hook (nth-child math
+      // silently wrote the count into the wrong card) and make it drill into
+      // the Done view.
+      if (cards[4]) {
+        cards[4].dataset.stat = 'done';
+        cards[4].style.cursor = 'pointer';
+        cards[4].onclick = function() { switchTab('done'); };
+      }
+      if (overdue > 0 && cards[0]) {
+        var sweep = document.createElement('button');
+        sweep.className = 'eos-btn eos-btn-sm eos-btn-ghost';
+        sweep.style.marginTop = '4px';
+        sweep.textContent = 'Sweep…';
+        sweep.title = 'Bulk-reschedule every overdue task in one pass';
+        sweep.onclick = function(ev) { ev.stopPropagation(); openSweep(); };
+        cards[0].appendChild(sweep);
+      }
+      EOS.api('/task/api/tasks?status=done').then(function(done) {
+        var n = done.filter(function(t) { return t.done_date === today; }).length;
+        var cell = document.querySelector('#stats .eos-stat-card[data-stat="done"] .eos-stat-val');
+        if (cell) cell.textContent = String(n);
+      }).catch(function() {});
+    }
+
+    // ----- Decay bar -----
+    function renderDecay() {
+      var counts = { fresh: 0, aging: 0, stale: 0, zombie: 0 };
+      for (var i = 0; i < allTasks.length; i++) {
+        var tier = allTasks[i].tier || 'fresh';
+        if (counts[tier] !== undefined) counts[tier]++;
+        else counts.fresh++;
+      }
+      var total = allTasks.length || 1;
+
+      var bar = document.getElementById('decay-bar');
+      bar.innerHTML =
+        '<div class="decay-seg decay-fresh" style="width:' + (counts.fresh / total * 100) + '%"></div>' +
+        '<div class="decay-seg decay-aging" style="width:' + (counts.aging / total * 100) + '%"></div>' +
+        '<div class="decay-seg decay-stale" style="width:' + (counts.stale / total * 100) + '%"></div>' +
+        '<div class="decay-seg decay-zombie" style="width:' + (counts.zombie / total * 100) + '%"></div>';
+
+      document.getElementById('decay-legend').innerHTML =
+        '<span><span class="decay-dot" style="background:var(--success)"></span> Fresh ' + counts.fresh + '</span>' +
+        '<span><span class="decay-dot" style="background:var(--warning)"></span> Aging ' + counts.aging + '</span>' +
+        '<span><span class="decay-dot" style="background:var(--danger)"></span> Stale ' + counts.stale + '</span>' +
+        '<span><span class="decay-dot" style="background:var(--purple)"></span> Zombie ' + counts.zombie + '</span>';
+    }
+
+    // ----- Focus -----
+    function renderFocus(items) {
+      var el = document.getElementById('focus-section');
+      if (!items || !items.length) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div class="eos-section-title">Focus — Top 3 Priority</div>' +
+        items.map(function(t) {
+          return '<div class="focus-card">' +
+            '<div class="focus-score">' + t.focus_score + '</div>' +
+            '<div class="focus-text">' +
+              '<div class="task-name">' + esc(t.text) + '</div>' +
+              '<div class="task-meta">' + EOS.noteActions(t.file) + (t.due ? ' &middot; Due ' + t.due : '') + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+    }
+
+    // ----- Search / filter -----
+    function filterTasks() {
+      searchQuery = document.getElementById('search-input').value.toLowerCase();
+      // The filter renders into the "By date" list view (view-list). If the
+      // user is on the Focus/Calendar tab, a query would silently update a
+      // hidden view — the task looks nonexistent even when it's on disk. So
+      // whenever a query is active, surface the results by switching to the
+      // list tab (which searches across ALL tasks, not just the Focus subset).
+      if (searchQuery && !document.querySelector('.eos-tab[data-tab="list"].active')) {
+        switchTab('list');
+      }
+      renderList();
+    }
+
+    // ----- List (grouped by tier) -----
+    function renderList() {
+      var el = document.getElementById('view-list');
+      var tasks = allTasks;
+
+      if (bucketFilter) {
+        tasks = tasks.filter(function(t) { return inBucket(t, bucketFilter); });
+      }
+      if (searchQuery) {
+        tasks = tasks.filter(function(t) {
+          return (t.text && t.text.toLowerCase().indexOf(searchQuery) >= 0) ||
+                 (t.file && t.file.toLowerCase().indexOf(searchQuery) >= 0);
+        });
+      }
+      if (tagFilter) {
+        var needle = '#' + tagFilter.toLowerCase();
+        tasks = tasks.filter(function(t) { return (t.text || '').toLowerCase().indexOf(needle) >= 0; });
+      }
+      if (recurringOnly) {
+        tasks = tasks.filter(function(t) { return /🔁/.test(t.text || ''); });
+      }
+
+      var strip = filterStripHtml();
+      if (!tasks.length) {
+        var noneMsg = (searchQuery || tagFilter || recurringOnly) ? 'No matching tasks' : 'No open tasks';
+        el.innerHTML = strip + EOS_UI.emptyState({
+          icon: (searchQuery || tagFilter || recurringOnly) ? '🔍' : '✅',
+          message: noneMsg,
+        });
+        return;
+      }
+
+      var tiers = ['fresh', 'aging', 'stale', 'zombie'];
+      var tierLabels = {
+        fresh: 'Fresh (< 7 days)',
+        aging: 'Aging (7–30 days)',
+        stale: zombieDays > 30 ? 'Stale (30–' + zombieDays + ' days)' : 'Stale (30+ days)',
+        zombie: 'Zombie (> ' + zombieDays + ' days)'
+      };
+      var grouped = {};
+      var undated = [];
+      for (var i = 0; i < tasks.length; i++) {
+        var t = tasks[i];
+        if (!t.due) { undated.push(t); continue; }
+        var tier = t.tier || 'fresh';
+        if (!grouped[tier]) grouped[tier] = [];
+        grouped[tier].push(t);
+      }
+
+      _itemIdx = 0;
+      var html = '';
+      for (var ti = 0; ti < tiers.length; ti++) {
+        var tierKey = tiers[ti];
+        var items = grouped[tierKey];
+        if (!items || !items.length) continue;
+        html += renderTierGroup(tierKey, tierLabels[tierKey], items,
+                                'tier-group tier-' + tierKey, tierKey, false);
+      }
+
+      if (undated.length) {
+        // Newest-first so a freshly captured task surfaces at the top of the
+        // group instead of being buried below the ROW_CAP by alphabetical file
+        // order. Recency = source-file mtime, then line (later line = appended
+        // later within a file).
+        undated.sort(function(a, b) {
+          return (b.mtime || 0) - (a.mtime || 0) || (b.line || 0) - (a.line || 0);
+        });
+        html += renderTierGroup('undated', 'No Due Date', undated,
+                                'tier-group', 'none', true);
+      }
+
+      el.innerHTML = strip + html;
+    }
+
+    // ----- List-view filter strip: content #tags + a recurring toggle -----
+    function filterStripHtml() {
+      var tags = Object.keys(allTags || {}).filter(function(t) {
+        return ['next', 'waiting', 'someday'].indexOf(t.toLowerCase()) < 0;  // actionability lives in Focus
+      });
+      tags.sort(function(a, b) { return (allTags[b] || 0) - (allTags[a] || 0); });
+      tags = tags.slice(0, 15);
+      var hasRecurring = allTasks.some(function(t) { return /🔁/.test(t.text || ''); });
+      if (!tags.length && !hasRecurring) return '';
+      var chips = '';
+      if (hasRecurring) {
+        chips += '<span class="tag-chip' + (recurringOnly ? ' tag-chip-active' : '') +
+          '" onclick="toggleRecurringFilter()" title="Show only recurring tasks">🔁 Recurring</span>';
+      }
+      chips += tags.map(function(t) {
+        var active = tagFilter.toLowerCase() === t.toLowerCase();
+        return '<span class="tag-chip' + (active ? ' tag-chip-active' : '') +
+          '" onclick="toggleTag(' + escAttr(JSON.stringify(t)) + ')">#' + esc(t) +
+          ' <b>' + allTags[t] + '</b></span>';
+      }).join('');
+      return '<div class="tag-strip">' + chips + '</div>';
+    }
+
+    function toggleTag(t) {
+      tagFilter = (tagFilter.toLowerCase() === String(t).toLowerCase()) ? '' : t;
+      renderList();
+    }
+
+    function toggleRecurringFilter() {
+      recurringOnly = !recurringOnly;
+      renderList();
+    }
+
+    // Render one tier group, capped at ROW_CAP rows. If the group is larger
+    // and not expanded, render the first ROW_CAP and a "Show all" button so a
+    // 2,000-row zombie bucket doesn't paint a 200,000px page on every load.
+    function renderTierGroup(key, headerLabel, items, groupClass, tierParam, muted) {
+      var folded = !!folds[key];
+      var cap = ROW_CAP + (expandedGroups[key] || 0);
+      var shown = folded ? [] : items.slice(0, cap);
+      var h = '<div class="' + groupClass + '">' +
+        '<div class="tier-header fold-toggle"' + (muted ? ' style="color:var(--text-muted)"' : '') +
+        ' onclick="toggleFold(' + escAttr(JSON.stringify(key)) + ')" title="Click to collapse / expand">' +
+        '<span class="fold-chev">' + (folded ? '&#9656;' : '&#9662;') + '</span>' +
+        headerLabel + ' <span class="tier-count">' + items.length + '</span></div>';
+      for (var j = 0; j < shown.length; j++) h += taskRow(shown[j], tierParam, _itemIdx++);
+      if (!folded && items.length > shown.length) {
+        h += showMoreBtn(key, items.length - shown.length, 'expandGroup');
+      }
+      h += '</div>';
+      return h;
+    }
+
+    function expandGroup(key) {
+      expandedGroups[key] = (expandedGroups[key] || 0) + ROW_CAP;
+      renderList();
+    }
+
+    function setTaskListBusy(busy) {
+      var el = document.getElementById('view-list');
+      if (!el) return;
+      el.classList.toggle('task-list-busy', !!busy);
+      el.querySelectorAll('.task-actions button').forEach(function(btn) {
+        btn.disabled = !!busy;
+      });
+      el.querySelectorAll('.task-cb').forEach(function(cb) {
+        cb.style.pointerEvents = busy ? 'none' : '';
+      });
+    }
+
+    // Short text for a task's server-computed staleness tier — used when a
+    // task has no due date (so taskRow's due-chip is empty) but its tier is
+    // still real, e.g. a Focus-view "Someday" task the server flags 'stale'.
+    // Without this, the tier was signalled ONLY by the card's left-border
+    // color. .claude/rules/list-card-density.md — status must never be
+    // color-only.
+    var TIER_SHORT_LABEL = { fresh: 'Fresh', aging: 'Aging', stale: 'Stale', zombie: 'Zombie' };
+
+    function taskRow(t, tier, idx) {
+      var dueClass = t.due ? 'due-' + tier : 'due-future';
+      var dueLabel = t.due
+        ? (t.overdue_days > 0 ? t.overdue_days + 'd overdue' : t.due)
+        : '';
+      var tierChip = (!t.due && tier && TIER_SHORT_LABEL[tier])
+        ? '<span class="task-due due-' + tier + '">' + TIER_SHORT_LABEL[tier] + '</span>' : '';
+      var tierClass = tier !== 'none' ? ' tier-' + tier : '';
+      var delay = Math.min(idx * 0.03, 0.3);
+      var taskJson = escAttr(JSON.stringify({ file: t.file, line: t.line, text: t.text }));
+      var editJson = escAttr(JSON.stringify({
+        file: t.file, line: t.line, text: t.text,
+        due: (t.due || '').slice(0, 10), actionability: t.actionability || '',
+      }));
+      return '<div class="task-item' + tierClass + '" style="animation-delay:' + delay + 's">' +
+        '<div class="task-cb" title="Click to complete · right-click to complete with a note" ' +
+          'onclick="toggleTask(' + escAttr(JSON.stringify(t.file)) + ',' + t.line + ',' + escAttr(JSON.stringify(t.text)) + ',this)" ' +
+          'oncontextmenu="event.preventDefault();openCompleteNote(' + taskJson + ',this);return false"></div>' +
+        '<div class="task-body">' +
+          '<div class="task-text eos-personal">' + esc(t.text) + '</div>' +
+          '<div class="task-file">' + projectBadge(t.file) + EOS.noteActions(t.file) + '</div>' +
+          ((t.blocked_by && t.blocked_by.length)
+            ? '<div class="task-blocked" title="Waiting on an unfinished project dependency">⛓️ blocked by ' +
+              t.blocked_by.map(esc).join(', ') + '</div>'
+            : '') +
+        '</div>' +
+        (dueLabel ? '<span class="task-due ' + dueClass + '">' + dueLabel + '</span>' : tierChip) +
+        '<div class="task-actions">' +
+          '<button onclick="openCompleteNote(' + taskJson + ',this)" title="Mark this task done and add a completion note">Done note</button>' +
+          '<button onclick="snoozeTask(' + escAttr(JSON.stringify(t.file)) + ',' + t.line + ',7)" title="Push the due date out 7 days">+7d</button>' +
+          '<button onclick="snoozeTask(' + escAttr(JSON.stringify(t.file)) + ',' + t.line + ',30)" title="Push the due date out 30 days">+30d</button>' +
+          '<button onclick="openEditTask(' + editJson + ')" title="Edit — rename, due date, priority, actionability">⋯ Edit</button>' +
+          moveButtons(t) +
+          ((t.actionability === 'someday' || tier === 'zombie')
+            ? '<button onclick="archiveTask(' + taskJson + ',this)" title="Move to 40_Archive — leaves the active list, restorable from git">Archive</button>'
+            : '') +
+        '</div>' +
+      '</div>';
+    }
+
+    // ----- AI suggest (Focus toolbar) -----
+    var _suggestState = null;   // {text, provenance} — survives re-renders of the Focus view
+
+    function suggestBoxHtml() {
+      if (!_suggestState) return '';
+      var pv = EOS_UI.provenanceLine(_suggestState.provenance, {wrap: false, suffix: ' '});
+      return '<div style="background:var(--bg-card);border:1px solid var(--border);' +
+        'border-left:3px solid var(--accent);border-radius:10px;padding:10px 14px;' +
+        'font-size:13px;line-height:1.5;margin-bottom:12px">' + pv + '✨ ' + esc(_suggestState.text) + '</div>';
+    }
+
+    async function loadSuggest(btn) {
+      if (btn) { btn.disabled = true; btn.textContent = '✨ Thinking…'; }
+      try {
+        var d = await EOS.api('/task/api/suggest');
+        if (d && d.suggestion) {
+          _suggestState = { text: d.suggestion, provenance: d.provenance || null };
+          renderFocusView();
+        } else {
+          showToast('No suggestion available', 'err');
+        }
+      } catch (e) {
+        showToast('Suggest failed', 'err');
+      } finally {
+        if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = '✨ Suggest'; }
+      }
+    }
+
+    // ----- Review 5 — someday ritual (oldest-biased sample) -----
+    var _review5 = [];
+
+    async function openReview5() {
+      var d;
+      try { d = await EOS.api('/task/api/someday-sample?n=5'); }
+      catch (e) { showToast('Could not sample someday', 'err'); return; }
+      _review5 = d.items || [];
+      if (!_review5.length) { showToast('Someday is empty 🎉', 'ok'); return; }
+      var body = '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 10px">' +
+        'Five from the oldest end of ' + (d.total || _review5.length) +
+        ' someday tasks. Decide each — a two-minute daily nibble.</p>' +
+        '<div id="review5-list">' + _review5.map(review5Row).join('') + '</div>' +
+        '<div style="margin-top:10px;text-align:right">' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="refillReview5()">🎲 Next 5</button></div>';
+      EOS_UI.modal({
+        title: '🎲 Review 5 — someday backlog', body: body, width: '580px',
+        onClose: function() { loadTasks(); },
+      });
+    }
+
+    function review5Row(t, i) {
+      return '<div id="r5-' + i + '" data-file="' + escAttr(t.file) + '" ' +
+        'style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="flex:1;min-width:0"><div style="font-size:13px" class="eos-personal">' + esc(t.text) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted)">' + esc(t.file) + '</div></div>' +
+        '<div style="display:flex;gap:4px;flex-shrink:0">' +
+        '<button class="eos-btn eos-btn-sm" onclick="review5Act(' + i + ',\'promote\',this)" title="Move to Next">⬆ Next</button>' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="review5Act(' + i + ',\'snooze\',this)" title="Give it a due date 30 days out">+30d</button>' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="review5Act(' + i + ',\'archive\',this)" title="Move to 40_Archive (restorable from git)">🗄</button>' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="review5Act(' + i + ',\'keep\',this)" title="Keep in someday">✓ Keep</button>' +
+        '</div></div>';
+    }
+
+    function _r5Settle(i) {
+      var row = document.getElementById('r5-' + i);
+      if (!row) return;
+      row.style.opacity = '0.45';
+      row.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+    }
+
+    async function review5Act(i, act, btn) {
+      var t = _review5[i];
+      if (!t) return;
+      try {
+        if (act === 'promote') {
+          var r = await EOS.post('/task/api/set-field', { id: t.file + ':' + t.line, field: 'actionability', value: 'next' });
+          if (r && r.error) throw new Error(r.error);
+        } else if (act === 'snooze') {
+          var r2 = await EOS.post('/task/api/snooze', { file: t.file, line: t.line, days: 30 });
+          if (r2 && r2.error) throw new Error(r2.error);
+        } else if (act === 'archive') {
+          var r3 = await EOS.post('/task/api/archive', { file: t.file, line: t.line, text: t.text });
+          if (!r3 || !r3.archived) throw new Error('the line changed on disk — try 🎲 Next 5');
+        }
+        _r5Settle(i);
+        // An archive deletes a line, shifting line numbers below it — disable
+        // unresolved rows from the same file so we never act on a stale line.
+        if (act === 'archive') {
+          _review5.forEach(function(other, j) {
+            if (j !== i && other && other.file === t.file) {
+              _r5Settle(j);
+              var row = document.getElementById('r5-' + j);
+              if (row) row.title = 'Line numbers shifted — use 🎲 Next 5 to re-sample';
+            }
+          });
+        }
+      } catch (e) {
+        showToast('Failed: ' + (e.message || act), 'err');
+      }
+    }
+
+    function refillReview5() {
+      EOS_UI.closeModal();
+      openReview5();
+    }
+
+    // ----- Sweep overdue (bulk reschedule) -----
+    function openSweep() {
+      var n = allTasks.filter(function(t) { return inBucket(t, 'overdue'); }).length;
+      if (!n) { showToast('Nothing overdue 🎉', 'ok'); return; }
+      var body = '<p style="font-size:13px;color:var(--text-secondary);margin:0 0 10px">' + n +
+        ' overdue task(s). Push their due dates to:</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="eos-btn eos-btn-sm" onclick="applySweep(0,this)">Today</button>' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="applySweep(7,this)">+7 days</button>' +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="applySweep(30,this)">+30 days</button>' +
+        '</div>' +
+        '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">' +
+        'Only still-open overdue checkboxes are touched; the new date counts from today.</div>';
+      EOS_UI.modal({ title: 'Sweep overdue', body: body, width: '460px' });
+    }
+
+    async function applySweep(days, btn) {
+      var items = allTasks.filter(function(t) { return inBucket(t, 'overdue'); })
+        .map(function(t) { return { file: t.file, line: t.line }; });
+      if (!items.length) return;
+      if (!await EOS_UI.confirm({
+        message: 'Reschedule ' + items.length + ' overdue task(s) to ' +
+          (days === 0 ? 'today' : '+' + days + ' days') + '?',
+        action: 'Reschedule',
+      })) return;
+      if (btn) btn.disabled = true;
+      try {
+        var res = await EOS.post('/task/api/snooze-batch', { items: items, days: days });
+        if (res && res.error) throw new Error(res.error);
+        showToast('Rescheduled ' + (res.rescheduled || 0) +
+          (res.skipped ? ' (' + res.skipped + ' skipped)' : ''), 'ok');
+        EOS_UI.closeModal();
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+      } catch (e) {
+        showToast('Sweep failed', 'err');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ----- Actionability quick-move (one click, any row) -----
+    // The bulk AI-triage modal handles batches; these move ONE task without
+    // opening anything. Show the two states the task is not already in.
+    var MOVE_LABELS = { next: '→Next', waiting: '→Wait', someday: '→Someday' };
+
+    function moveButtons(t) {
+      var current = t.actionability || 'someday';
+      return ['next', 'waiting', 'someday'].filter(function(s) { return s !== current; })
+        .map(function(s) {
+          return '<button onclick="moveTask(' + escAttr(JSON.stringify(t.file)) + ',' + t.line +
+            ',' + escAttr(JSON.stringify(s)) + ')" title="Move to ' + s + '">' + MOVE_LABELS[s] + '</button>';
+        }).join('');
+    }
+
+    async function moveTask(file, line, state) {
+      try {
+        var res = await EOS.post('/task/api/set-field', {
+          id: file + ':' + line, field: 'actionability', value: state,
+        });
+        if (res && res.error) throw new Error(res.error);
+        showToast('Moved to ' + state, 'ok');
+        await loadTasks();
+      } catch (e) {
+        showToast('Move failed' + (e && e.message ? ': ' + e.message : ''), 'err');
+      }
+    }
+
+    // ----- Edit task (structured — rename / due / priority / actionability) -----
+    // Built on the shared EOS_UI.formModal. Its <select> options are plain
+    // strings (value === label), so we present display labels and map them back
+    // to the stored level/state codes in the submit handler.
+    var _PRIORITY_BY_EMOJI = { '🔺': 'highest', '⏫': 'high', '🔼': 'medium', '🔽': 'low', '⏬': 'lowest' };
+    var PRIORITY_LABELS = { '': '— none —', highest: '🔺 Highest', high: '⏫ High', medium: '🔼 Medium', low: '🔽 Low', lowest: '⏬ Lowest' };
+    var ACTION_LABELS = { '': '— infer —', next: 'Next', waiting: 'Waiting', someday: 'Someday' };
+    var _byLabel = function(map) { var o = {}; for (var k in map) o[map[k]] = k; return o; };
+    var PRIORITY_BY_LABEL = _byLabel(PRIORITY_LABELS);
+    var ACTION_BY_LABEL = _byLabel(ACTION_LABELS);
+    var _opts = function(map) { return Object.keys(map).map(function(k) { return map[k]; }); };
+
+    function priorityOf(text) {
+      var t = text || '';
+      for (var emoji in _PRIORITY_BY_EMOJI) {
+        if (t.indexOf(emoji) >= 0) return _PRIORITY_BY_EMOJI[emoji];
+      }
+      return '';
+    }
+    // Strip priority markers from the body so the Priority <select> owns them
+    // (the rename field shows clean text, not the raw emoji).
+    function stripPriority(s) {
+      return (s || '').replace(/🔺|⏫|🔼|🔽|⏬/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    function openEditTask(t) {
+      var orig = {
+        id: t.file + ':' + t.line,
+        text: stripPriority(t.text),
+        due: (t.due || '').slice(0, 10),
+        priority: priorityOf(t.text),
+        actionability: t.actionability || '',
+      };
+      EOS_UI.formModal('Edit task', [
+        { key: 'text', label: 'Task', type: 'text', value: orig.text },
+        { key: 'due', label: 'Due date', type: 'date', value: orig.due },
+        { key: 'priority', label: 'Priority', type: 'select', value: PRIORITY_LABELS[orig.priority], options: _opts(PRIORITY_LABELS) },
+        { key: 'actionability', label: 'Actionability', type: 'select', value: ACTION_LABELS[orig.actionability], options: _opts(ACTION_LABELS) },
+      ], function(vals) { saveEditTask(orig, vals); });
+    }
+
+    async function saveEditTask(orig, vals) {
+      var newText = (vals.text || '').trim();
+      var newDue = vals.due || '';
+      var newPri = PRIORITY_BY_LABEL[vals.priority] || '';
+      var newAct = ACTION_BY_LABEL[vals.actionability] || '';
+      var textChanged = newText !== orig.text;
+      var priChanged = newPri !== orig.priority;
+      try {
+        // Order matters: rewrite the body first (it drops the priority marker),
+        // then re-apply priority (idempotent, re-adds it), then due + action.
+        if (textChanged) {
+          if (!newText) throw new Error('task text must be non-empty');
+          var r = await EOS.post('/task/api/set-field', { id: orig.id, field: 'text', value: newText });
+          if (r && r.error) throw new Error(r.error);
+        }
+        if (textChanged || priChanged) {
+          var r2 = await EOS.post('/task/api/set-field', { id: orig.id, field: 'priority', value: newPri });
+          if (r2 && r2.error) throw new Error(r2.error);
+        }
+        if (newDue !== (orig.due || '')) {
+          var r3 = await EOS.post('/task/api/set-due', { id: orig.id, due: newDue });
+          if (r3 && r3.error) throw new Error(r3.error);
+        }
+        if (newAct !== (orig.actionability || '')) {
+          var r4 = await EOS.post('/task/api/set-field', { id: orig.id, field: 'actionability', value: newAct });
+          if (r4 && r4.error) throw new Error(r4.error);
+        }
+        showToast('Task updated', 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+      } catch (e) {
+        showToast('Update failed' + (e && e.message ? ': ' + e.message : ''), 'err');
+      }
+    }
+
+    // ----- Add task -----
+    async function addTask() {
+      var text = document.getElementById('add-text').value.trim();
+      if (!text) return;
+      var date = document.getElementById('add-date').value;
+      try {
+        var res = await EOS.post('/task/api/add', { text: text, due: date });
+        if (res && res.error) throw new Error(res.error);
+        document.getElementById('add-text').value = '';
+        document.getElementById('add-date').value = '';
+        showToast('Added to inbox', 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+      } catch (e) {
+        showToast('Failed to add task' + (e && e.message ? ': ' + e.message : ''), 'err');
+      }
+    }
+
+    // ----- Toggle -----
+    async function toggleTask(file, line, text, cbEl) {
+      cbEl.classList.add('done');
+      var row = cbEl.closest('.task-item');
+
+      playDone();
+      confetti(cbEl);
+
+      setTimeout(function() { row.classList.add('completing'); }, 200);
+
+      try {
+        var res = await EOS.post('/task/api/toggle', { file: file, line: line, text: text });
+        if (res && res.error) throw new Error(res.error);
+        showToast(res.status === 'reopened' ? 'Task reopened' : 'Task completed!', 'ok');
+        setTimeout(async function() {
+          await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+          if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+        }, 500);
+      } catch (e) {
+        cbEl.classList.remove('done');
+        row.classList.remove('completing');
+        showToast('Failed to toggle task' + (e && e.message ? ': ' + e.message : ''), 'err');
+        // Likely a stale index (line moved / file renamed) — re-pull the list.
+        loadTasks();
+      }
+    }
+
+    // ----- Complete with note (shared modal — EOS_UI.completeTaskWithNote) -----
+    // Also reachable via right-click/long-press on any checkbox (see
+    // toggleTask's oncontextmenu wiring at the .task-cb call site).
+    function openCompleteNote(task, btnEl) {
+      EOS_UI.completeTaskWithNote(task, {
+        onSuccess: function(res) {
+          var row = btnEl ? btnEl.closest('.task-item') : null;
+          var cbEl = row ? row.querySelector('.task-cb') : null;
+          setTaskListBusy(true);
+          if (cbEl) cbEl.classList.add('done');
+          playDone();
+          confetti(btnEl || cbEl);
+          if (row) setTimeout(function() { row.classList.add('completing'); }, 120);
+          showToast(res.status === 'noted' ? 'Completion note saved' : 'Task completed with note', 'ok');
+          setTimeout(async function() {
+            try {
+              await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+              if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+            } finally {
+              setTaskListBusy(false);
+            }
+          }, 500);
+        },
+        onError: function(e) {
+          showToast('Failed to complete task' + (e && e.message ? ': ' + e.message : ''), 'err');
+          loadTasks();
+        },
+      });
+    }
+
+    // ----- Confetti -----
+    function confetti(anchor) {
+      var rect = anchor ? anchor.getBoundingClientRect() : { left: window.innerWidth / 2, top: window.innerHeight / 2 };
+      var colors = ['var(--success)', 'var(--blue)', 'var(--warning)', 'var(--danger)', 'var(--purple)'];
+      for (var i = 0; i < 15; i++) {
+        var c = document.createElement('div');
+        c.className = 'confetti-particle';
+        c.style.background = colors[Math.floor(Math.random() * 5)];
+        c.style.left = rect.left + 'px';
+        c.style.top = rect.top + 'px';
+        document.body.appendChild(c);
+        var dx = (Math.random() - 0.5) * 200;
+        var dy = -100 - Math.random() * 200;
+        c.animate([
+          { transform: 'translate(0,0) scale(1)', opacity: 1 },
+          { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0.3)', opacity: 0 }
+        ], { duration: 800, easing: 'ease-out' });
+        (function(el) { setTimeout(function() { el.remove(); }, 800); })(c);
+      }
+    }
+
+    // ----- Completion sound -----
+    function playDone() {
+      try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [523, 659, 784].forEach(function(f, i) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value = f; o.type = 'sine';
+          g.gain.value = 0.08;
+          o.start(ctx.currentTime + i * 0.12);
+          o.stop(ctx.currentTime + i * 0.12 + 0.15);
+        });
+      } catch (e) {}
+    }
+
+    // ----- Snooze -----
+    async function snoozeTask(file, line, days) {
+      try {
+        var res = await EOS.post('/task/api/snooze', { file: file, line: line, days: days });
+        if (res && res.error) throw new Error(res.error);
+        showToast('Snoozed to ' + res.new_due, 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+      } catch (e) {
+        showToast('Failed to snooze', 'err');
+      }
+    }
+
+    // ----- Archive (move out of the active list, into 40_Archive) -----
+    async function archiveTask(t, btn) {
+      if (!await EOS_UI.confirm({
+        message: 'Archive "' + (t.text || '') + '"? It leaves the active list and moves to the archive (restorable from git).',
+        action: 'Archive', danger: true,
+      })) return;
+      if (btn) btn.disabled = true;
+      try {
+        var res = await EOS.post('/task/api/archive', { file: t.file, line: t.line, text: t.text });
+        if (res && res.archived) {
+          showToast('Archived', 'ok');
+          await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        } else {
+          showToast('Nothing archived — the line may have changed', 'err');
+          if (btn) btn.disabled = false;
+        }
+      } catch (e) {
+        showToast('Archive failed', 'err');
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ----- Refresh -----
+    async function openAsBoard() {
+      try {
+        var j = await EOS.post('/boards/api/boards/from-preset', {preset_id: 'task-tracker'});
+        if (j && j.id) {
+          window.location.href = '/boards/#' + encodeURIComponent(j.id);
+        } else {
+          showToast(j && j.error ? j.error : 'Could not open board', 'err');
+        }
+      } catch (e) {
+        showToast('Could not open board: ' + e, 'err');
+      }
+    }
+
+    async function doRefresh() {
+      var btn = document.querySelector('.refresh-btn');
+      btn.classList.add('spinning');
+      try {
+        var res = await EOS.post('/task/api/refresh', {});
+        showToast('Refreshed: ' + res.open + ' open, ' + res.done + ' done', 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+      } catch (e) {
+        showToast('Refresh failed', 'err');
+      }
+      btn.classList.remove('spinning');
+    }
+
+    // ----- Tabs -----
+    function switchTab(tab) {
+      document.querySelectorAll('.eos-tab').forEach(function(t) {
+        t.classList.toggle('active', t.dataset.tab === tab);
+      });
+      document.getElementById('view-focus').classList.toggle('active', tab === 'focus');
+      document.getElementById('view-list').classList.toggle('active', tab === 'list');
+      document.getElementById('view-done').classList.toggle('active', tab === 'done');
+      document.getElementById('view-calendar').classList.toggle('active', tab === 'calendar');
+      if (tab === 'calendar') renderCalendar();
+      if (tab === 'done') renderDone();
+    }
+
+    // ----- Calendar (uses EOS_UI.monthGrid) -----
+    var _taskGrid = null;
+
+    function _calCellsFromData() {
+      var today = new Date().toISOString().slice(0, 10);
+      var out = [];
+      for (var date in calendarData) {
+        if (!calendarData.hasOwnProperty(date)) continue;
+        var tasks = calendarData[date];
+        var items = tasks.map(function(t) {
+          var tone;
+          if (t.done) tone = 'done';
+          else if (date < today) tone = 'overdue';
+          else if (date === today) tone = 'today';
+          return { id: t.text, label: t.text, tone: tone };
+        });
+        out.push({ date: date, items: items });
+      }
+      return out;
+    }
+
+    function renderCalendar() {
+      var el = document.getElementById('view-calendar');
+      if (!_taskGrid) {
+        el.innerHTML = '<div id="task-month-grid"></div><div id="task-day-panel"></div>';
+        var today = new Date();
+        var pad = function(n) { return (n < 10 ? '0' : '') + n; };
+        var ym = today.getFullYear() + '-' + pad(today.getMonth() + 1);
+        _taskGrid = EOS_UI.monthGrid({
+          mount: '#task-month-grid',
+          month: ym,
+          cells: _calCellsFromData(),
+          onDayClick: function(date) {
+            selectedCalDay = selectedCalDay === date ? null : date;
+            renderTaskDayPanel();
+          },
+          title: '',
+        });
+      } else {
+        _taskGrid.refresh(_calCellsFromData());
+      }
+      renderTaskDayPanel();
+    }
+
+    function renderTaskDayPanel() {
+      var el = document.getElementById('task-day-panel');
+      if (!el) return;
+      if (!selectedCalDay) { el.innerHTML = ''; return; }
+      var dayTasks = calendarData[selectedCalDay] || [];
+      if (!dayTasks.length) {
+        el.innerHTML = '<div class="cal-day-tasks"><h3>' + selectedCalDay + '</h3>' +
+          EOS_UI.emptyState({message: 'No tasks on this day'}) + '</div>';
+        return;
+      }
+      var rows = dayTasks.map(function(t) {
+        var dotColor = t.done ? 'var(--success)' : 'var(--accent)';
+        return '<div class="cal-day-task' + (t.done ? ' done-task' : '') + '">' +
+          '<div class="cal-task-dot" style="background:' + dotColor + '"></div>' +
+          esc(t.text) + '</div>';
+      }).join('');
+      el.innerHTML = '<div class="cal-day-tasks"><h3>' + selectedCalDay + ' — ' +
+        dayTasks.length + ' task' + (dayTasks.length !== 1 ? 's' : '') + '</h3>' + rows + '</div>';
+    }
+
+    // ----- Done view (completed tasks, grouped by completion date) -----
+    async function renderDone() {
+      var el = document.getElementById('view-done');
+      if (!el) return;
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">Loading…</div>';
+      var done;
+      try { done = await EOS.api('/task/api/tasks?status=done'); }
+      catch (e) { el.innerHTML = EOS_UI.errorState({ message: 'Failed to load completed tasks' }); return; }
+      done = Array.isArray(done) ? done : [];
+      if (!done.length) {
+        el.innerHTML = EOS_UI.emptyState({ icon: '✅', message: 'No completed tasks yet' });
+        return;
+      }
+      // Group by completion date, newest day first; undated completions last.
+      var groups = {};
+      done.forEach(function(t) {
+        var d = (t.done_date || '').slice(0, 10) || 'Undated';
+        (groups[d] = groups[d] || []).push(t);
+      });
+      var dates = Object.keys(groups).filter(function(d) { return d !== 'Undated'; }).sort().reverse();
+      if (groups['Undated']) dates.push('Undated');
+      var html = '';
+      dates.forEach(function(d) {
+        var items = groups[d];
+        html += '<div class="tier-group"><div class="tier-header">' + esc(d) +
+          ' <span class="tier-count">' + items.length + '</span></div>';
+        for (var i = 0; i < items.length; i++) html += doneRow(items[i]);
+        html += '</div>';
+      });
+      el.innerHTML = html;
+    }
+
+    function doneRow(t) {
+      var taskJson = escAttr(JSON.stringify({ file: t.file, line: t.line, text: t.text }));
+      return '<div class="task-item" style="opacity:.85">' +
+        '<div class="task-cb done" title="Click to reopen this task" ' +
+          'onclick="reopenTask(' + taskJson + ',this)"></div>' +
+        '<div class="task-body">' +
+          '<div class="task-text eos-personal" style="text-decoration:line-through;color:var(--text-muted)">' + esc(t.text) + '</div>' +
+          '<div class="task-file">' + projectBadge(t.file) + EOS.noteActions(t.file) + '</div>' +
+        '</div>' +
+        (t.done_date ? '<span class="task-due due-fresh">✅ ' + esc(t.done_date) + '</span>' : '') +
+      '</div>';
+    }
+
+    async function reopenTask(t, cbEl) {
+      if (cbEl) cbEl.classList.remove('done');
+      try {
+        var res = await EOS.post('/task/api/toggle', { file: t.file, line: t.line, text: t.text });
+        if (res && res.error) throw new Error(res.error);
+        showToast('Task reopened', 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        renderDone();
+      } catch (e) {
+        if (cbEl) cbEl.classList.add('done');
+        showToast('Failed to reopen' + (e && e.message ? ': ' + e.message : ''), 'err');
+      }
+    }
+
+    // ----- Toast — single mechanism: delegate to EOS_UI.toast (the #toast div
+    // is a fallback only, so we no longer run two parallel toast systems). -----
+    function showToast(msg, type) {
+      if (window.EOS_UI && EOS_UI.toast) { EOS_UI.toast(msg, type !== 'err'); return; }
+      var el = document.getElementById('toast');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 'eos-toast eos-toast-' + (type || 'ok') + ' show';
+      setTimeout(function() { el.classList.remove('show'); }, 2500);
+    }
+
+    // ----- HTML escape -----
+    function esc(s) {
+      if (!s) return '';
+      var d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+    // NOTE: no local escAttr here — the global one from eos.js is the right
+    // escaper for HTML attributes. A previous local override (esc + \'-escape)
+    // left backslashes raw, so Windows paths inside onclick JS strings were
+    // mangled by octal escapes ("50_Journal\2026\..." -> \x02) and toggle 500'd.
+
+    // ----- Keyboard Shortcuts -----
+    if (EOS.keys) {
+        EOS.keys.register('n', 'New task', function() { document.getElementById('add-text').focus(); });
+        EOS.keys.register('r', 'Refresh tasks', function() { doRefresh(); });
+    }
+
+    // ----- Hands-Free gesture override -----
+    // Pointing_Up while on this page → complete the top focus task, no voice needed.
+    if (EOS.handsFree) {
+        EOS.handsFree.registerGesture('Pointing_Up', async function() {
+            try {
+                var focusList = await EOS.api('/task/api/focus');
+                var top = Array.isArray(focusList) ? focusList[0] : (focusList && focusList.tasks && focusList.tasks[0]);
+                if (!top || !top.file) {
+                    if (window.EOS_UI) EOS_UI.toast('No focus task to complete', false);
+                    return;
+                }
+                await EOS.post('/task/api/toggle', {file: top.file, line: top.line, text: top.text || ''});
+                if (window.EOS_UI) EOS_UI.toast('Completed: ' + (top.text || top.title || 'top task'), true);
+                setTimeout(function() { if (typeof loadTasks === 'function') loadTasks(); if (typeof loadFocus === 'function') loadFocus(); }, 300);
+            } catch (e) {
+                if (window.EOS_UI) EOS_UI.toast('Could not complete top task', false);
+            }
+        }, 'Complete top focus task');
+    }
+
+    // ----- App Settings slide-out (shared helper) -----
+    // Dark feature flags ship off and are flipped in emptyos.toml / /settings,
+    // not from the app's own panel — omitting them here is deliberate:
+    // settings-panel-drift: ignore task.feature.ai-triage.enabled
+    // settings-panel-drift: ignore task.feature.recurrence.enabled
+    // settings-panel-drift: ignore task.feature.nl-quickadd.enabled
+    // settings-panel-drift: ignore task.feature.task-reminders-push.enabled
+    var _appSettings = EOS_UI.settingsPanel({
+        id: 'app-settings-panel',
+        title: 'Task Settings',
+        fields: [
+            {key: 'task.zombie_days', label: 'Zombie Threshold (days)', type: 'number', default: 90, min: 1,
+             hint: 'Tasks with no activity for this many days are flagged zombie.'},
+            {key: 'task.focus_top_n', label: 'Focus Suggestions', type: 'number', default: 3, min: 1,
+             hint: 'Number of tasks surfaced in the Focus section.'},
+        ],
+    });
+    function openAppSettings() { _appSettings.open(); }
+
+    // ----- Go -----
+    init();
+  

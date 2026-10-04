@@ -1,0 +1,15 @@
+# Service manifest — read by scripts/deploy-service.sh.
+# This file is the canonical declaration of the chatbot service for the
+# EmptyOS Lane-1 deploy standard. See docs/DEPLOYMENT.md § "Lane 1 — Service".
+
+[service]
+name = "chatbot"
+description = "Site chatbot for sites built by the EmptyOS publish app — answers per-site, anonymous + rate-limited + budget-capped."
+vhost = "chat.binbian.net"
+port = 9100                     # bound to 127.0.0.1:<port> on host
+healthcheck = "/health"
+healthcheck_timeout = 30        # seconds; deploy script polls until 200
+
+[deploy]
+build = true                    # pass --build to docker compose up
+restart = "unless-stopped"

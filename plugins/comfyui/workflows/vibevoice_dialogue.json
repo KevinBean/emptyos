@@ -1,0 +1,39 @@
+{
+  "_comment": "VibeVoice 2-speaker dialogue workflow for the podcast app's single-pass multi-speaker mode. Takes a speaker-labelled transcript ({script}, lines formatted '[1] text' / '[2] text') + two reference-voice wavs ({speaker1}, {speaker2}, already uploaded into ComfyUI input/) and outputs ONE mp3 of the whole conversation. Replaces the per-turn TTS + pydub-stitch path.",
+  "_requires": "ComfyUI-VibeVoice custom node (github.com/wildminder/ComfyUI-VibeVoice). Model: VibeVoice-1.5B (~7GB VRAM). VERIFIED against object_info on this install 2026-06-06 — VibeVoiceTTS required inputs: model_name(enum VibeVoice-1.5B|VibeVoice-Large), text, quantize_llm_4bit(bool), attention_mode(enum eager|sdpa|flash_attention_2), cfg_scale, inference_steps, seed, do_sample(bool), temperature, top_p, top_k, force_offload(bool); optional speaker_1_voice..speaker_4_voice (AUDIO). attention_mode=sdpa avoids a flash-attention install. Set quantize_llm_4bit=true to cut VRAM further.",
+  "1": {
+    "class_type": "LoadAudio",
+    "inputs": {"audio": "{speaker1}"}
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {"audio": "{speaker2}"}
+  },
+  "3": {
+    "class_type": "VibeVoiceTTS",
+    "inputs": {
+      "text": "{script}",
+      "model_name": "VibeVoice-1.5B",
+      "quantize_llm_4bit": false,
+      "attention_mode": "sdpa",
+      "cfg_scale": 1.3,
+      "inference_steps": 20,
+      "seed": "{seed}",
+      "do_sample": true,
+      "temperature": 0.95,
+      "top_p": 0.95,
+      "top_k": 0,
+      "force_offload": true,
+      "speaker_1_voice": ["1", 0],
+      "speaker_2_voice": ["2", 0]
+    }
+  },
+  "4": {
+    "class_type": "SaveAudioMP3",
+    "inputs": {
+      "audio": ["3", 0],
+      "filename_prefix": "eos-vv",
+      "quality": "V0"
+    }
+  }
+}

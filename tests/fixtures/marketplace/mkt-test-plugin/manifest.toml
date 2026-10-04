@@ -1,0 +1,13 @@
+[plugin]
+id = "mkt-test-plugin"
+name = "Marketplace Test Plugin"
+version = "1.2.3"
+description = "A throwaway plugin fixture for marketplace install tests."
+
+[plugin.entry]
+module = "plugin"
+class = "MktTestPlugin"
+
+[provides]
+services = ["mkt-test-svc"]
+tags = ["test", "connector"]

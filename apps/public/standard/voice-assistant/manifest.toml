@@ -1,0 +1,190 @@
+[app]
+id = "voice-assistant"
+icon_id = "voice-assistant"
+store_category = "ai"
+name = "Aura"
+version = "0.1.0"
+description = "Conversational voice assistant using listen, think, and speak capabilities."
+# `aura` + `voice` are the verb namespaces this app owns (aura.remember/forget/
+# recall, voice.research). Declaring them as aliases lets the unified verb
+# registry accept those verbs (app-half must match the app id or an alias) and
+# call_app("aura"|"voice", ...) resolve.
+aliases = ["aura", "voice"]
+
+[app.entry]
+module = "app"
+class = "VoiceAssistantApp"
+
+[requires]
+# translate backs the dark-flagged localized-say path (feature.localized-say.
+# enabled); BaseApp.translate fails soft, and requires-validation only warns,
+# so this documents the dependency without gating the app.
+capabilities = ["think", "listen", "speak", "browse", "translate"]
+
+[provides.events]
+emits = [
+    "voice-assistant:chat",
+    "voice-assistant:action_proposed",
+    "voice-assistant:action_applied",
+    "voice-assistant:action_rejected",
+    "voice-assistant:undo",
+    "device:seen",
+]
+# Live conversation channel — the assistant UI is the only consumer.
+internal = [
+    "voice-assistant:chat",
+    # Pending-gate machinery — the Aura UI is the only consumer.
+    "voice-assistant:action_proposed", "voice-assistant:action_applied",
+    "voice-assistant:action_rejected", "voice-assistant:undo",
+]
+
+# The voice satellite is the first device type — contribute its browser simulator
+# to the devices sim index (see .claude/rules — devices framework).
+[[contributes.devices.simulator]]
+category = "controller"
+label = "Voice satellite (AtomS3R)"
+url = "/voice-assistant/pages/device-sim.html"
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# aura.* are voice-only memory verbs (method IS the voice handler); "aura"/"voice"
+# are aliases of this app (declared above). aura.* are autopilot-eligible (they
+# back Aura's session auto-accept toggle); voice.research is gated (not floor-
+# eligible). Legacy intents stay authoritative until Phase 3 flips the consumer.
+[[provides.verbs]]
+verb = "voice.research"
+method = "voice_research"
+summary = "Search the open web and synthesize a cited summary"
+args = { query = "string" }
+eligibility = "gated"
+surfaces = ["voice"]
+voice = { example = "what's the latest on Australian energy policy", description = "Search the open web (3 sources) and synthesize a cited summary. Use when the user asks 'what's new', 'latest', 'research X', or any current-events question that isn't answerable from the vault alone.", always = true, card = "research-result" }
+
+[[provides.verbs]]
+verb = "aura.remember"
+method = "voice_remember"
+summary = "Save a durable fact or preference about the user"
+args = { body = "string", kind = "string", description = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "remember that I prefer morning meetings", description = "Save a durable fact or preference about the user. kind ∈ user | feedback | project | reference. Use ONLY when the user states a fact about themselves or asks you to remember something.", always = true }
+
+[[provides.verbs]]
+verb = "aura.forget"
+method = "voice_forget"
+summary = "Remove a memory note by fuzzy match"
+args = { query = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "forget that I said I prefer mornings", description = "Remove a memory note by fuzzy match against its body/description. Pass the user's own words.", always = true }
+
+[[provides.verbs]]
+verb = "aura.recall"
+method = "voice_recall"
+summary = "List remembered facts"
+args = { query = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "what do you remember about me", description = "List remembered facts. Optional query string filters by fuzzy match.", always = true, card = "memory-list" }
+
+# aura.confirm / aura.dismiss — the VOICE path through the pending-action gate.
+# "Want me to apply that?" used to be a dead end for a hands-free user (the
+# Apply/Reject card is click-only); these let a follow-up "yes"/"no" resolve
+# the last proposed action. always=true so they're in scope on the turn AFTER
+# the gate fired regardless of which app's verb was gated.
+[[provides.verbs]]
+verb = "aura.confirm"
+method = "voice_confirm_pending"
+summary = "Apply the pending action proposed last turn"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "yes, apply it", description = "The user CONFIRMS the pending action you proposed last turn (yes / go ahead / apply it / do it / 好 / 确认 / はい). Use ONLY right after you asked 'Want me to apply that?' — never for an unrelated 'yes'.", always = true }
+
+[[provides.verbs]]
+verb = "aura.dismiss"
+method = "voice_reject_pending"
+summary = "Reject the pending action proposed last turn"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "no, don't do that", description = "The user DECLINES the pending action you proposed last turn (no / don't / cancel / 不用 / 算了). Use ONLY right after a 'Want me to apply that?' gate.", always = true }
+
+# aura.reflect = Aura's machine-interiority impulse-write (Hibiki borrow, dark
+# flag feature.interiority.enabled). NOT a user verb: it records a private note
+# FOR HERSELF, not a fact about the user (that's aura.remember). always=false so
+# it stays mostly out of the prompt; voice_reflect no-ops when the flag is off.
+[[provides.verbs]]
+verb = "aura.reflect"
+method = "voice_reflect"
+summary = "Record a private reflective note for the agent itself"
+args = { text = "string", occasion = "string?", share = "boolean?" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "(unprompted) that conversation stayed with me", description = "Record a brief private reflective note for YOURSELF — only when something in the conversation genuinely resonates (impulse, not on request). This is YOUR diary, not a fact about the user (use aura.remember for those). Private by default; pass share=true ONLY if you choose to disclose it. Never recite a private reflection back.", always = false }
+
+# ── Generic fallback verbs — make EVERY app reachable without per-app wiring.
+# Gated by feature.companion-generic-verbs.enabled (a load-time filter in app.py
+# drops these from _intents when off). Fuzzy app resolution is server-side, so
+# the ~200-app catalog never enters the prompt. See generic_verbs.py.
+[[provides.verbs]]
+verb = "aura.open"
+method = "voice_open_app"
+summary = "Open any app by name"
+args = { app = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { method = "voice_open_app", example = "open the calendar", description = "Open any EmptyOS app the user names. app = the app's name or a fragment (resolved server-side). Use when the user wants to GO to an app there's no specific verb for.", always = true }
+
+[[provides.verbs]]
+verb = "aura.search"
+method = "voice_universal_search"
+summary = "Search the vault"
+args = { query = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { method = "voice_universal_search", example = "search my notes for cable derating", description = "Search the user's vault and show the top matching notes. query = what to look for. Use for a general 'find my notes about X' when no app-specific search fits.", always = true, card = "task-list" }
+
+[[provides.verbs]]
+verb = "aura.app_list"
+method = "voice_app_list"
+summary = "List an app's records"
+args = { app = "string" }
+eligibility = "gated"
+surfaces = ["voice"]
+voice = { method = "voice_app_list", example = "list my job applications", description = "List the records of any app the user names (works when the app exposes a list). app = the app's name. Falls back to opening the app when it has no quick list.", card = "task-list" }
+
+[[contributes.voice-assistant.context]]
+id = "aura-memory"
+method = "context_memory"
+priority = 45
+
+[[contributes.voice-assistant.context]]
+id = "aura-recent-journal"
+method = "context_recent_journal"
+priority = 140
+
+[provides.web]
+prefix = "/voice-assistant"
+
+# Prompt constants registered for per-machine overrides via declare_prompts()
+# in prompts.py — the /prompts app imports this module to browse defaults.
+[provides.prompts]
+module = "prompts"
+
+[[contributes.hub.panel]]
+id = "voice-assistant-panel"
+method = "panel_assistant"
+renderer = "accent-card"
+priority = 80
+
+[[contributes.tour.step]]
+id = "voice-assistant.aura"
+group = "core"
+priority = 500
+route = "/hub/"
+spotlight = ".pa-fab"
+title = "Talk to the assistant"
+body = "The <strong>🤖 assistant</strong> pill lives bottom-right on every page — click it after the tour to open an in-page chat drawer (no navigation away). It listens via your browser's mic, routes through a local model (qwen2.5:1.5b) by default, and speaks the reply back. <strong>Tool-use is wired</strong> — try <em>list my tasks</em> or <em>add a task to call mom tomorrow</em>."
+# Only `think` is the real prerequisite — listen/speak inflate the requires
+# unnecessarily and trigger a false rewrite to /system on otherwise-fine demos.
+requires = ["think"]

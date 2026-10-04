@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Quotes - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain; display:flex; flex-direction:column }
+body > .page { min-width:0; width:100% }
+body > .quote-hero, body > * { min-width:0 }
+
+.quote-hero { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:50vh; text-align:center; padding:24px; animation:fadeDown 0.6s ease }
+.quote-text { font-size:22px; font-weight:300; line-height:1.6; color:var(--text-heading); max-width:480px; font-style:italic; transition:opacity 0.3s }
+.quote-text::before { content:'"'; font-size:48px; color:var(--accent); display:block; margin-bottom:-8px; font-style:normal; line-height:1 }
+.quote-author { font-size:14px; color:var(--text-secondary); margin-top:16px; font-weight:500; letter-spacing:0.5px }
+.quote-author::before { content:'-- '; color:var(--accent) }
+
+.quote-actions { display:flex; gap:12px; margin-top:32px; justify-content:center }
+.qa-btn { width:48px; height:48px; border-radius:50%; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s }
+.qa-btn:active { transform:scale(0.9); border-color:var(--accent) }
+.qa-btn.favorited { color:var(--amber); border-color:var(--amber); background:color-mix(in srgb, var(--amber) 10%, transparent) }
+.qa-btn.refresh:active { transform:scale(0.9) rotate(180deg) }
+
+.divider { width:60px; height:1px; background:var(--border); margin:24px auto }
+
+.history-section { flex:1; animation:cardIn 0.35s ease 0.2s both }
+.fav-count { font-size:12px; color:var(--text-muted); margin-left:8px }
+.history-item { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s }
+.history-item:last-child { border-bottom:none }
+.history-item:active { background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.hi-star { font-size:16px; color:var(--text-muted); flex-shrink:0 }
+.hi-star.fav { color:var(--amber) }
+.hi-text { flex:1; font-size:13px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+.mc-row-input { display:flex; gap:8px; margin-bottom:12px }
+.mc-row-input .eos-input { padding-left:14px }
+.mc-list { max-height:280px; overflow-y:auto; margin-top:12px; border-top:1px solid var(--border) }
+.mc-item { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border) }
+.mc-item-text { flex:1; font-size:13px; color:var(--text-secondary) }
+.mc-item-cat { font-size:11px; color:var(--text-muted); border:1px solid var(--border); border-radius:8px; padding:1px 6px; margin-left:6px }
+.mc-sync-row { display:flex; justify-content:flex-end }
+
+.qc-canvas-wrap { display:flex; flex-direction:column; align-items:center; gap:14px }
+.qc-canvas-wrap canvas { width:100%; max-width:320px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.35) }
+.qc-btn-row { display:flex; gap:8px }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('quotes');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Daily inspirational quote — random pick from your saved collection.",quickActions:[{label:"Reflect on this",msg:"Help me reflect on the quote currently shown. What does it mean for me today?"},{label:"Related quotes",msg:"Suggest related quotes on similar themes."},{label:"New quote",msg:"Give me another quote."}]});}
+</script>
+
+<div class="page">
+    <!-- Main quote display -->
+    <div class="quote-hero">
+        <div class="quote-text" id="quote-text">...</div>
+        <div class="quote-author" id="quote-author"></div>
+        <div class="quote-actions">
+            <button class="qa-btn" id="fav-btn" onclick="toggleFavorite()" title="Favorite">&#9734;</button>
+            <button class="qa-btn refresh" onclick="loadQuote()" title="New quote">&#x21bb;</button>
+            <button class="qa-btn" onclick="openQuoteCardModal()" title="Create shareable card">&#127912;</button>
+            <button class="qa-btn" onclick="openManageCollection()" title="Manage collection">&#128218;</button>
+            <button class="qa-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- History / Favorites -->
+    <div class="history-section">
+        <div class="eos-section-title">
+            Recent Quotes <span class="fav-count" id="fav-count"></span>
+        </div>
+        <div id="history"></div>
+    </div>
+</div>
+
+<script>
+var currentQuote = '';
+var favorites = JSON.parse(localStorage.getItem('eos-quotes-fav') || '[]');
+var quoteHistory = JSON.parse(localStorage.getItem('eos-quotes-history') || '[]');
+
+function parseQuote(raw) {
+    var parts = (raw || '').split(' - ');
+    if (parts.length >= 2) {
+        var author = parts.pop().trim();
+        return { text: parts.join(' - ').trim(), author: author };
+    }
+    return { text: raw, author: '' };
+}
+
+async function loadQuote() {
+    var textEl = document.getElementById('quote-text');
+    textEl.style.opacity = '0.3';
+    try {
+        var data = await EOS.api('/quotes/api/quote');
+        currentQuote = data.quote || '';
+        var q = parseQuote(currentQuote);
+        textEl.textContent = q.text;
+        document.getElementById('quote-author').textContent = q.author;
+        textEl.style.opacity = '1';
+
+        // Add to history
+        if (currentQuote && !quoteHistory.some(function(h) { return h.text === currentQuote; })) {
+            quoteHistory.unshift({ text: currentQuote, timestamp: new Date().toISOString(), fav: false });
+            if (quoteHistory.length > 50) quoteHistory = quoteHistory.slice(0, 50);
+            localStorage.setItem('eos-quotes-history', JSON.stringify(quoteHistory));
+            renderHistory();
+        }
+
+        updateFavButton();
+    } catch(e) {
+        textEl.textContent = 'The OS itself is empty. You fill it.';
+        document.getElementById('quote-author').textContent = 'EmptyOS';
+        textEl.style.opacity = '1';
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Could not load a new quote — showing a default.', false);
+    }
+}
+
+function toggleFavorite() {
+    if (!currentQuote) return;
+    var idx = favorites.indexOf(currentQuote);
+    if (idx >= 0) {
+        favorites.splice(idx, 1);
+    } else {
+        favorites.push(currentQuote);
+        // Best-effort push to the backend's own favorites store so
+        // `/api/vault-sync` has something real to write — there's no
+        // unfavorite route, so removal stays local-only.
+        EOS.apiSafe('/quotes/api/favorite', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({quote: currentQuote}),
+        });
+    }
+    localStorage.setItem('eos-quotes-fav', JSON.stringify(favorites));
+
+    // Update history entry
+    var hi = quoteHistory.find(function(h) { return h.text === currentQuote; });
+    if (hi) hi.fav = idx < 0;
+    localStorage.setItem('eos-quotes-history', JSON.stringify(quoteHistory));
+
+    updateFavButton();
+    renderHistory();
+}
+
+function updateFavButton() {
+    var btn = document.getElementById('fav-btn');
+    var isFav = favorites.indexOf(currentQuote) >= 0;
+    btn.classList.toggle('favorited', isFav);
+    btn.innerHTML = isFav ? '&#9733;' : '&#9734;';
+}
+
+function renderHistory() {
+    var el = document.getElementById('history');
+    var favCount = favorites.length;
+    document.getElementById('fav-count').textContent = favCount ? favCount + ' favorited' : '';
+
+    if (!quoteHistory.length) { el.innerHTML = '<div class="eos-empty">No quotes yet</div>'; return; }
+    el.innerHTML = quoteHistory.map(function(h) {
+        var isFav = favorites.indexOf(h.text) >= 0;
+        var q = parseQuote(h.text);
+        return '<div class="history-item" onclick="showFromHistory(' + EOS_UI.jsArg(h.text) + ')">' +
+            '<span class="hi-star ' + (isFav ? 'fav' : '') + '">' + (isFav ? '&#9733;' : '&#9734;') + '</span>' +
+            '<span class="hi-text">' + esc(q.text) + '</span>' +
+            '</div>';
+    }).join('');
+}
+
+function showFromHistory(raw) {
+    currentQuote = raw;
+    var q = parseQuote(raw);
+    document.getElementById('quote-text').textContent = q.text;
+    document.getElementById('quote-author').textContent = q.author;
+    updateFavButton();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// Manage collection modal — generate / add / delete / sync-to-vault
+// (these routes already existed server-side with no UI affordance at all)
+async function openManageCollection() {
+    var quotes = await EOS.apiSafe('/quotes/api/list');
+    renderManageModal(Array.isArray(quotes) ? quotes : []);
+}
+
+function renderManageModal(quotes) {
+    var rows = quotes.map(function(q) {
+        var text = (q && typeof q === 'object') ? q.text : q;
+        var cat = (q && typeof q === 'object') ? q.category : '';
+        var file = (q && typeof q === 'object') ? q.file : '';
+        var catBadge = (cat && cat !== 'general') ? ' <span class="mc-item-cat">' + esc(cat) + '</span>' : '';
+        return '<div class="mc-item">' +
+            '<span class="mc-item-text">' + esc(text) + catBadge + '</span>' +
+            '<button class="eos-btn eos-btn-sm" onclick="deleteQuoteFile(' + EOS_UI.jsArg(file) + ')">Delete</button>' +
+            '</div>';
+    }).join('') || '<div class="eos-empty">No quotes yet</div>';
+
+    EOS_UI.modal({
+        title: 'Manage collection',
+        width: '480px',
+        body:
+            '<div class="mc-row-input">' +
+                '<input type="text" id="mc-new-quote" class="eos-input" placeholder="Add a quote...">' +
+                '<input type="text" id="mc-new-category" class="eos-input" placeholder="Category (optional)" style="max-width:140px">' +
+                '<button class="eos-btn eos-btn-sm" onclick="addQuoteFromModal()">Add</button>' +
+            '</div>' +
+            '<div class="mc-row-input">' +
+                '<input type="text" id="mc-gen-topic" class="eos-input" placeholder="Generate on a topic...">' +
+                '<input type="text" id="mc-gen-category" class="eos-input" placeholder="Category (optional)" style="max-width:140px">' +
+                '<button class="eos-btn eos-btn-sm" onclick="generateQuoteFromModal()">&#10024; Generate</button>' +
+            '</div>' +
+            EOS_UI.provenanceLine(_lastGenProv, {style: 'margin:2px 0 8px'}) +
+            '<div class="mc-sync-row"><button class="eos-btn eos-btn-sm" onclick="syncQuotesToVault()">Sync to vault</button></div>' +
+            '<div class="mc-list">' + rows + '</div>',
+    });
+}
+
+async function addQuoteFromModal() {
+    var input = document.getElementById('mc-new-quote');
+    var catInput = document.getElementById('mc-new-category');
+    var q = (input.value || '').trim();
+    if (!q) return;
+    var res = await EOS.apiSafe('/quotes/api/add', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({quote: q, category: (catInput && catInput.value || '').trim()}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    if (window.EOS_UI) EOS_UI.toast('Added', true);
+    openManageCollection();
+}
+
+//: Provenance of the most recent /api/generate, shown under the generate row.
+//: Null until one runs, so provenanceLine() renders nothing.
+var _lastGenProv = null;
+
+async function generateQuoteFromModal() {
+    var input = document.getElementById('mc-gen-topic');
+    var catInput = document.getElementById('mc-gen-category');
+    var topic = (input.value || '').trim() || 'life and growth';
+    if (window.EOS_UI) EOS_UI.toast('Generating…', true);
+    var res = await EOS.apiSafe('/quotes/api/generate', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({topic: topic, category: (catInput && catInput.value || '').trim()}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    // /api/generate is the only AI path here (/api/quote serves the vault and
+    // carries no provenance). Held across the re-render below, which rebuilds
+    // the whole modal body.
+    _lastGenProv = res.provenance || null;
+    if (window.EOS_UI) EOS_UI.toast('Generated: ' + (res.quote || '').slice(0, 60), true);
+    openManageCollection();
+}
+
+async function deleteQuoteFile(file) {
+    var res = await EOS.apiSafe('/quotes/api/delete', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({file: file}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    openManageCollection();
+}
+
+async function syncQuotesToVault() {
+    var res = await EOS.apiSafe('/quotes/api/vault-sync', {method: 'POST'});
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    if (window.EOS_UI) EOS_UI.toast('Synced ' + res.synced + ' quotes, ' + res.favorites + ' favorites to vault', true);
+}
+
+// Shareable quote-card export (quotes-no-imagery gap) — a client-side
+// <canvas> render, no capability call / cost / consent gate needed. A
+// styled background + wrapped quote text + author, downloadable as PNG.
+var CARD_GRADIENTS = [
+    ['#1e293b', '#0f172a'],
+    ['#5b21b6', '#1e1b4b'],
+    ['#065f46', '#022c22'],
+    ['#7c2d12', '#3f1509'],
+    ['#0e7490', '#082f3d'],
+];
+var _cardGradIdx = 0;
+
+function wrapCanvasText(ctx, text, maxWidth) {
+    var words = (text || '').split(' ');
+    var lines = [];
+    var cur = '';
+    words.forEach(function(word) {
+        var test = cur ? cur + ' ' + word : word;
+        if (cur && ctx.measureText(test).width > maxWidth) {
+            lines.push(cur);
+            cur = word;
+        } else {
+            cur = test;
+        }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+}
+
+function renderQuoteCard(canvas, text, author, gradIdx) {
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width, h = canvas.height;
+    var g = CARD_GRADIENTS[gradIdx % CARD_GRADIENTS.length];
+    var grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, g[0]);
+    grad.addColorStop(1, g[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.textAlign = 'left';
+    ctx.font = '220px Georgia, "Times New Roman", serif';
+    ctx.fillText('“', w * 0.06, h * 0.32);
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'italic 46px Georgia, "Times New Roman", serif';
+    var lines = wrapCanvasText(ctx, text, w * 0.78);
+    var lineHeight = 62;
+    var startY = h / 2 - (lines.length * lineHeight) / 2;
+    lines.forEach(function(line, i) {
+        ctx.fillText(line, w / 2, startY + i * lineHeight);
+    });
+
+    if (author) {
+        ctx.font = '500 28px -apple-system, "Segoe UI", sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillText('— ' + author, w / 2, startY + lines.length * lineHeight + 56);
+    }
+
+    ctx.font = '22px -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillText('EmptyOS', w / 2, h - 44);
+}
+
+function _redrawQuoteCard() {
+    var canvas = document.getElementById('quote-card-canvas');
+    if (!canvas || !currentQuote) return;
+    var q = parseQuote(currentQuote);
+    renderQuoteCard(canvas, q.text, q.author, _cardGradIdx);
+}
+
+function openQuoteCardModal() {
+    if (!currentQuote) { if (window.EOS_UI) EOS_UI.toast('Load a quote first', false); return; }
+    _cardGradIdx = 0;
+    EOS_UI.modal({
+        title: 'Shareable quote card',
+        width: '380px',
+        body:
+            '<div class="qc-canvas-wrap">' +
+                '<canvas id="quote-card-canvas" width="1080" height="1080"></canvas>' +
+                '<div class="qc-btn-row">' +
+                    '<button class="eos-btn eos-btn-sm" onclick="cycleCardStyle()">&#127912; Style</button>' +
+                    '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="downloadQuoteCard()">&#11015; Download PNG</button>' +
+                '</div>' +
+            '</div>',
+    });
+    _redrawQuoteCard();
+}
+
+function cycleCardStyle() {
+    _cardGradIdx = (_cardGradIdx + 1) % CARD_GRADIENTS.length;
+    _redrawQuoteCard();
+}
+
+function downloadQuoteCard() {
+    var canvas = document.getElementById('quote-card-canvas');
+    if (!canvas) return;
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'quote-card.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+// App Settings slide-out (shared helper)
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Quotes Settings',
+    fields: [
+        {key: 'quotes.auto_refresh', label: 'New Quote Daily', type: 'boolean', default: true,
+         hint: 'Auto-emits quotes:shown once a day.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+// Init
+loadQuote();
+renderHistory();
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Co-doc</title>
+<link rel="stylesheet" href="/static/theme.css" />
+<link rel="stylesheet" href="/static/eos-components.css" />
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+</head>
+<body>
+<div style="max-width: 760px; margin: 0 auto; padding: 24px;">
+  <h1>Co-doc</h1>
+  <p class="muted">Persist a live co-doc snapshot (the <code>author: both</code> markdown
+    the co-doc service produces) into your vault — the durable record of a live session.</p>
+
+  <div class="eos-card" style="padding: 16px; margin: 16px 0;">
+    <input id="slug" placeholder="slug (e.g. q3-plan)"
+           style="width: 100%; margin-bottom: 8px;" />
+    <textarea id="md" rows="8" placeholder="paste the co-doc snapshot markdown…"
+              style="width: 100%; font-family: ui-monospace, monospace;"></textarea>
+    <button class="eos-btn" onclick="saveSnapshot()" style="margin-top: 8px;">Save to vault</button>
+  </div>
+
+  <h2>Saved snapshots</h2>
+  <div id="list"></div>
+</div>
+
+<script>
+async function saveSnapshot() {
+  const markdown = document.getElementById('md').value;
+  const slug = document.getElementById('slug').value;
+  const r = await EOS.api('/codoc/api/save', { method: 'POST', body: { markdown, slug } });
+  if (r.error) { EOS_UI.toast(r.error); return; }
+  EOS_UI.toast('Saved: ' + r.path);
+  document.getElementById('md').value = '';
+  document.getElementById('slug').value = '';
+  loadSaved();
+}
+
+async function loadSaved() {
+  const d = await EOS.api('/codoc/api/saved');
+  const rows = (d.saved || []).map(s =>
+    '<div class="eos-card" style="padding: 10px; margin: 6px 0;">' +
+    esc(s.slug) + ' &middot; ' + EOS.noteActions(s.path) + '</div>'
+  ).join('');
+  document.getElementById('list').innerHTML = rows || '<p class="muted">No snapshots saved yet.</p>';
+}
+
+loadSaved();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+/* Garden theme — appleton · Digital Garden (Maggie Appleton)
+ * Page-level chrome only. Plant colors come from themes.py inline SVG.
+ */
+.eos-garden[data-theme="appleton"] {
+  --g-bg: #e8dec8;
+  --g-text: #3d2817;
+  --g-muted: #7a6b58;   /* #8c7d6a sat at 2.99:1 on --g-bg — a hair under the floor */
+  --g-border: #c8b994;
+  --g-accent: #b85428;
+  font-family: "iA Writer Duospace", "Iosevka", "JetBrains Mono",
+               "Courier New", monospace;
+  background-image:
+    radial-gradient(circle at 25% 35%, rgba(120, 95, 60, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 75% 65%, rgba(120, 95, 60, 0.04) 1px, transparent 1px);
+  background-size: 7px 7px, 11px 11px;
+}
+.eos-garden[data-theme="appleton"] .eos-g-card {
+  background: #ebe2cf;
+  border: 1px solid var(--g-border);
+  border-radius: 4px;
+  padding: 14px;
+}
+.eos-garden[data-theme="appleton"] .eos-g-label {
+  color: var(--g-muted);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}
+.eos-garden[data-theme="appleton"] .eos-g-annot {
+  color: var(--g-muted);
+  font-size: 10px;
+  font-style: italic;
+  font-family: Georgia, serif;
+}

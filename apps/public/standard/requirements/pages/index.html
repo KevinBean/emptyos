@@ -1,0 +1,708 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Requirements</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  .req-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+  .req-toolbar select { padding:6px 10px; border-radius:8px; border:1px solid var(--border);
+                        background:var(--surface); color:var(--text); }
+  .req-toolbar .spacer { flex:1; }
+  table.req-table { width:100%; border-collapse:collapse; }
+  table.req-table th, table.req-table td { text-align:left; padding:9px 12px;
+    border-bottom:1px solid var(--border); font-size:14px; }
+  table.req-table th { color:var(--text-muted); font-weight:600; font-size:12px;
+    text-transform:uppercase; letter-spacing:var(--tracking-meta); }
+  table.req-table tr.req-row { cursor:pointer; }
+  table.req-table tr.req-row:hover { background:var(--bg-card-hover); }
+  .req-id { font-family:var(--mono, monospace); color:var(--text-muted); white-space:nowrap; }
+  .req-detail-field { margin:14px 0; }
+  .req-detail-field .lbl { font-size:12px; text-transform:uppercase; letter-spacing:var(--tracking-meta);
+    color:var(--text-muted); margin-bottom:5px; }
+  .req-ref { display:inline-flex; gap:6px; align-items:center; margin:3px 6px 3px 0;
+    padding:4px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); }
+  .req-ref.matched { border-color:var(--green); }
+  .req-ref a { color:var(--accent); text-decoration:none; }
+  .req-statement { white-space:pre-wrap; line-height:1.55; }
+  .req-suspect-flag { display:inline-block; margin-left:6px; padding:2px 8px; border-radius:8px;
+    font-size:11px; font-weight:600; background:color-mix(in srgb, var(--warning) 18%, transparent);
+    color:var(--warning); white-space:nowrap; }
+  .req-suspect-banner { padding:8px 12px; border-radius:8px; margin-bottom:10px; font-size:13px;
+    background:color-mix(in srgb, var(--warning) 14%, transparent); color:var(--warning); font-weight:600; }
+  .req-comp { margin:0 0 16px; border:1px solid var(--border); border-radius:10px; padding:10px 14px; }
+  .req-comp > summary { cursor:pointer; font-weight:600; }
+  .req-comp-sum { color:var(--text-muted); font-weight:400; margin-left:8px; }
+  .req-comp-body { margin-top:10px; }
+  .req-wording { list-style:none; margin:8px 0 0; padding:0; font-size:13px; }
+  .req-wording li { margin:4px 0; color:var(--text-secondary); }
+  .req-wording-ok { margin-top:6px; font-size:12px; color:var(--text-muted); }
+  .req-wording-row { padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer; }
+  .req-wording-row:hover, .req-wording-row:focus-visible { background:var(--bg-card-hover); }
+  @media (max-width:640px) {
+    table.req-table th, table.req-table td { padding:8px 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header">
+    <h1>📋 Requirements</h1>
+  </header>
+  <main id="main" class="app-main">
+    <div class="req-toolbar">
+      <label>Project
+        <select id="f-project" onchange="syncCompliancePanel(); load()"><option value="">All</option></select>
+      </label>
+      <label>Status
+        <select id="f-status" onchange="load()"><option value="">All</option></select>
+      </label>
+      <div class="spacer"></div>
+      <span id="model-pill" title="The model that reads source clauses when you extract requirements"></span>
+      <button class="eos-btn eos-btn-sm" onclick="exportRtm('csv')" title="Requirements Traceability Matrix — requirement, standard clause, verification evidence">Export RTM (CSV)</button>
+      <button class="eos-btn eos-btn-sm" onclick="exportCompliance('csv')" title="Compliance matrix — one row per source clause with the requirements, disposition and evidence against it (needs a project filter)">Export compliance (CSV)</button>
+      <button class="eos-btn eos-btn-sm" onclick="exportCompliance('pdf')" title="The same compliance matrix rendered as a PDF for the client's reviewer (needs a project filter)">Compliance (PDF)</button>
+      <button class="eos-btn eos-btn-sm" onclick="checkWording()" title="Flag statements a test cannot verify — no shall, should against a must priority, vague words, TBD, two obligations in one">Check wording</button>
+      <button class="eos-btn eos-btn-sm" onclick="openImportPicker()" title="Onboard requirements from a spreadsheet — Statement/Title/Project/Priority/References columns">Import CSV</button>
+      <input type="file" id="import-file-input" accept=".csv,text/csv" style="display:none" onchange="handleImportFile(event)">
+      <button class="eos-btn eos-btn-sm" onclick="openSourceIngest()" title="Register a client specification or standard for a project — its clauses become citable">+ Source document</button>
+      <button class="eos-btn eos-btn-sm" onclick="openExtract()" title="Read a registered source's clauses and propose requirements for review">Extract from source</button>
+      <button class="eos-btn eos-btn-primary" onclick="openAdd()">+ Requirement</button>
+    </div>
+    <details class="req-comp" id="comp-panel" hidden>
+      <summary>Compliance against source documents<span class="req-comp-sum" id="comp-sum"></span></summary>
+      <div class="req-comp-body" id="comp-body"></div>
+    </details>
+    <div id="list"></div>
+  </main>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+var STATE = { items: [], projects: [], statuses: [], priorities: [], filtersReady: false };
+var STATUS_MAP = { proposed:'draft', approved:'active', verified:'pass', superseded:'archived' };
+
+function esc(s){ return EOS_UI.esc(s == null ? '' : String(s)); }
+
+function statusBadge(status){
+  return EOS_UI.statusBadge(status, status, STATUS_MAP);
+}
+
+function fillFilters(){
+  if (STATE.filtersReady) return;
+  var ps = document.getElementById('f-project');
+  STATE.projects.forEach(function(p){
+    var o = document.createElement('option'); o.value = p; o.textContent = p; ps.appendChild(o);
+  });
+  var ss = document.getElementById('f-status');
+  STATE.statuses.forEach(function(s){
+    var o = document.createElement('option'); o.value = s; o.textContent = s; ss.appendChild(o);
+  });
+  STATE.filtersReady = true;
+}
+
+function render(){
+  var el = document.getElementById('list');
+  if (!STATE.items.length){
+    var filtered = document.getElementById('f-project').value || document.getElementById('f-status').value;
+    el.innerHTML = EOS_UI.emptyState({
+      icon: '📋',
+      message: filtered ? 'No requirements match this filter.' : 'No requirements yet — capture the first one for a project.',
+      actionLabel: '+ Requirement', onAction: 'openAdd()',
+    });
+    return;
+  }
+  var rows = STATE.items.map(function(r){
+    return '<tr class="req-row" data-rid="' + escAttr(r.id) + '">' +
+      '<td class="req-id">' + esc(r.req_id) + '</td>' +
+      '<td>' + esc(r.title) + '</td>' +
+      '<td>' + esc(r.project) + '</td>' +
+      '<td>' + statusBadge(r.status) + (r.suspect ? ' <span class="req-suspect-flag" title="Verified, but the note has been edited since — re-verify">🚩 suspect</span>' : '') + '</td>' +
+      '<td>' + esc(r.priority) + '</td>' +
+      '<td>' + (r.disposition ? esc(r.disposition) : '<span style="color:var(--text-muted)">undeclared</span>') + '</td>' +
+      '<td>' + esc(r.references) + '</td>' +
+    '</tr>';
+  }).join('');
+  el.innerHTML = '<table class="req-table"><thead><tr>' +
+    '<th>ID</th><th>Requirement</th><th>Project</th><th>Status</th>' +
+    '<th>Priority</th><th>Disposition</th><th>Traces to</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+// ── Wording checks (quality.py): advice, never a block ──
+var SEVERITY_MAP = { error: 'fail', warn: 'draft' };
+
+function wordingHtml(findings){
+  if (!findings) return '';
+  if (!findings.length) return '<div class="req-wording req-wording-ok">No wording issues found.</div>';
+  return '<ul class="req-wording">' + findings.map(function(f){
+    return '<li>' + EOS_UI.statusBadge(f.severity === 'error' ? 'fix' : 'check', f.severity, SEVERITY_MAP) +
+      ' ' + esc(f.message) + '</li>';
+  }).join('') + '</ul>';
+}
+
+async function checkWording(){
+  var project = document.getElementById('f-project').value || '';
+  var data = await EOS.apiSafe('/requirements/api/quality?project=' + encodeURIComponent(project));
+  if (!data || data.error){ EOS_UI.toast((data && data.error) || 'Could not check wording', 'error'); return; }
+  var flagged = data.flagged || [];
+  var head = '<div style="color:var(--text-muted);margin-bottom:10px">' + flagged.length + ' of ' + (data.checked || 0) +
+    ' statement' + (data.checked === 1 ? '' : 's') + (project ? ' in ' + esc(project) : '') + ' flagged</div>';
+  var body = flagged.length
+    ? flagged.map(function(r){
+        return '<div class="req-wording-row" tabindex="0" role="button" data-rid="' + escAttr(r.id) + '">' +
+          '<div><span class="req-id">' + esc(r.req_id) + '</span> ' + esc(r.title) + '</div>' +
+          wordingHtml(r.findings) + '</div>';
+      }).join('')
+    : EOS_UI.emptyState({ message: 'Every statement reads as a verifiable obligation.' });
+  EOS_UI.modal({ title: 'Wording check', body: '<div id="req-wording-list">' + head + body + '</div>', width: '720px' });
+}
+
+// Delegated: a flagged row opens that requirement — by mouse, or by Enter /
+// Space on the focused row (rows are tabindex=0, role=button).
+function _openWordingRow(ev){
+  var row = ev.target.closest('#req-wording-list .req-wording-row');
+  if (!row || !row.dataset.rid) return;
+  if (ev.type === 'keydown'){
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault();
+  }
+  EOS_UI.closeModal(); _route.set(row.dataset.rid);
+}
+document.addEventListener('click', _openWordingRow);
+document.addEventListener('keydown', _openWordingRow);
+
+// ── Compliance matrix (clause-first), shown in the page for one project ──
+// The same /api/export/compliance rows the CSV/PDF downloads carry. Loaded
+// only when the panel is opened: it walks every clause of the project's sources.
+// deviate / conflict / uncovered are the rows a tender reviewer must catch, so
+// they share the alarm tone; the word on the badge tells them apart.
+var DISPOSITION_MAP = { comply:'pass', partial:'running', deviate:'fail', 'not-applicable':'archived',
+                        uncovered:'fail', undeclared:'draft', conflict:'fail' };
+var _compRows = [];
+var _compSeq = 0;
+
+function _clauseLabel(r){
+  return r.source + (r.edition ? ' ' + r.edition : '') + ' §' + r.clause;
+}
+
+// Anything that can change the matrix calls this; a closed panel reloads on open.
+function refreshComplianceIfOpen(){
+  if (document.getElementById('comp-panel').open) loadCompliance();
+}
+
+function syncCompliancePanel(){
+  var panel = document.getElementById('comp-panel');
+  var project = document.getElementById('f-project').value || '';
+  panel.hidden = !project;
+  panel.open = false;
+  _compSeq++;  // drop any load still in flight for the previous project
+  document.getElementById('comp-sum').textContent = '';
+  document.getElementById('comp-body').innerHTML = '';
+}
+
+async function loadCompliance(){
+  var project = document.getElementById('f-project').value || '';
+  var body = document.getElementById('comp-body');
+  if (!project) return;
+  var seq = ++_compSeq;
+  EOS_UI.loading('comp-body');
+  var data = await EOS.apiSafe('/requirements/api/export/compliance?project=' + encodeURIComponent(project));
+  // Only the newest request may paint: the filter may have moved on, or a
+  // refresh issued after this one may already have landed.
+  if (seq !== _compSeq) return;
+  if (!data || data.error){ body.innerHTML = EOS_UI.errorState({ message: (data && data.error) || 'Could not load the compliance matrix' }); return; }
+  var s = data.summary || {};
+  _compRows = data.rows || [];
+  document.getElementById('comp-sum').textContent =
+    '— ' + (s.clauses || 0) + ' clauses · ' + (s.covered || 0) + ' covered · ' + (s.uncovered || 0) + ' uncovered';
+  if (!_compRows.length){
+    body.innerHTML = EOS_UI.emptyState({ message: 'No source documents registered for this project.',
+                                         actionLabel: '+ Source document', onAction: 'openSourceIngest()' });
+    return;
+  }
+  var rows = _compRows.map(function(r, i){
+    return '<tr>' +
+      '<td class="req-id">' + esc(_clauseLabel(r)) + '</td>' +
+      '<td>' + esc(r.clause_title) + '</td>' +
+      '<td>' + (r.requirements ? esc(r.requirements)
+        : '<button class="eos-btn eos-btn-sm" data-comp-idx="' + i + '" title="Write a requirement that traces to this clause">+ Requirement</button>') + '</td>' +
+      '<td>' + EOS_UI.statusBadge(r.disposition, r.disposition, DISPOSITION_MAP) + '</td>' +
+    '</tr>';
+  }).join('');
+  body.innerHTML = '<table class="req-table"><thead><tr>' +
+    '<th>Clause</th><th>Title</th><th>Requirements</th><th>Disposition</th></tr></thead><tbody>' +
+    rows + '</tbody></table>';
+}
+
+document.getElementById('comp-panel').addEventListener('toggle', function(){ if (this.open) loadCompliance(); });
+
+// Delegated: an uncovered clause → the add form, prefilled to trace to it.
+document.getElementById('comp-body').addEventListener('click', function(ev){
+  var b = ev.target.closest('button[data-comp-idx]');
+  if (!b) return;
+  var r = _compRows[parseInt(b.dataset.compIdx, 10)];
+  // source_clause pins the exact clause note (edition included); the citation
+  // is what the requirement shows as "Traces to".
+  if (r) openAdd({ project: document.getElementById('f-project').value || '',
+                   references: _clauseLabel(r), source_clause: r.clause_slug || '' });
+});
+
+// Delegated row click — the id lives in data-rid (read back as a plain string,
+// never re-evaluated as JS), so a project/id containing a quote can't inject.
+document.getElementById('list').addEventListener('click', function(ev){
+  var tr = ev.target.closest('tr.req-row');
+  if (tr && tr.dataset.rid) _route.set(tr.dataset.rid);
+});
+
+async function load(){
+  var project = document.getElementById('f-project').value || '';
+  var status = document.getElementById('f-status').value || '';
+  var qs = '?project=' + encodeURIComponent(project) + '&status=' + encodeURIComponent(status);
+  var data = await EOS.apiSafe('/requirements/api/items' + qs);
+  if (data && !data.error){
+    STATE.items = data.items || [];
+    STATE.projects = data.projects || [];
+    STATE.statuses = data.statuses || [];
+    STATE.priorities = data.priorities || [];
+    fillFilters();
+    render();
+  }
+}
+
+function exportRtm(format){
+  var project = document.getElementById('f-project').value || '';
+  var qs = '?project=' + encodeURIComponent(project) + '&format=' + encodeURIComponent(format || 'csv');
+  window.open('/requirements/api/export/rtm' + qs, '_blank', 'noopener');
+}
+
+function exportCompliance(format){
+  var project = document.getElementById('f-project').value || '';
+  if (!project){ EOS_UI.toast('Pick a project first — the compliance matrix is per project', 'warn'); return; }
+  var qs = '?project=' + encodeURIComponent(project) + '&format=' + encodeURIComponent(format || 'csv');
+  window.open('/requirements/api/export/compliance' + qs, '_blank', 'noopener');
+}
+
+// ── Source documents: register a client spec / standard for a project ──
+// Two calls with one body: dry_run=1 previews what would be written, then
+// dry_run=0 writes it (propose → preview → confirm). No LLM is involved.
+var _sourcePlan = null;
+
+function _projectOptionsHtml(selected){
+  var opts = STATE.projects.slice();
+  if (selected && opts.indexOf(selected) < 0) opts.unshift(selected);
+  return opts.map(function(p){
+    return '<option value="' + escAttr(p) + '"' + (p === selected ? ' selected' : '') + '>' + esc(p) + '</option>';
+  }).join('');
+}
+
+function openSourceIngest(){
+  var current = document.getElementById('f-project').value || '';
+  var body =
+    '<div class="req-detail-field"><div class="lbl">Project</div>' +
+      '<input id="src-project" class="eos-input" list="src-project-list" value="' + escAttr(current) + '" placeholder="project id (folder under 10_Projects)">' +
+      '<datalist id="src-project-list">' + _projectOptionsHtml(current) + '</datalist></div>' +
+    '<div class="req-detail-field"><div class="lbl">Document id</div>' +
+      '<input id="src-id" class="eos-input" placeholder="e.g. XYZ-SPEC-001 — how requirements will cite it"></div>' +
+    '<div class="req-detail-field"><div class="lbl">Title</div>' +
+      '<input id="src-title" class="eos-input" placeholder="optional — defaults to the id"></div>' +
+    '<div class="req-detail-field"><div class="lbl">Revision / edition</div>' +
+      '<input id="src-edition" class="eos-input" placeholder="optional — Rev C, 2023"></div>' +
+    '<div class="req-detail-field"><div class="lbl">File</div>' +
+      '<input type="file" id="src-file" accept=".pdf,.docx,.doc,.rtf,.md,.txt">' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">PDF, Word or text. The original is kept under the project\'s assets folder; numbered sections become citable clauses.</div></div>' +
+    '<div id="src-plan"></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
+      '<button class="eos-btn eos-btn-secondary" onclick="EOS_UI.closeModal()">Cancel</button>' +
+      '<button class="eos-btn eos-btn-primary" id="src-go" onclick="previewSourceIngest()">Preview</button>' +
+    '</div>';
+  _sourcePlan = null;
+  EOS_UI.modal({ title: 'Register a source document', body: body, width: '640px' });
+}
+
+function _sourceForm(dryRun){
+  var file = document.getElementById('src-file').files[0];
+  var fd = new FormData();
+  fd.append('project', document.getElementById('src-project').value.trim());
+  fd.append('standard_id', document.getElementById('src-id').value.trim());
+  fd.append('title', document.getElementById('src-title').value.trim());
+  fd.append('edition', document.getElementById('src-edition').value.trim());
+  fd.append('dry_run', dryRun ? '1' : '0');
+  if (file) fd.append('file', file);
+  return { fd: fd, file: file };
+}
+
+async function previewSourceIngest(){
+  var f = _sourceForm(true);
+  if (!f.file){ EOS_UI.toast('Choose a file', 'warn'); return; }
+  var plan = await EOS.apiSafe('/kb/api/sources/ingest', { method:'POST', body: f.fd });
+  var slot = document.getElementById('src-plan');
+  if (!plan || plan.error){ EOS_UI.toast((plan && plan.error) || 'Preview failed', 'error'); return; }
+  _sourcePlan = plan;
+  var warn = (plan.warnings || []).map(function(w){
+    return '<div style="color:var(--warning);font-size:12px;margin:2px 0">' + esc(w) + '</div>';
+  }).join('');
+  var sample = (plan.clauses || []).slice(0, 12).map(function(c){
+    return '<li>§' + esc(c.clause) + ' ' + esc(c.title) + '</li>';
+  }).join('');
+  slot.innerHTML = warn +
+    '<div style="font-size:12px;color:var(--text-muted);margin:8px 0 4px">Will write <b>' + esc(plan.clause_count) +
+    '</b> clause note(s) and a reference note at <code>' + esc(plan.reference_path) + '</code></div>' +
+    (sample ? '<ul style="margin:4px 0 0 18px;font-size:13px">' + sample + (plan.clause_count > 12 ? '<li>…</li>' : '') + '</ul>' : '');
+  var go = document.getElementById('src-go');
+  go.textContent = 'Register';
+  go.setAttribute('onclick', 'confirmSourceIngest()');
+}
+
+async function confirmSourceIngest(){
+  if (!_sourcePlan){ return previewSourceIngest(); }
+  var f = _sourceForm(false);
+  if (!f.file){ EOS_UI.toast('Choose the file again', 'warn'); return; }
+  var project = document.getElementById('src-project').value.trim();
+  var res = await EOS.apiSafe('/kb/api/sources/ingest', { method:'POST', body: f.fd });
+  if (!res || res.error){ EOS_UI.toast((res && res.error) || 'Register failed', 'error'); return; }
+  EOS_UI.toast('Registered ' + res.standard_id + ' — ' + res.clause_count + ' clause(s)', 'success');
+  EOS_UI.closeModal();
+  _sourcePlan = null;
+  // The filter is filled once per page load, so a project registered just now
+  // is not in it yet — add it, so its matrix is reachable without a reload.
+  selectProject(project);
+}
+
+function selectProject(project){
+  if (!project) return;
+  var ps = document.getElementById('f-project');
+  var known = Array.prototype.some.call(ps.options, function(o){ return o.value === project; });
+  if (!known){ var o = document.createElement('option'); o.value = project; o.textContent = project; ps.appendChild(o); }
+  if (ps.value === project){ refreshComplianceIfOpen(); return; }
+  ps.value = project;
+  syncCompliancePanel();
+  load();
+}
+
+// ── Extract requirements from a registered source (LLM → proposed rows) ──
+// The project is typed here, not taken from the list filter: a brand-new
+// project has no requirements yet, so it has no filter entry to pick.
+async function openExtract(){
+  var current = document.getElementById('f-project').value || '';
+  var body =
+    '<div class="req-detail-field"><div class="lbl">Project</div>' +
+      '<input id="ext-project" class="eos-input" list="ext-project-list" value="' + escAttr(current) + '" placeholder="project id" onchange="loadExtractSources()">' +
+      '<datalist id="ext-project-list">' + _projectOptionsHtml(current) + '</datalist></div>' +
+    '<div class="req-detail-field"><div class="lbl">Source</div>' +
+      '<select id="ext-source" style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)"><option value="">— choose a project first —</option></select>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">📁 this project\'s documents · 📚 published standards in the knowledge base. Clause text is sent to the model shown in the toolbar; every proposed row waits for your approval.</div></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
+      '<button class="eos-btn eos-btn-secondary" onclick="EOS_UI.closeModal()">Cancel</button>' +
+      '<button class="eos-btn eos-btn-primary" id="ext-go" onclick="runExtract()">Read clauses</button>' +
+    '</div>';
+  EOS_UI.modal({ title: 'Extract requirements', body: body, width: '560px' });
+  if (current) await loadExtractSources();
+}
+
+async function loadExtractSources(){
+  var project = (document.getElementById('ext-project').value || '').trim();
+  var sel = document.getElementById('ext-source');
+  if (!project){ sel.innerHTML = '<option value="">— choose a project first —</option>'; return; }
+  var data = await EOS.apiSafe('/kb/api/sources?project=' + encodeURIComponent(project));
+  var sources = (data && data.sources) || [];
+  if (!sources.length){
+    sel.innerHTML = '<option value="">— no registered sources; add a source document first —</option>';
+    return;
+  }
+  // A source with no clauses cannot be extracted from, and the global KB holds
+  // hundreds of them — drop those, but keep this project's own documents
+  // (shown disabled) so a spec that parsed badly is visible, not missing.
+  var usable = sources.filter(function(s){ return s.clause_count || s.scope === 'project'; });
+  if (!usable.length){
+    sel.innerHTML = '<option value="">— no source with parsed clauses; add a source document first —</option>';
+    return;
+  }
+  usable.sort(function(a, b){ return (a.scope === 'project' ? 0 : 1) - (b.scope === 'project' ? 0 : 1); });
+  sel.innerHTML = usable.map(function(s){
+    var label = (s.scope === 'project' ? '📁 ' : '📚 ') + s.title + (s.clause_count ? ' (' + s.clause_count + ' clauses)' : ' (no clauses parsed)');
+    return '<option value="' + escAttr(s.slug) + '"' + (s.clause_count ? '' : ' disabled') + '>' + esc(label) + '</option>';
+  }).join('');
+}
+
+async function runExtract(){
+  var project = (document.getElementById('ext-project').value || '').trim();
+  var slug = document.getElementById('ext-source').value;
+  if (!project){ EOS_UI.toast('Project is required', 'warn'); return; }
+  if (!slug){ EOS_UI.toast('Choose a source with clauses', 'warn'); return; }
+  var go = document.getElementById('ext-go');
+  go.disabled = true; go.textContent = 'Reading…';
+  var data = await EOS.apiSafe('/requirements/api/extract/preview', { method:'POST', body: JSON.stringify({ project: project, source_slug: slug }) });
+  if (!data || data.error){ EOS_UI.toast((data && data.error) || 'Extraction failed', 'error'); go.disabled = false; go.textContent = 'Read clauses'; return; }
+  if (!(data.rows || []).length){ EOS_UI.toast('No obligations found in ' + ((data.source && data.source.title) || 'that source'), 'warn'); go.disabled = false; go.textContent = 'Read clauses'; return; }
+  showImportPreview(data, { title: 'Extracted requirements — review before writing', provenance: data.provenance });
+}
+
+// ── CSV import (requirements-no-import) ──────────────────────────────
+var IMPORT_PREVIEW = null;
+
+function openImportPicker(){
+  document.getElementById('import-file-input').click();
+}
+
+async function handleImportFile(ev){
+  var file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';  // allow re-selecting the same file later
+  if (!file) return;
+  var fd = new FormData();
+  fd.append('file', file);
+  var data = await EOS.apiSafe('/requirements/api/import/preview', { method:'POST', body: fd });
+  if (data.error){ EOS_UI.toast(data.error, 'error'); return; }
+  showImportPreview(data);
+}
+
+function showImportPreview(data, opts){
+  opts = opts || {};
+  IMPORT_PREVIEW = data;
+  var s = data.summary || {};
+  var warn = (data.warnings || []).map(function(w){
+    return '<div style="color:var(--warning);font-size:12px;margin:2px 0">' + esc(w) + '</div>';
+  }).join('');
+  // provenanceLine renders nothing for a reply with no mode (a cached think),
+  // where the bare chip would default to a "user" badge on AI-extracted rows.
+  if (opts.provenance && EOS_UI.provenanceLine){
+    warn += EOS_UI.provenanceLine(opts.provenance, { label: 'Rows drafted by' });
+  }
+  var rows = (data.rows || []).map(function(r, i){
+    return '<tr>' +
+      '<td><input type="checkbox" class="import-row-cb" data-idx="' + i + '"' + (r.duplicate ? '' : ' checked') + '></td>' +
+      '<td>' + esc(r.title) + '</td>' +
+      '<td>' + esc(r.project) + '</td>' +
+      '<td>' + esc(r.priority || '—') + '</td>' +
+      '<td>' + esc(r.references || '—') + '</td>' +
+      '<td>' + (r.duplicate ? '<span style="color:var(--text-muted)">already present</span>' : 'new') + '</td>' +
+    '</tr>';
+  }).join('');
+  var body =
+    warn +
+    '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">' +
+      esc(s.total || 0) + ' rows parsed · ' + esc(s.new || 0) + ' new · ' + esc(s.duplicate || 0) + ' already present' +
+      (s.skipped ? ' · ' + esc(s.skipped) + ' skipped (no statement, or a clause the source does not have)' : '') +
+    '</div>' +
+    '<div style="max-height:360px;overflow:auto">' +
+    '<table class="req-table"><thead><tr><th></th><th>Requirement</th><th>Project</th>' +
+    '<th>Priority</th><th>Traces to</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
+      '<button class="eos-btn eos-btn-secondary" onclick="EOS_UI.closeModal()">Cancel</button>' +
+      '<button class="eos-btn eos-btn-primary" onclick="confirmImport()">Import selected</button>' +
+    '</div>';
+  EOS_UI.modal({ title: opts.title || 'Import requirements — review before writing', body: body, width: '760px' });
+}
+
+async function confirmImport(){
+  if (!IMPORT_PREVIEW) return;
+  var checked = Array.prototype.slice.call(document.querySelectorAll('.import-row-cb:checked'));
+  var rows = checked.map(function(cb){ return IMPORT_PREVIEW.rows[parseInt(cb.dataset.idx, 10)]; });
+  if (!rows.length){ EOS_UI.toast('Nothing selected', 'warn'); return; }
+  var res = await EOS.apiSafe('/requirements/api/import/confirm', { method:'POST', body: JSON.stringify({ rows: rows }) });
+  if (res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Imported ' + res.imported + ' requirement(s)' + (res.skipped ? ', skipped ' + res.skipped : ''), 'success');
+  EOS_UI.closeModal();
+  IMPORT_PREVIEW = null;
+  await load();
+  refreshComplianceIfOpen();
+}
+
+function openAdd(prefill){
+  prefill = prefill || {};
+  EOS_UI.formModal('New Requirement', [
+    { key:'statement', label:'Requirement statement', type:'textarea', placeholder:'The system shall…' },
+    { key:'project', label:'Project', type:'text', value: prefill.project || document.getElementById('f-project').value || 'inbox' },
+    { key:'priority', label:'Priority', type:'select', options:(STATE.priorities.length ? STATE.priorities : ['must','should','could']) },
+    { key:'references', label:'Traces to (standard clauses, comma-separated)', type:'text', placeholder:'IEC 60287-1-1 §2, AS/NZS 3008', value: prefill.references || '' },
+  ], async function(vals){
+    if (!vals.statement || !vals.statement.trim()){ EOS_UI.toast('Statement is required', 'warn'); return; }
+    if (prefill.source_clause) vals.source_clause = prefill.source_clause;
+    var res = await EOS.apiSafe('/requirements/api/items', { method:'POST', body: JSON.stringify(vals) });
+    if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+    EOS_UI.toast('Requirement ' + (res.req_id || '') + ' created', 'success');
+    await load();
+    if (res && res.id) _route.set(res.id);
+    refreshComplianceIfOpen();
+  });
+}
+
+// ── detail (hash-routed) ──────────────────────────────────────────────
+var _route = EOS_UI.hashRoute({
+  onShow: function(id){ showDetail(id); },
+  onHide: function(){ EOS_UI.closeModal(); },
+});
+
+// The currently-open requirement. Detail-modal handlers read from this instead
+// of embedding ids/references into inline onclick strings — no user data ever
+// crosses into a JS-string context (XSS-safe).
+var _currentDetail = null;
+
+async function showDetail(id){
+  var d = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(id));
+  if (!d || d.error){ EOS_UI.toast((d && d.error) || 'Not found', 'error'); _route.clear(); return; }
+  _currentDetail = d;
+
+  var refs = (d.resolved_references || []).map(function(r){
+    var inner = r.matched && r.slug
+      ? '<a href="/kb/?slug=' + escAttr(r.slug) + '" target="_blank" rel="noopener">' + esc(r.reference) + '</a>'
+      : esc(r.reference) + ' <span style="color:var(--text-muted)">(unresolved)</span>';
+    return '<span class="req-ref' + (r.matched ? ' matched' : '') + '">' + inner + '</span>';
+  }).join('') || '<span style="color:var(--text-muted)">— none —</span>';
+
+  var statusOpts = STATE.statuses.map(function(s){
+    return '<option value="' + escAttr(s) + '"' + (s === d.status ? ' selected' : '') + '>' + esc(s) + '</option>';
+  }).join('');
+
+  var body = '';
+  body += '<div class="req-detail-field"><div class="lbl">Statement</div>' +
+          '<div class="req-statement">' + esc(d.statement || d.title) + '</div>' +
+          wordingHtml(d.quality) + '</div>';
+  body += '<div class="req-detail-field"><div class="lbl">Status</div>' +
+          '<select id="d-status" onchange="setStatus()" ' +
+          'style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">' +
+          statusOpts + '</select> &nbsp; ' + statusBadge(d.status) + '</div>';
+  body += '<div class="req-detail-field"><div class="lbl">Traces to (standards)</div>' + refs +
+          // One citation per line: a citation may itself contain a comma.
+          '<textarea id="d-references" class="eos-input" rows="2" style="margin-top:6px" ' +
+          'placeholder="one citation per line — IEC 60287-1-1 §2">' +
+          esc((d.resolved_references || []).map(function(r){ return r.reference; }).join('\n')) + '</textarea>' +
+          '<button class="eos-btn eos-btn-sm" style="margin-top:6px" onclick="saveReferences()">Save citations</button></div>';
+  var dispOpts = ['<option value=""' + (!d.disposition ? ' selected' : '') + '>undeclared</option>'].concat(
+    (d.dispositions || []).map(function(x){
+      return '<option value="' + escAttr(x) + '"' + (x === d.disposition ? ' selected' : '') + '>' + esc(x) + '</option>';
+    })).join('');
+  body += '<div class="req-detail-field"><div class="lbl">Compliance disposition</div>' +
+          '<select id="d-disposition" onchange="setDisposition()" ' +
+          'style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">' +
+          dispOpts + '</select>' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Your declared position against the clause — what the client\'s reviewer reads. Status is the record\'s lifecycle.</div></div>';
+  body += '<div class="req-detail-field"><div class="lbl">Evidence</div>' +
+          ((d.evidence || []).length
+            ? '<div>' + d.evidence.map(function(e){
+                // A URL opens in a new tab; anything else is a vault path (rule: vault paths are always clickable).
+                return /^https?:\/\//i.test(e)
+                  ? '<div style="margin:2px 0"><a href="' + escAttr(e) + '" target="_blank" rel="noopener">' + esc(e) + '</a></div>'
+                  : '<div style="margin:2px 0">' + EOS.noteActions(e) + '</div>';
+              }).join('') + '</div>'
+            : '<div style="color:var(--text-muted)">none linked</div>') +
+          '<textarea id="d-evidence" rows="2" placeholder="one vault path or URL per line" ' +
+          'style="width:100%;margin-top:6px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">' +
+          esc((d.evidence || []).join('\n')) + '</textarea>' +
+          '<button class="eos-btn eos-btn-sm" style="margin-top:6px" onclick="saveEvidence()">Save evidence</button></div>';
+  body += '<div class="req-detail-field"><div class="lbl">Verification</div>' +
+          (d.suspect ? '<div class="req-suspect-banner">🚩 Suspect — this note has been edited since it was last verified. Re-verify before relying on this status.</div>' : '') +
+          '<input id="d-verified-by" class="eos-input" value="' + escAttr(d.verified_by || '') + '" ' +
+          'placeholder="conformance:<app>/<endpoint>/<case_id>">' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">A <code>conformance:</code> link makes Verify run that test case; a pass marks the requirement verified, a failure leaves its status as it is. Anything else is a record; set the status by hand.</div>' +
+          (d.last_verified ? '<div style="color:var(--text-muted);font-size:12px;margin-top:4px">last verified ' + esc(d.last_verified) + '</div>' : '') +
+          '<div style="display:flex;gap:6px;margin-top:8px">' +
+          '<button class="eos-btn eos-btn-sm" onclick="saveVerifiedBy()">Save link</button>' +
+          '<button class="eos-btn eos-btn-sm" onclick="verify()">Verify</button></div></div>';
+  if (d._vault_path){
+    body += '<div class="req-detail-field"><div class="lbl">Note</div>' + EOS.noteActions(d._vault_path) + '</div>';
+  }
+  body += '<div class="req-detail-field"><div class="lbl">Impact</div>' +
+          '<div id="impact-slot"><button class="eos-btn eos-btn-sm" onclick="loadImpact()">Show co-requirements per clause</button></div></div>';
+
+  EOS_UI.modal({
+    title: esc(d.req_id + ' · ' + d.project),
+    body: '<div data-entity-path="' + escAttr(d._vault_path || '') + '">' + body + '</div>',
+    onClose: function(){ _route.clear(); },
+  });
+}
+
+async function setStatus(){
+  var d = _currentDetail; if (!d) return;
+  var value = document.getElementById('d-status').value;
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/field',
+    { method:'POST', body: JSON.stringify({ field:'status', value: value }) });
+  if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Status → ' + value, 'success');
+  await load();
+  showDetail(d.id);
+}
+
+async function setDisposition(){
+  var d = _currentDetail; if (!d) return;
+  var value = document.getElementById('d-disposition').value;
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/field',
+    { method:'POST', body: JSON.stringify({ field:'disposition', value: value }) });
+  if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Disposition → ' + (value || 'undeclared'), 'success');
+  await load();
+  refreshComplianceIfOpen();
+  showDetail(d.id);
+}
+
+async function saveEvidence(){
+  var d = _currentDetail; if (!d) return;
+  var value = document.getElementById('d-evidence').value;
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/field',
+    { method:'POST', body: JSON.stringify({ field:'evidence', value: value }) });
+  if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Evidence saved', 'success');
+  showDetail(d.id);
+}
+
+async function saveReferences(){
+  var d = _currentDetail; if (!d) return;
+  // Sent as a list, so the server never has to guess the separator.
+  var value = document.getElementById('d-references').value.split('\n');
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/field',
+    { method:'POST', body: JSON.stringify({ field:'references', value: value }) });
+  if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Citations saved', 'success');
+  await load();
+  refreshComplianceIfOpen();
+  showDetail(d.id);
+}
+
+async function saveVerifiedBy(){
+  var d = _currentDetail; if (!d) return;
+  var value = document.getElementById('d-verified-by').value.trim();
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/field',
+    { method:'POST', body: JSON.stringify({ field:'verified_by', value: value }) });
+  if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast(value ? 'Verification link saved' : 'Verification link cleared', 'success');
+  showDetail(d.id);
+}
+
+async function verify(){
+  var d = _currentDetail; if (!d) return;
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/verify',
+    { method:'POST', body: '{}' });
+  if (!res){ return; }
+  if (res.mode === 'manual'){ EOS_UI.toast(res.message, 'warn'); return; }
+  if (res.error){ EOS_UI.toast('Verify failed: ' + res.error, 'error'); return; }
+  EOS_UI.toast(res.passed ? 'Verified ✓ (' + res.case + ')' : 'Conformance FAILED (' + res.case + ')',
+               res.passed ? 'success' : 'error');
+  await load();
+  showDetail(d.id);
+}
+
+async function loadImpact(){
+  var d = _currentDetail; if (!d) return;
+  var first = (d.references || '').split(',')[0].trim();
+  if (!first){ EOS_UI.toast('This requirement traces to no clause', 'warn'); return; }
+  // project lets a citation of the client's own document resolve to its clause.
+  var data = await EOS.apiSafe('/requirements/api/impact?reference=' + encodeURIComponent(first) +
+                               '&project=' + encodeURIComponent(d.project || ''));
+  var slot = document.getElementById('impact-slot');
+  if (!data || data.error || !data.requirements){ slot.innerHTML = '<span style="color:var(--text-muted)">no data</span>'; return; }
+  var list = data.requirements.map(function(r){
+    return '<div style="padding:4px 0">' + esc(r.req_id) + ' · ' + esc(r.project) + ' — ' + esc(r.title) + '</div>';
+  }).join('') || '<span style="color:var(--text-muted)">only this one</span>';
+  slot.innerHTML = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Requirements tracing to <b>' + esc(first) + '</b>:</div>' + list;
+}
+
+// Who reads the client's clauses when you extract — visible before the call is made.
+if (EOS_UI.modelPill) EOS_UI.modelPill({ app: 'requirements', mount: '#model-pill', domain: 'text' });
+
+load().then(function(){ _route && _route.init && _route.init(); });
+</script>
+</body>
+</html>

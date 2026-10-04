@@ -1,0 +1,1089 @@
+<meta charset="utf-8">
+<title>The Vowel Crosswalk</title>
+
+<style>
+/* ─────────────────────────────────────────────────────────────
+   TOKENS — light is the bare :root. Every colour lives here and
+   nowhere else, so all three theme states resolve as a full set.
+   Hue is INFORMATION: it encodes vowel backness (front/central/
+   back), the horizontal axis of the IPA vowel quadrilateral.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --ground:      #E9ECEC;
+  --ground-deep: #DDE2E2;
+  --surface:     #F6F8F8;
+  --surface-2:   #EFF3F3;
+  --ink:         #14181A;
+  --ink-soft:    #4E5659;
+  --ink-faint:   #7C8688;
+  --rule:        #C9D0D0;
+  --rule-soft:   #DCE1E1;
+
+  --front:       #0F6C70;
+  --central:     #7C4F73;
+  --back:        #A85A16;
+
+  --front-wash:  #0F6C7018;
+  --central-wash:#7C4F7318;
+  --back-wash:   #A85A1618;
+
+  --focus-ring:  #0F6C70;
+  --shadow:      0 1px 2px #14181A0D, 0 8px 24px -12px #14181A1F;
+
+  --serif: "Sitka Text", Cambria, Charter, "Bitstream Charter", Georgia, "Times New Roman", serif;
+  --ipa:   "Charis SIL", "Doulos SIL", "Gentium Plus", "Segoe UI", "DejaVu Sans", "Noto Sans", Cambria, sans-serif;
+  --mono:  Consolas, "Cascadia Mono", "DejaVu Sans Mono", "SF Mono", ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #101415;
+    --ground-deep: #0A0D0E;
+    --surface:     #182022;
+    --surface-2:   #1E282A;
+    --ink:         #E6EAEA;
+    --ink-soft:    #93A0A2;
+    --ink-faint:   #6B787A;
+    --rule:        #2A3639;
+    --rule-soft:   #212C2E;
+
+    --front:       #4FC7CB;
+    --central:     #D08FC4;
+    --back:        #F0A250;
+
+    --front-wash:  #4FC7CB1F;
+    --central-wash:#D08FC41F;
+    --back-wash:   #F0A2501F;
+
+    --focus-ring:  #4FC7CB;
+    --shadow:      0 1px 2px #00000047, 0 8px 24px -12px #00000080;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #101415;
+  --ground-deep: #0A0D0E;
+  --surface:     #182022;
+  --surface-2:   #1E282A;
+  --ink:         #E6EAEA;
+  --ink-soft:    #93A0A2;
+  --ink-faint:   #6B787A;
+  --rule:        #2A3639;
+  --rule-soft:   #212C2E;
+
+  --front:       #4FC7CB;
+  --central:     #D08FC4;
+  --back:        #F0A250;
+
+  --front-wash:  #4FC7CB1F;
+  --central-wash:#D08FC41F;
+  --back-wash:   #F0A2501F;
+
+  --focus-ring:  #4FC7CB;
+  --shadow:      0 1px 2px #00000047, 0 8px 24px -12px #00000080;
+}
+
+/* ── base ─────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap  { max-width: 1240px; margin: 0 auto; padding: 0 28px; }
+.prose { max-width: 68ch; }
+
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 600; }
+h1 { font-size: clamp(2.1rem, 5.2vw, 3.5rem); line-height: 1.04; letter-spacing: -0.022em; }
+h2 { font-size: clamp(1.35rem, 2.6vw, 1.75rem); line-height: 1.18; letter-spacing: -0.012em; }
+h3 { font-size: 1.06rem; line-height: 1.3; }
+p  { margin: 0; }
+
+a { color: inherit; text-underline-offset: 3px; text-decoration-color: var(--rule); }
+a:hover { text-decoration-color: currentColor; }
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ── phonetic notation is a different writing system, so it gets
+      its own face. /slashes/ = sound, ⟨brackets⟩ = spelling. ── */
+.ipa { font-family: var(--ipa); font-feature-settings: "kern" 1; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.lexset {
+  font-family: var(--serif);
+  font-variant-caps: all-small-caps;
+  font-feature-settings: "c2sc" 1, "smcp" 1;
+  letter-spacing: 0.09em;
+  text-transform: lowercase;
+  font-size: 0.86em;
+  color: var(--ink-soft);
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── masthead ─────────────────────────────────────────────── */
+.masthead { padding: clamp(44px, 8vw, 92px) 0 0; }
+.masthead .rule-top {
+  height: 4px; display: flex; margin-bottom: 30px;
+  border-radius: 2px; overflow: hidden;
+}
+.rule-top i { flex: 1; display: block; }
+.rule-top i:nth-child(1) { background: var(--front); }
+.rule-top i:nth-child(2) { background: var(--central); }
+.rule-top i:nth-child(3) { background: var(--back); }
+
+.deck {
+  margin-top: 22px; max-width: 60ch;
+  font-size: 1.16rem; color: var(--ink-soft);
+}
+
+.thesis {
+  display: flex; flex-wrap: wrap; gap: 0 40px;
+  margin-top: 38px; padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+.thesis div { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.thesis b { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+.thesis span { font-size: 0.83rem; color: var(--ink-soft); max-width: 20ch; line-height: 1.35; }
+
+/* ── figure shell ─────────────────────────────────────────── */
+.figure { margin: clamp(48px, 7vw, 80px) 0; }
+
+.controls {
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  gap: 26px; padding-bottom: 18px; margin-bottom: 26px;
+  border-bottom: 1px solid var(--rule);
+}
+.ctl { display: flex; flex-direction: column; gap: 7px; }
+.ctl > .eyebrow { margin-bottom: 1px; }
+
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; background: var(--surface); }
+.seg button {
+  font: inherit; font-size: 0.86rem; line-height: 1.25;
+  padding: 8px 14px; border: 0; background: transparent;
+  color: var(--ink-soft); cursor: pointer; white-space: nowrap;
+  transition: background .16s, color .16s;
+}
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button:hover { background: var(--surface-2); color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+
+.check {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 0.86rem; color: var(--ink-soft); cursor: pointer;
+  padding: 8px 0;
+}
+.check input { accent-color: var(--focus-ring); width: 15px; height: 15px; cursor: pointer; }
+
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-left: auto; padding: 8px 0; }
+.legend span { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; color: var(--ink-soft); }
+.legend i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+
+/* ── graph + panel ────────────────────────────────────────── */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 34px; align-items: start; }
+
+.canvas { position: relative; min-width: 0; }
+#graph { width: 100%; height: auto; display: block; overflow: visible; }
+#graph.dimmed .edge:not(.on) { opacity: .05; }
+#graph.dimmed .node:not(.on) { opacity: .14; }
+
+.edge { fill: none; stroke-linecap: round; transition: opacity .22s, stroke-width .22s; }
+.edge.on { stroke-width: 2.1; }
+
+.node { cursor: pointer; transition: opacity .22s; }
+.node .hit { fill: transparent; }
+.node .disc { transition: fill .18s, stroke-width .18s; }
+.node:hover .disc { stroke-width: 2.4; }
+.node text { pointer-events: none; }
+.node .glyph  { font-family: var(--ipa); font-size: 15px; font-weight: 600; }
+.node .keyword{ font-family: var(--serif); font-size: 10.5px; letter-spacing: .085em; fill: var(--ink-faint); }
+.node .gcount { font-family: var(--mono); font-size: 10px; fill: var(--ink-faint); }
+.node.on .keyword, .node.on .gcount { fill: var(--ink-soft); }
+.node:focus-visible { outline: none; }
+.node:focus-visible .disc { stroke: var(--ink); stroke-width: 3; }
+
+.axis     { font-family: var(--mono); font-size: 9.5px; letter-spacing: .13em; fill: var(--ink-faint); text-transform: uppercase; }
+.quadline { stroke: var(--rule); stroke-width: 1; fill: none; stroke-dasharray: 3 4; }
+.bandline { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 2 5; }
+
+.tip {
+  position: absolute; pointer-events: none; opacity: 0;
+  transform: translate(-50%, -100%) translateY(-11px);
+  background: var(--ink); color: var(--ground);
+  padding: 7px 11px; border-radius: 6px; font-size: 0.79rem; line-height: 1.4;
+  white-space: nowrap; transition: opacity .13s; z-index: 6; box-shadow: var(--shadow);
+}
+.tip.show { opacity: 1; }
+.tip .ipa, .tip .g { font-family: var(--ipa); font-weight: 600; }
+.tip em { font-style: italic; opacity: .82; }
+
+/* ── inspector ────────────────────────────────────────────── */
+.panel {
+  position: sticky; top: 22px;
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: 11px; padding: 20px; box-shadow: var(--shadow);
+}
+.panel-empty { color: var(--ink-soft); font-size: 0.88rem; }
+.panel-empty b { display: block; color: var(--ink); font-size: 1rem; margin-bottom: 7px; font-weight: 600; }
+
+.p-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 13px; border-bottom: 1px solid var(--rule-soft); }
+.p-head .big { font-family: var(--ipa); font-size: 1.85rem; font-weight: 600; line-height: 1; letter-spacing: -.01em; }
+.p-note { margin-top: 12px; font-size: 0.83rem; color: var(--ink-soft); line-height: 1.5; }
+
+.p-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.p-list li { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--rule-soft); }
+.p-list li:first-child { border-top: 0; }
+.p-key { font-family: var(--ipa); font-weight: 600; font-size: 0.97rem; }
+.p-ex  { font-size: 0.85rem; color: var(--ink-soft); font-style: italic; }
+.p-ex .cav { font-style: normal; font-family: var(--mono); font-size: .72rem; color: var(--ink-faint); display: block; margin-top: 2px; }
+.p-list li.rare .p-key { opacity: .62; font-weight: 500; }
+
+.p-close {
+  margin-top: 16px; font: inherit; font-size: .8rem; padding: 6px 12px;
+  background: transparent; color: var(--ink-soft);
+  border: 1px solid var(--rule); border-radius: 6px; cursor: pointer;
+}
+.p-close:hover { color: var(--ink); border-color: var(--ink-soft); }
+
+/* ── matrix ───────────────────────────────────────────────── */
+.matrix-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+table.matrix { border-collapse: collapse; font-size: 0.8rem; }
+table.matrix th, table.matrix td { padding: 0; }
+table.matrix thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--surface);
+  font-family: var(--ipa); font-weight: 600; font-size: 0.82rem;
+  width: 34px; height: 62px; vertical-align: bottom; padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+table.matrix thead th.corner { width: 92px; position: sticky; left: 0; z-index: 3; }
+table.matrix tbody th {
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+  font-family: var(--ipa); font-weight: 500; font-size: 0.82rem;
+  text-align: right; padding: 0 11px 0 9px; height: 21px; white-space: nowrap;
+  border-right: 1px solid var(--rule);
+}
+table.matrix tbody tr:hover th { color: var(--ink); }
+table.matrix tbody tr:hover td { background: var(--surface-2); }
+table.matrix td { width: 34px; height: 21px; text-align: center; }
+table.matrix td i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.mx-caption { font-size: .82rem; color: var(--ink-soft); margin-top: 12px; }
+
+/* ── accordion (narrow viewports) ─────────────────────────── */
+.accordion { display: none; flex-direction: column; gap: 8px; }
+.accordion details { background: var(--surface); border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+.accordion summary { padding: 12px 15px; cursor: pointer; display: flex; align-items: baseline; gap: 10px; list-style: none; }
+.accordion summary::-webkit-details-marker { display: none; }
+.accordion summary .sg { font-family: var(--ipa); font-weight: 600; font-size: 1.05rem; }
+.accordion summary .sn { margin-left: auto; font-family: var(--mono); font-size: .78rem; color: var(--ink-faint); }
+.accordion .body { padding: 0 15px 14px; display: flex; flex-direction: column; gap: 8px; }
+.accordion .row { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: baseline; }
+
+/* ── leaderboards ─────────────────────────────────────────── */
+.boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; margin-top: 26px; }
+.board { background: var(--surface); border: 1px solid var(--rule); border-radius: 11px; padding: 22px; }
+.board h3 { margin-bottom: 4px; }
+.board .sub { font-size: .83rem; color: var(--ink-soft); margin-bottom: 16px; }
+.bar { display: grid; grid-template-columns: 66px 1fr 26px; gap: 11px; align-items: center; padding: 4px 0; }
+.bar .k { font-family: var(--ipa); font-size: .95rem; font-weight: 600; text-align: right; }
+.bar .t { height: 15px; border-radius: 3px; min-width: 3px; }
+.bar .v { font-family: var(--mono); font-size: .78rem; color: var(--ink-soft); text-align: right; }
+
+/* ── ough strip ───────────────────────────────────────────── */
+.ough-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin-top: 24px; }
+.ough-cell { background: var(--surface); padding: 16px 15px; display: flex; flex-direction: column; gap: 4px; }
+.ough-cell .w { font-size: 1.12rem; font-weight: 600; }
+.ough-cell .w u { text-decoration: none; border-bottom: 2.5px solid currentColor; padding-bottom: 1px; }
+.ough-cell .s { font-family: var(--ipa); font-size: .92rem; }
+.ough-cell .r { font-size: .76rem; color: var(--ink-faint); margin-top: 2px; }
+
+/* ── prose sections ───────────────────────────────────────── */
+section { margin: clamp(52px, 8vw, 86px) 0; }
+.sec-head { display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; }
+.body-copy { display: flex; flex-direction: column; gap: 17px; color: var(--ink-soft); }
+.body-copy strong { color: var(--ink); font-weight: 600; }
+
+.pull {
+  border-left: 3px solid var(--central);
+  padding: 3px 0 3px 20px; margin: 4px 0;
+  font-size: 1.1rem; color: var(--ink);
+}
+
+footer { border-top: 1px solid var(--rule); padding: 34px 0 70px; margin-top: 60px; }
+.srcs { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; font-size: .84rem; color: var(--ink-soft); max-width: 74ch; }
+.srcs li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; }
+.srcs .n { font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); padding-top: 2px; }
+
+/* ── responsive ───────────────────────────────────────────── */
+@media (max-width: 1080px) {
+  .stage { grid-template-columns: 1fr; }
+  .panel { position: static; }
+}
+@media (max-width: 760px) {
+  body { font-size: 16px; }
+  .wrap { padding: 0 18px; }
+  .stage { display: block; }
+  .canvas, .matrix-wrap { display: none !important; }
+  .accordion { display: flex; }
+  .legend { margin-left: 0; }
+  .panel { display: none; }
+  .view-ctl { display: none; }
+  .thesis { gap: 0 26px; }
+
+  /* The two direction buttons are nowrap and total ~524px side by side,
+     which pushed the whole document sideways. Stack them instead. */
+  .controls { gap: 18px; }
+  .ctl { width: 100%; }
+  .seg { flex-direction: column; }
+  .seg button { white-space: normal; text-align: left; }
+  .seg button + button { border-left: 0; border-top: 1px solid var(--rule); }
+  .check { align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  .edge { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; }
+}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="rule-top"><i></i><i></i><i></i></div>
+    <p class="eyebrow">General American · sound ↔ spelling</p>
+    <h1>The Vowel Crosswalk</h1>
+    <p class="deck">
+      English has sixteen vowel sounds and no reliable way to write any of them. Every line below is a
+      real correspondence between a sound and a spelling — pull one thread and see how far it goes.
+    </p>
+    <div class="thesis">
+      <!-- Four of these are counted from the data at load, so they cannot go
+           stale when a correspondence is added. The 24 is the one figure that
+           is NOT ours — it is Wikipedia's count for /uː/ under a different
+           segmentation (this chart has fewer), so it stays hand-written and
+           footnoted rather than silently disagreeing with its own source. -->
+      <div><b id="t-vowels">–</b><span>vowel sounds in General American<sup>5</sup></span></div>
+      <div><b id="t-spellings">–</b><span>distinct spellings for them, charted here</span></div>
+      <div><b>24</b><span>ways to spell <span class="ipa">/uː/</span> alone<sup>1</sup></span></div>
+      <div><b id="t-worst">–</b><span>sounds the single letter <span class="ipa">⟨o⟩</span> makes<sup>7</sup></span></div>
+      <div><b id="t-oneToOne">–</b><span>vowels with a one-to-one spelling</span></div>
+    </div>
+  </header>
+
+  <div class="figure">
+    <div class="controls">
+      <div class="ctl">
+        <span class="eyebrow">Reading direction</span>
+        <div class="seg" id="dir-seg">
+          <button data-dir="spell" aria-pressed="true">I know the sound — how do I write it?</button>
+          <button data-dir="read" aria-pressed="false">I see the letters — how do I say it?</button>
+        </div>
+      </div>
+      <div class="ctl view-ctl">
+        <span class="eyebrow">View</span>
+        <div class="seg" id="view-seg">
+          <button data-view="graph" aria-pressed="true">Graph</button>
+          <button data-view="matrix" aria-pressed="false">Matrix</button>
+        </div>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="hide-singles">
+        <span>Hide the <span class="num" id="single-count">35</span> spellings that make only one sound</span>
+      </label>
+      <div class="legend">
+        <span><i style="background:var(--front)"></i>Front vowel</span>
+        <span><i style="background:var(--central)"></i>Central</span>
+        <span><i style="background:var(--back)"></i>Back</span>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div>
+        <div class="canvas">
+          <svg id="graph" role="img" aria-label="Bipartite graph linking General American vowel sounds to the letter groups that spell them"></svg>
+          <div class="tip" id="tip"></div>
+        </div>
+
+        <div class="matrix-wrap" id="matrix-wrap" hidden>
+          <div class="matrix-scroll"><table class="matrix" id="matrix"></table></div>
+          <p class="mx-caption">
+            Rows are spellings, columns are sounds. A filled cell is a real correspondence; colour is the
+            sound's backness, and faded cells mark rare or dialect-bound spellings. The emptiness is the
+            point — the grid is about 10% full, but no row and no column has a single tenant.
+          </p>
+        </div>
+
+        <div class="accordion" id="accordion"></div>
+      </div>
+
+      <aside class="panel" id="panel">
+        <div class="panel-empty">
+          <b>Nothing selected</b>
+          Tap any sound or spelling to trace it. Everything else fades, and its example words appear here.
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <section>
+    <div class="sec-head prose">
+      <span class="eyebrow">Where the mess concentrates</span>
+      <h2>The famous villain isn't the worst one</h2>
+      <p style="color:var(--ink-soft)">
+        <span class="ipa">⟨ough⟩</span> gets the jokes, but it appears in a few dozen words. The letters
+        that actually cost you are the ones in every sentence you read.
+      </p>
+    </div>
+    <div class="boards">
+      <div class="board">
+        <h3>Spellings that make the most sounds</h3>
+        <p class="sub">The reading problem — you see these and can't tell what to say.</p>
+        <div id="board-read"></div>
+      </div>
+      <div class="board">
+        <h3>Sounds with the most spellings</h3>
+        <p class="sub">The writing problem — you can say these and can't tell how to spell them.</p>
+        <div id="board-spell"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head prose">
+      <span class="eyebrow">Case study</span>
+      <h2>Six vowels, four letters, one spelling</h2>
+      <p style="color:var(--ink-soft)">
+        <span class="ipa">⟨ough⟩</span> is pronounced at least ten different ways.<sup>2</sup> Six of them
+        are distinct vowels; the rest bring a consonant along. <em>Tough</em>, <em>though</em>,
+        <em>through</em> and <em>thorough</em> are each one letter longer than the last, and no two rhyme.
+      </p>
+    </div>
+    <div class="ough-strip" id="ough-strip"></div>
+  </section>
+
+  <section class="prose">
+    <div class="sec-head">
+      <span class="eyebrow">Why</span>
+      <h2>The spelling stopped moving and the sound didn't</h2>
+    </div>
+    <div class="body-copy">
+      <p>
+        None of this was designed. Between roughly <strong>1400 and 1700</strong>, every long vowel in
+        English shifted position in the mouth — the Great Vowel Shift.<sup>4</sup> The vowel in
+        <em>bite</em> had been closer to today's <em>beet</em>; the vowel in <em>meet</em> had been closer
+        to <em>mate</em>. The whole system rotated.
+      </p>
+      <p>
+        Caxton set up England's first printing press in <strong>1476</strong> — squarely mid-shift.<sup>4</sup>
+        Printers standardised on the spellings they already had, and by the time pronunciation settled in
+        the seventeenth century there were too many books in circulation to renegotiate.
+      </p>
+      <p class="pull">
+        English spelling is a photograph of how the language sounded before it finished changing.
+      </p>
+      <p>
+        So the graph above isn't noise, it's sediment. <span class="ipa">⟨ea⟩</span> in <em>great</em>,
+        <em>head</em> and <em>eat</em> once shared a vowel. <span class="ipa">⟨gh⟩</span> in
+        <em>night</em> was pronounced. Silent <span class="ipa">⟨e⟩</span> was a spoken syllable. Each
+        stranded spelling marks a sound that moved out from under it.
+      </p>
+      <p>
+        The consolation is that it is <strong>messier than phonetic but tidier than its reputation</strong>.
+        When Hanna and colleagues ran 17,310 words through a sound-to-spelling algorithm in 1966, half came
+        out spelled correctly from sound alone, and 84% were wrong by at most one letter.<sup>3</sup> The
+        system is about four-fifths regular. It's the last fifth that contains most of the common words.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Notes and sources</p>
+    <ul class="srcs">
+      <li><span class="n">1</span><span>Counts for <span class="ipa">⟨ou⟩</span> (nine pronunciations, listed explicitly), <span class="ipa">/uː/</span> (up to 24 spellings) and <span class="ipa">/iː/</span> (18–21) — <a href="https://en.wikipedia.org/wiki/English_orthography">Wikipedia, <em>English orthography</em></a>.</span></li>
+      <li><span class="n">2</span><span><span class="ipa">⟨ough⟩</span> "at least ten different ways" — same source.</span></li>
+      <li><span class="n">3</span><span>Hanna, Hanna, Hodges &amp; Rudorf, <em>Phoneme-Grapheme Correspondences as Cues to Spelling Improvement</em>, U.S. Office of Education, 1966 — <a href="https://eric.ed.gov/?id=ED128835">ERIC ED128835</a>. 17,310-word corpus.</span></li>
+      <li><span class="n">4</span><span>Dating and the printing-press mechanism — <a href="https://en.wikipedia.org/wiki/Great_Vowel_Shift">Wikipedia, <em>Great Vowel Shift</em></a>.</span></li>
+      <li><span class="n">5</span><span>Sixteen vowel phonemes in General American; fifteen for the roughly 40% of American speakers with the cot–caught merger, who use one vowel for both <span class="ipa">/ɑ/</span> and <span class="ipa">/ɔ/</span> — <a href="https://en.wikipedia.org/wiki/Cot%E2%80%93caught_merger">Wikipedia, <em>Cot–caught merger</em></a>. The five r-coloured entries are shown in their own band because they are usually analysed as vowel + <span class="ipa">/r/</span> rather than as separate phonemes.</span></li>
+      <li><span class="n">6</span><span>Sounds are placed at their approximate position on the IPA vowel quadrilateral — vertically by tongue height, horizontally by backness. Diphthongs sit at their starting position and carry a glide arrow. A handful of genuinely marginal spellings (<em>guyot</em>, <em>ynambu</em>, <em>chamois</em>) are left out; they would add nodes without teaching anything.</span></li>
+      <li><span class="n">7</span><span><strong>Where this chart disagrees with its own source, on purpose.</strong> Wikipedia credits <span class="ipa">⟨ou⟩</span> with nine pronunciations; here it has six. Two deliberate choices account for the gap. First, r-coloured spellings are treated as single units — <em>four</em> is filed under <span class="ipa">⟨our⟩</span>, not <span class="ipa">⟨ou⟩</span> followed by an <span class="ipa">⟨r⟩</span> — because that is how you actually learn them. Second, General American has no <span class="ipa">/ɒ/</span>, and <em>cough</em> is spelled <span class="ipa">⟨ough⟩</span> regardless. Under this segmentation the single letter <span class="ipa">⟨o⟩</span> is the most ambiguous spelling in English, at eight sounds. Counts shown on nodes and in the rankings are all measured from the 151 correspondences charted here, never quoted.</span></li>
+    </ul>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+// @generated-data-start
+// Generated by scripts/gen_vowel_crosswalk_artifact.py from
+// apps/public/englishos/dictionary/crosswalk.py — do not hand-edit.
+// Everything outside these markers is hand-authored.
+//
+// x = backness (0 front -> 1 back), y = height (0 close -> 1 open): the two
+// axes of the IPA vowel quadrilateral. Diphthongs sit at their nucleus.
+const PHONEMES = [
+  { id:"i", ipa:"i", key:"fleece", g:"front", x:0.05, y:0.04, note:"The long, tense 'ee'. Tongue as high and far forward as it goes." },
+  { id:"ih", ipa:"ɪ", key:"kit", g:"front", x:0.22, y:0.22, note:"Short and lax — not a shortened /i/. The tongue sits lower and more relaxed." },
+  { id:"ey", ipa:"eɪ", key:"face", g:"front", x:0.13, y:0.4, di:true, note:"A glide: starts near /ɛ/ and closes toward /ɪ/." },
+  { id:"eh", ipa:"ɛ", key:"dress", g:"front", x:0.15, y:0.58, note:"Mid-front. Jaw more open than /ɪ/, tongue still forward." },
+  { id:"ae", ipa:"æ", key:"trap", g:"front", x:0.11, y:0.86, note:"Low and front. Only three spellings — the most regular vowel in English." },
+  { id:"er", ipa:"ɝ", key:"nurse", g:"central", x:0.44, y:0.34, note:"The r-coloured vowel. Unstressed it becomes /ɚ/ — the ending of teacher, dollar, doctor." },
+  { id:"sch", ipa:"ə", key:"comma", g:"central", x:0.53, y:0.49, note:"Schwa. The most common vowel in English, and it only appears in unstressed syllables — which is why every vowel letter can spell it." },
+  { id:"ah", ipa:"ʌ", key:"strut", g:"central", x:0.6, y:0.66, note:"Schwa's stressed cousin. Same neighbourhood, but it takes the beat." },
+  { id:"ay", ipa:"aɪ", key:"price", g:"central", x:0.36, y:0.93, di:true, note:"Opens low and central, then closes toward /ɪ/." },
+  { id:"aw", ipa:"aʊ", key:"mouth", g:"central", x:0.5, y:0.9, di:true, note:"Same low start as /aɪ/, but glides back and rounds toward /ʊ/." },
+  { id:"uw", ipa:"u", key:"goose", g:"back", x:0.94, y:0.04, note:"High, back and rounded — and the single worst-spelled sound in English." },
+  { id:"uh", ipa:"ʊ", key:"foot", g:"back", x:0.79, y:0.23, note:"Short, lax and rounded. Only about a dozen common words use it." },
+  { id:"ow", ipa:"oʊ", key:"goat", g:"back", x:0.87, y:0.41, di:true, note:"Starts mid-back and rounds up toward /ʊ/. British English starts it more centrally: /əʊ/." },
+  { id:"ao", ipa:"ɔ", key:"thought", g:"back", x:0.93, y:0.63, note:"Open-mid and rounded. Roughly 40% of American speakers have merged this with /ɑ/ — for them cot and caught sound identical." },
+  { id:"oy", ipa:"ɔɪ", key:"choice", g:"back", x:0.78, y:0.75, di:true, note:"Starts at /ɔ/ and glides to /ɪ/. The most reliably spelled vowel in the language." },
+  { id:"aa", ipa:"ɑ", key:"lot", g:"back", x:0.94, y:0.94, note:"Low, back, unrounded. In General American this covers both LOT and PALM — hot and father share a vowel." },
+];
+
+// R-coloured — their own band; usually analysed as vowel + /r/, which is also
+// why they carry no ARPABET phone and never join the error store in the app.
+const RHOTIC = [
+  { id:"ir", ipa:"ɪr", key:"near", g:"front", note:"Vowel plus /r/. Non-rhotic accents keep a centring glide here instead: /ɪə/." },
+  { id:"air", ipa:"ɛr", key:"square", g:"front", note:"Vowel plus /r/. The ⟨air⟩ ⟨are⟩ ⟨ear⟩ ⟨ere⟩ split is almost pure history." },
+  { id:"ar", ipa:"ɑr", key:"start", g:"back", note:"Vowel plus /r/. Nearly always ⟨ar⟩ — one of the more trustworthy patterns." },
+  { id:"or", ipa:"ɔr", key:"north", g:"back", note:"Vowel plus /r/. Absorbs both the NORTH and FORCE sets, which merged for most speakers." },
+  { id:"ur", ipa:"ʊr", key:"cure", g:"back", note:"Vowel plus /r/, and the least stable of the five — many speakers shift poor and sure toward /ɔr/." },
+];
+
+// Every correspondence carries real example words.
+// strength: core = the main pattern · common · rare = a handful of words.
+const EDGES = [
+  { p:"i", g:"ee", ex:"see, tree, green", s:"core" },
+  { p:"i", g:"ea", ex:"eat, team, leaf", s:"core" },
+  { p:"i", g:"e", ex:"be, me, evil", s:"core" },
+  { p:"i", g:"ie", ex:"field, chief, believe", s:"core" },
+  { p:"i", g:"y", ex:"happy, city, funny", s:"core", cav:"word-final, unstressed" },
+  { p:"i", g:"e_e", ex:"these, complete, theme", s:"common" },
+  { p:"i", g:"ei", ex:"receive, ceiling, seize", s:"common" },
+  { p:"i", g:"i", ex:"machine, ski, police", s:"common", cav:"mostly loanwords" },
+  { p:"i", g:"ey", ex:"key, monkey, valley", s:"common" },
+  { p:"i", g:"eo", ex:"people", s:"rare" },
+  { p:"i", g:"ae", ex:"algae, Caesar", s:"rare" },
+  { p:"i", g:"oe", ex:"amoeba, phoenix", s:"rare" },
+  { p:"i", g:"i_e", ex:"marine, sardine", s:"rare" },
+  { p:"ih", g:"i", ex:"sit, big, wish", s:"core" },
+  { p:"ih", g:"y", ex:"gym, myth, system", s:"core" },
+  { p:"ih", g:"ui", ex:"build, guilt, guitar", s:"common" },
+  { p:"ih", g:"e", ex:"pretty, English, before", s:"common" },
+  { p:"ih", g:"a", ex:"village, damage, orange", s:"common", cav:"unstressed -age" },
+  { p:"ih", g:"u", ex:"busy, business", s:"rare" },
+  { p:"ih", g:"o", ex:"women", s:"rare" },
+  { p:"ih", g:"ie", ex:"sieve", s:"rare" },
+  { p:"ih", g:"ee", ex:"been", s:"rare", cav:"varies by speaker" },
+  { p:"eh", g:"e", ex:"bed, ten, help", s:"core" },
+  { p:"eh", g:"ea", ex:"head, bread, weather", s:"core" },
+  { p:"eh", g:"ue", ex:"guest, guess", s:"common" },
+  { p:"eh", g:"a", ex:"any, many", s:"rare" },
+  { p:"eh", g:"ai", ex:"said, again", s:"rare" },
+  { p:"eh", g:"ie", ex:"friend", s:"rare" },
+  { p:"eh", g:"eo", ex:"leopard, jeopardy", s:"rare" },
+  { p:"eh", g:"u", ex:"bury", s:"rare" },
+  { p:"eh", g:"ae", ex:"aesthetic", s:"rare", cav:"US spelling" },
+  { p:"ae", g:"a", ex:"cat, hand, map", s:"core" },
+  { p:"ae", g:"ai", ex:"plaid", s:"rare" },
+  { p:"ae", g:"au", ex:"laugh, aunt", s:"rare", cav:"aunt varies by region" },
+  { p:"aa", g:"o", ex:"hot, stop, box", s:"core" },
+  { p:"aa", g:"a", ex:"father, spa, drama", s:"core" },
+  { p:"aa", g:"al", ex:"calm, palm, half", s:"common", cav:"the l is silent" },
+  { p:"aa", g:"ow", ex:"knowledge", s:"rare" },
+  { p:"aa", g:"ach", ex:"yacht", s:"rare" },
+  { p:"ao", g:"aw", ex:"saw, law, dawn", s:"core" },
+  { p:"ao", g:"au", ex:"cause, autumn, fault", s:"core" },
+  { p:"ao", g:"a", ex:"all, ball, walk, salt", s:"core" },
+  { p:"ao", g:"ough", ex:"bought, thought, cough", s:"common" },
+  { p:"ao", g:"augh", ex:"caught, daughter, taught", s:"common" },
+  { p:"ao", g:"o", ex:"off, dog, long, cross", s:"common", cav:"merges with /ɑ/ for many speakers" },
+  { p:"ao", g:"oa", ex:"broad", s:"rare" },
+  { p:"uh", g:"oo", ex:"book, good, foot", s:"core" },
+  { p:"uh", g:"u", ex:"put, full, push", s:"core" },
+  { p:"uh", g:"ou", ex:"could, would, should", s:"common" },
+  { p:"uh", g:"o", ex:"wolf, woman, bosom", s:"rare" },
+  { p:"uw", g:"oo", ex:"food, moon, soon", s:"core" },
+  { p:"uw", g:"u", ex:"truth, ruby, super", s:"core" },
+  { p:"uw", g:"u_e", ex:"rule, June, flute", s:"core" },
+  { p:"uw", g:"ew", ex:"grew, flew, chew", s:"core" },
+  { p:"uw", g:"ue", ex:"blue, true, glue", s:"core" },
+  { p:"uw", g:"ou", ex:"soup, group, you", s:"common" },
+  { p:"uw", g:"ui", ex:"fruit, juice, suit", s:"common" },
+  { p:"uw", g:"o", ex:"do, to, who", s:"common" },
+  { p:"uw", g:"o_e", ex:"move, prove, lose", s:"common" },
+  { p:"uw", g:"oe", ex:"shoe, canoe", s:"rare" },
+  { p:"uw", g:"ough", ex:"through", s:"rare" },
+  { p:"uw", g:"eu", ex:"maneuver, sleuth", s:"rare" },
+  { p:"uw", g:"wo", ex:"two", s:"rare" },
+  { p:"ah", g:"u", ex:"cup, sun, but", s:"core" },
+  { p:"ah", g:"o", ex:"son, love, come, money", s:"core" },
+  { p:"ah", g:"ou", ex:"touch, country, young", s:"common" },
+  { p:"ah", g:"oo", ex:"blood, flood", s:"rare" },
+  { p:"ah", g:"ough", ex:"tough, rough, enough", s:"rare" },
+  { p:"ah", g:"oe", ex:"does", s:"rare" },
+  { p:"sch", g:"a", ex:"about, sofa, banana", s:"core" },
+  { p:"sch", g:"e", ex:"taken, problem, the", s:"core" },
+  { p:"sch", g:"i", ex:"pencil, family, president", s:"core" },
+  { p:"sch", g:"o", ex:"lemon, second, common", s:"core" },
+  { p:"sch", g:"u", ex:"supply, minus, circus", s:"core" },
+  { p:"sch", g:"ou", ex:"famous, nervous", s:"common" },
+  { p:"sch", g:"ai", ex:"mountain, certain, bargain", s:"common" },
+  { p:"sch", g:"io", ex:"nation, mission", s:"common" },
+  { p:"sch", g:"eo", ex:"dungeon, surgeon", s:"rare" },
+  { p:"sch", g:"ough", ex:"thorough, borough", s:"rare" },
+  { p:"sch", g:"ia", ex:"parliament", s:"rare" },
+  { p:"er", g:"er", ex:"her, term, serve", s:"core" },
+  { p:"er", g:"ir", ex:"bird, girl, first", s:"core" },
+  { p:"er", g:"ur", ex:"turn, burn, nurse", s:"core" },
+  { p:"er", g:"ear", ex:"earth, learn, heard", s:"common" },
+  { p:"er", g:"or", ex:"word, work, world", s:"common" },
+  { p:"er", g:"ar", ex:"dollar, sugar, collar", s:"common", cav:"unstressed /ɚ/" },
+  { p:"er", g:"ure", ex:"measure, picture", s:"common", cav:"unstressed /ɚ/" },
+  { p:"er", g:"our", ex:"journey, courage", s:"rare" },
+  { p:"er", g:"yr", ex:"myrtle, myrrh", s:"rare" },
+  { p:"ey", g:"a_e", ex:"make, name, late", s:"core" },
+  { p:"ey", g:"ai", ex:"rain, wait, train", s:"core" },
+  { p:"ey", g:"ay", ex:"day, play, say", s:"core" },
+  { p:"ey", g:"a", ex:"baby, table, apron", s:"core", cav:"open syllable" },
+  { p:"ey", g:"eigh", ex:"weigh, neighbor, sleigh", s:"common" },
+  { p:"ey", g:"ei", ex:"vein, reign, beige", s:"common" },
+  { p:"ey", g:"ey", ex:"they, grey, obey", s:"common" },
+  { p:"ey", g:"ea", ex:"great, break, steak", s:"rare" },
+  { p:"ey", g:"et", ex:"ballet, buffet, gourmet", s:"rare", cav:"French loans" },
+  { p:"ey", g:"é", ex:"café, résumé", s:"rare" },
+  { p:"ey", g:"aigh", ex:"straight", s:"rare" },
+  { p:"ay", g:"i_e", ex:"time, nine, like", s:"core" },
+  { p:"ay", g:"igh", ex:"high, night, light", s:"core" },
+  { p:"ay", g:"y", ex:"my, sky, cry", s:"core" },
+  { p:"ay", g:"i", ex:"find, mind, child", s:"core" },
+  { p:"ay", g:"ie", ex:"pie, tie, die", s:"common" },
+  { p:"ay", g:"ei", ex:"height, either", s:"rare", cav:"either varies" },
+  { p:"ay", g:"uy", ex:"buy, guy", s:"rare" },
+  { p:"ay", g:"ye", ex:"dye, bye", s:"rare" },
+  { p:"ay", g:"eye", ex:"eye", s:"rare" },
+  { p:"ay", g:"ai", ex:"aisle", s:"rare" },
+  { p:"oy", g:"oi", ex:"coin, point, voice", s:"core" },
+  { p:"oy", g:"oy", ex:"boy, toy, enjoy", s:"core" },
+  { p:"oy", g:"uoy", ex:"buoy", s:"rare", cav:"chiefly British; US often /ˈbuːi/" },
+  { p:"ow", g:"o", ex:"go, no, open, most", s:"core" },
+  { p:"ow", g:"o_e", ex:"bone, home, note", s:"core" },
+  { p:"ow", g:"oa", ex:"boat, road, coat", s:"core" },
+  { p:"ow", g:"ow", ex:"snow, know, grow", s:"core" },
+  { p:"ow", g:"oe", ex:"toe, goes, hoe", s:"common" },
+  { p:"ow", g:"ough", ex:"though, dough, although", s:"rare" },
+  { p:"ow", g:"ou", ex:"shoulder, soul, boulder", s:"rare" },
+  { p:"ow", g:"eau", ex:"beau, bureau, plateau", s:"rare" },
+  { p:"ow", g:"olk", ex:"folk, yolk", s:"rare" },
+  { p:"ow", g:"ew", ex:"sew", s:"rare" },
+  { p:"aw", g:"ou", ex:"out, house, sound", s:"core" },
+  { p:"aw", g:"ow", ex:"now, cow, down", s:"core" },
+  { p:"aw", g:"ough", ex:"bough, plough, drought", s:"rare" },
+  { p:"ar", g:"ar", ex:"car, star, hard", s:"core" },
+  { p:"ar", g:"ear", ex:"heart, hearth", s:"rare" },
+  { p:"ar", g:"er", ex:"sergeant", s:"rare" },
+  { p:"or", g:"or", ex:"for, north, storm", s:"core" },
+  { p:"or", g:"ore", ex:"more, store, before", s:"core" },
+  { p:"or", g:"oar", ex:"board, roar, soar", s:"common" },
+  { p:"or", g:"our", ex:"four, pour, course", s:"common" },
+  { p:"or", g:"oor", ex:"door, floor", s:"common" },
+  { p:"or", g:"ar", ex:"war, warm, quart", s:"common", cav:"after w" },
+  { p:"or", g:"aur", ex:"dinosaur, centaur", s:"rare" },
+  { p:"ir", g:"ear", ex:"ear, hear, near", s:"core" },
+  { p:"ir", g:"eer", ex:"deer, beer, cheer", s:"core" },
+  { p:"ir", g:"ere", ex:"here, mere, sphere", s:"common" },
+  { p:"ir", g:"ier", ex:"pier, fierce", s:"rare" },
+  { p:"ir", g:"eir", ex:"weird", s:"rare" },
+  { p:"air", g:"air", ex:"hair, chair, fair", s:"core" },
+  { p:"air", g:"are", ex:"care, share, bare", s:"core" },
+  { p:"air", g:"ear", ex:"bear, pear, wear", s:"common" },
+  { p:"air", g:"ere", ex:"there, where", s:"common" },
+  { p:"air", g:"eir", ex:"their, heir", s:"rare" },
+  { p:"air", g:"ayer", ex:"prayer", s:"rare" },
+  { p:"ur", g:"ure", ex:"pure, cure, sure", s:"core" },
+  { p:"ur", g:"ur", ex:"during, rural", s:"common" },
+  { p:"ur", g:"our", ex:"tour, gourd", s:"rare" },
+  { p:"ur", g:"oor", ex:"poor, moor", s:"rare", cav:"often shifts to /ɔr/" },
+];
+// @generated-data-end
+
+const ALL_P = PHONEMES.concat(RHOTIC);
+const P_BY  = Object.fromEntries(ALL_P.map(p => [p.id, p]));
+
+/* ── derive graphemes ─────────────────────────────────────── */
+const GMAP = new Map();
+for (const e of EDGES) {
+  if (!GMAP.has(e.g)) GMAP.set(e.g, { id:e.g, edges:[] });
+  GMAP.get(e.g).edges.push(e);
+}
+const GRAPHEMES = [...GMAP.values()];
+GRAPHEMES.forEach(g => { g.fan = g.edges.length; });
+
+for (const p of ALL_P) p.edges = EDGES.filter(e => e.p === p.id);
+
+const label = id => id.includes("_") ? id.replace("_", " … ") : id;
+const SINGLES = GRAPHEMES.filter(g => g.fan === 1).length;
+document.getElementById("single-count").textContent = SINGLES;
+
+/* ═══════════════════════════════════════════════════════════════
+   STATE + RENDER
+   ═══════════════════════════════════════════════════════════════ */
+const state = { dir:"spell", view:"graph", hideSingles:false, focus:null };
+
+const svg    = document.getElementById("graph");
+const tip    = document.getElementById("tip");
+const panel  = document.getElementById("panel");
+const NS     = "http://www.w3.org/2000/svg";
+const el = (n, a = {}) => { const x = document.createElementNS(NS, n); for (const k in a) x.setAttribute(k, a[k]); return x; };
+const hue = g => g === "front" ? "var(--front)" : g === "central" ? "var(--central)" : "var(--back)";
+
+const visibleGraphemes = () => {
+  const list = state.hideSingles ? GRAPHEMES.filter(g => g.fan > 1) : GRAPHEMES.slice();
+  // Reading mode ranks by ambiguity; spelling mode sorts alphabetically for lookup.
+  return state.dir === "read"
+    ? list.sort((a, b) => b.fan - a.fan || a.id.localeCompare(b.id))
+    : list.sort((a, b) => a.id.localeCompare(b.id));
+};
+
+const W = 1000, GX = 742, PAD_T = 54;
+let firstPaint = true;
+
+function drawGraph() {
+  const gs = visibleGraphemes();
+  const step = 20.5;
+  const H = Math.max(1180, PAD_T * 2 + (gs.length - 1) * step);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+
+  const quadTop = 96, quadH = H * 0.50;
+  const bandTop = quadTop + quadH + 118;
+  const bandStep = Math.min(96, (H - bandTop - 60) / 4);
+
+  /* Namespaced: five r-coloured sounds share ids with r-spellings
+     (ar, or, ur, ir, air, er). One flat map lets the spelling column
+     overwrite them, which drew the sounds on top of the spellings. */
+  const pos = {};
+  const P_ = id => "p:" + id, G_ = id => "g:" + id;
+  /* Place on the trapezoid, not a rectangle: the chart's front edge
+     slants inward as it opens, so the usable width shrinks with height. */
+  const INSET = 48;
+  for (const p of PHONEMES) {
+    const left = 176 + INSET * p.y;
+    pos[P_(p.id)] = { x: left + p.x * (176 - INSET * p.y), y: quadTop + p.y * quadH };
+  }
+  RHOTIC.forEach((p, i) => { pos[P_(p.id)] = { x: 214 + (p.g === "front" ? 0 : 104), y: bandTop + i * bandStep }; });
+  gs.forEach((g, i) => { pos[G_(g.id)] = { x: GX, y: PAD_T + i * step }; });
+
+  const gEdge = el("g"), gNode = el("g");
+
+  /* frame: the vowel quadrilateral the sound side is drawn on */
+  const q = [[176, quadTop], [352, quadTop], [352, quadTop + quadH], [176 + INSET, quadTop + quadH]];
+  gEdge.appendChild(el("path", { class:"quadline", d:`M${q[0]} L${q[1]} L${q[2]} L${q[3]} Z` }));
+  const ax = (x, y, t, anchor) => { const n = el("text", { class:"axis", x, y, "text-anchor":anchor || "middle" }); n.textContent = t; gEdge.appendChild(n); };
+  ax(176, quadTop - 34, "Front", "start");
+  ax(352, quadTop - 34, "Back", "end");
+  ax(150, quadTop - 12, "Close", "end");
+  ax(150, quadTop + quadH + 6, "Open", "end");
+  ax(GX, PAD_T - 26, state.dir === "read" ? "Spellings, most ambiguous first" : "Spellings, A–Z", "start");
+  gEdge.appendChild(el("line", { class:"bandline", x1:120, y1:bandTop - 52, x2:400, y2:bandTop - 52 }));
+  ax(120, bandTop - 62, "R-coloured — vowel + /r/", "start");
+
+  /* edges */
+  const shown = new Set(gs.map(g => g.id));
+  EDGES.forEach((e, i) => {
+    if (!shown.has(e.g)) return;
+    const a = pos[P_(e.p)], b = pos[G_(e.g)];
+    if (!a || !b) return;
+    const p = el("path", {
+      class: "edge",
+      d: `M${a.x + 21},${a.y} C${a.x + 190},${a.y} ${b.x - 240},${b.y} ${b.x - 13},${b.y}`,
+      stroke: hue(P_BY[e.p].g),
+      "stroke-width": e.s === "core" ? 1.25 : e.s === "common" ? 0.9 : 0.55,
+      "stroke-opacity": e.s === "core" ? 0.5 : e.s === "common" ? 0.36 : 0.22
+    });
+    p.dataset.p = e.p; p.dataset.g = e.g;
+    if (firstPaint && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const len = 900;
+      p.style.strokeDasharray = len;
+      p.style.strokeDashoffset = len;
+      p.style.animation = `draw .9s ${(a.y / 1400) * 0.7 + 0.1}s cubic-bezier(.4,0,.2,1) forwards`;
+    }
+    gEdge.appendChild(p);
+  });
+
+  /* sound nodes */
+  for (const p of ALL_P) {
+    const c = pos[P_(p.id)]; if (!c) continue;
+    const n = el("g", { class:"node", tabindex:"0", role:"button",
+      "aria-label":`${p.ipa}, as in ${p.key}. ${p.edges.length} spellings.` });
+    n.dataset.type = "p"; n.dataset.id = p.id;
+    const r = state.dir === "spell" ? 15 + Math.min(9, p.edges.length * 0.62) : 15;
+    n.appendChild(el("circle", { class:"disc", cx:c.x, cy:c.y, r, fill:`color-mix(in srgb, ${hue(p.g)} 16%, transparent)`, stroke:hue(p.g), "stroke-width":1.5 }));
+    const t = el("text", { class:"glyph", x:c.x, y:c.y + 5, "text-anchor":"middle", fill:hue(p.g) });
+    t.textContent = p.ipa; n.appendChild(t);
+    const k = el("text", { class:"keyword", x:c.x - r - 9, y:c.y + 3.5, "text-anchor":"end" });
+    k.textContent = p.key.toUpperCase(); n.appendChild(k);
+    if (p.di) {
+      const d = el("text", { class:"gcount", x:c.x, y:c.y - r - 5, "text-anchor":"middle" });
+      d.textContent = "↗"; n.appendChild(d);
+    }
+    n.appendChild(el("circle", { class:"hit", cx:c.x, cy:c.y, r:r + 8 }));
+    gNode.appendChild(n);
+  }
+
+  /* spelling nodes */
+  for (const g of gs) {
+    const c = pos[G_(g.id)];
+    const n = el("g", { class:"node", tabindex:"0", role:"button",
+      "aria-label":`Spelling ${label(g.id)}. ${g.fan} sound${g.fan > 1 ? "s" : ""}.` });
+    n.dataset.type = "g"; n.dataset.id = g.id;
+    const w = state.dir === "read" ? 3 + Math.min(7, g.fan * 0.85) : 4;
+    n.appendChild(el("circle", { class:"disc", cx:c.x, cy:c.y, r:w, fill:"var(--ink-faint)", stroke:"none" }));
+    // Count rides as a tspan so it flows after the label — estimating the
+    // label's width collided on the wider ones (⟨ew⟩2 sounds).
+    const t = el("text", { class:"glyph", x:c.x + 13, y:c.y + 5, fill:"var(--ink)" });
+    const lab = el("tspan");
+    lab.textContent = "⟨" + label(g.id) + "⟩";
+    t.appendChild(lab);
+    if (g.fan > 1) {
+      const cnt = el("tspan", { class:"gcount", dx:"7" });
+      cnt.textContent = g.fan + " sounds";
+      t.appendChild(cnt);
+    }
+    n.appendChild(t);
+    n.appendChild(el("rect", { class:"hit", x:c.x - 11, y:c.y - 10, width:250, height:20 }));
+    gNode.appendChild(n);
+  }
+
+  svg.appendChild(gEdge);
+  svg.appendChild(gNode);
+  firstPaint = false;
+  applyFocus();
+}
+
+/* ── focus ────────────────────────────────────────────────── */
+function applyFocus() {
+  const f = state.focus;
+  svg.classList.toggle("dimmed", !!f);
+  svg.querySelectorAll(".edge, .node").forEach(n => n.classList.remove("on"));
+  if (!f) { renderPanel(null); return; }
+
+  const isP = f.type === "p";
+  const matches = EDGES.filter(e => isP ? e.p === f.id : e.g === f.id);
+  const partners = new Set(matches.map(e => isP ? e.g : e.p));
+
+  svg.querySelectorAll(".edge").forEach(p => {
+    if ((isP ? p.dataset.p : p.dataset.g) === f.id) p.classList.add("on");
+  });
+  svg.querySelectorAll(".node").forEach(n => {
+    const me = n.dataset.type === f.type && n.dataset.id === f.id;
+    if (me || (n.dataset.type !== f.type && partners.has(n.dataset.id))) n.classList.add("on");
+  });
+  renderPanel(f);
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+function renderPanel(f) {
+  if (!f) {
+    panel.innerHTML = `<div class="panel-empty"><b>Nothing selected</b>
+      Tap any sound or spelling to trace it. Everything else fades, and its example words appear here.</div>`;
+    return;
+  }
+  const isP = f.type === "p";
+  const rank = { core:0, common:1, rare:2 };
+  const rows = EDGES.filter(e => isP ? e.p === f.id : e.g === f.id)
+                    .sort((a, b) => rank[a.s] - rank[b.s]);
+
+  let head, note;
+  if (isP) {
+    const p = P_BY[f.id];
+    head = `<span class="big" style="color:${hue(p.g)}">/${esc(p.ipa)}/</span>
+            <span class="lexset">${esc(p.key)}</span>
+            <span class="num" style="margin-left:auto;font-size:.8rem;color:var(--ink-faint)">${rows.length} spellings</span>`;
+    note = p.note;
+  } else {
+    const g = GMAP.get(f.id);
+    head = `<span class="big">⟨${esc(label(g.id))}⟩</span>
+            <span class="num" style="margin-left:auto;font-size:.8rem;color:var(--ink-faint)">${g.fan} sound${g.fan > 1 ? "s" : ""}</span>`;
+    note = g.fan === 1
+      ? "Unambiguous when reading — this spelling makes exactly one vowel sound."
+      : `Seeing these letters, you cannot tell which of ${g.fan} sounds is meant without knowing the word.`;
+  }
+
+  panel.innerHTML = `
+    <div class="p-head">${head}</div>
+    <p class="p-note">${esc(note)}</p>
+    <ul class="p-list">
+      ${rows.map(e => {
+        const other = isP ? "⟨" + esc(label(e.g)) + "⟩" : "/" + esc(P_BY[e.p].ipa) + "/";
+        const col = isP ? "" : ` style="color:${hue(P_BY[e.p].g)}"`;
+        return `<li class="${e.s}">
+          <span class="p-key"${col}>${other}</span>
+          <span class="p-ex">${esc(e.ex)}${e.cav ? `<span class="cav">${esc(e.cav)}</span>` : ""}</span>
+        </li>`;
+      }).join("")}
+    </ul>
+    <button class="p-close" id="p-close">Clear selection</button>`;
+  const b = document.getElementById("p-close");
+  if (b) b.addEventListener("click", () => { state.focus = null; applyFocus(); });
+}
+
+/* ── interaction ──────────────────────────────────────────── */
+svg.addEventListener("click", ev => {
+  const n = ev.target.closest(".node");
+  if (!n) { state.focus = null; applyFocus(); return; }
+  const next = { type:n.dataset.type, id:n.dataset.id };
+  const same = state.focus && state.focus.type === next.type && state.focus.id === next.id;
+  state.focus = same ? null : next;
+  applyFocus();
+});
+svg.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  const n = ev.target.closest(".node"); if (!n) return;
+  ev.preventDefault();
+  state.focus = { type:n.dataset.type, id:n.dataset.id };
+  applyFocus();
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && state.focus) { state.focus = null; applyFocus(); }
+});
+
+svg.addEventListener("mouseover", ev => {
+  const n = ev.target.closest(".node"); if (!n) return;
+  const r = svg.getBoundingClientRect(), b = n.getBoundingClientRect();
+  if (n.dataset.type === "p") {
+    const p = P_BY[n.dataset.id];
+    tip.innerHTML = `<span class="ipa">/${esc(p.ipa)}/</span> as in <em>${esc(p.key)}</em> · ${p.edges.length} spellings`;
+  } else {
+    const g = GMAP.get(n.dataset.id);
+    tip.innerHTML = `<span class="g">⟨${esc(label(g.id))}⟩</span> · ${g.fan} sound${g.fan > 1 ? "s" : ""} · <em>${esc(g.edges[0].ex.split(",")[0])}</em>`;
+  }
+  tip.style.left = (b.left - r.left + b.width / 2) + "px";
+  tip.style.top  = (b.top - r.top) + "px";
+  tip.classList.add("show");
+});
+svg.addEventListener("mouseout", ev => { if (ev.target.closest(".node")) tip.classList.remove("show"); });
+
+document.getElementById("dir-seg").addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  state.dir = b.dataset.dir;
+  [...ev.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  drawGraph(); drawMatrix();
+});
+document.getElementById("view-seg").addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  state.view = b.dataset.view;
+  [...ev.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  document.querySelector(".canvas").hidden = state.view !== "graph";
+  document.getElementById("matrix-wrap").hidden = state.view !== "matrix";
+});
+document.getElementById("hide-singles").addEventListener("change", ev => {
+  state.hideSingles = ev.target.checked;
+  drawGraph(); drawMatrix();
+});
+
+/* ── matrix ───────────────────────────────────────────────── */
+function drawMatrix() {
+  const gs = visibleGraphemes();
+  const t = document.getElementById("matrix");
+  const op = { core:0.95, common:0.6, rare:0.28 };
+  const key = new Map(EDGES.map(e => [e.p + "|" + e.g, e]));
+  t.innerHTML =
+    `<thead><tr><th class="corner"></th>${ALL_P.map(p =>
+      `<th title="${esc(p.key)}" style="color:${hue(p.g)}">${esc(p.ipa)}</th>`).join("")}</tr></thead>` +
+    `<tbody>${gs.map(g => `<tr><th>⟨${esc(label(g.id))}⟩</th>${ALL_P.map(p => {
+      const e = key.get(p.id + "|" + g.id);
+      return `<td>${e ? `<i title="${esc(e.ex)}" style="background:${hue(p.g)};opacity:${op[e.s]}"></i>` : ""}</td>`;
+    }).join("")}</tr>`).join("")}</tbody>`;
+}
+
+/* ── accordion (narrow viewports) ─────────────────────────── */
+function drawAccordion() {
+  document.getElementById("accordion").innerHTML = ALL_P.map(p => `
+    <details>
+      <summary><span class="sg" style="color:${hue(p.g)}">/${esc(p.ipa)}/</span>
+        <span class="lexset">${esc(p.key)}</span>
+        <span class="sn">${p.edges.length} spellings</span></summary>
+      <div class="body">
+        <p class="p-note" style="margin:0 0 4px">${esc(p.note)}</p>
+        ${p.edges.map(e => `<div class="row">
+          <span class="p-key">⟨${esc(label(e.g))}⟩</span>
+          <span class="p-ex">${esc(e.ex)}${e.cav ? `<span class="cav">${esc(e.cav)}</span>` : ""}</span>
+        </div>`).join("")}
+      </div>
+    </details>`).join("");
+}
+
+/* ── leaderboards ─────────────────────────────────────────── */
+function drawBoards() {
+  const top = (rows, max, colour) => rows.map(r => `
+    <div class="bar">
+      <span class="k"${r.col ? ` style="color:${r.col}"` : ""}>${r.label}</span>
+      <span class="t" style="width:${(r.n / max) * 100}%;background:${colour(r)}"></span>
+      <span class="v">${r.n}</span>
+    </div>`).join("");
+
+  const read = GRAPHEMES.slice().sort((a, b) => b.fan - a.fan).slice(0, 10)
+    .map(g => ({ label:"⟨" + esc(label(g.id)) + "⟩", n:g.fan }));
+  document.getElementById("board-read").innerHTML =
+    top(read, read[0].n, () => "var(--ink-soft)");
+
+  const spell = ALL_P.slice().sort((a, b) => b.edges.length - a.edges.length).slice(0, 10)
+    .map(p => ({ label:"/" + esc(p.ipa) + "/", n:p.edges.length, col:hue(p.g), g:p.g }));
+  document.getElementById("board-spell").innerHTML =
+    top(spell, spell[0].n, r => hue(r.g));
+}
+
+/* ── ough strip ───────────────────────────────────────────── */
+function drawOugh() {
+  const cells = [
+    { w:"th", s:"ɔ",  k:"thought" }, { w:"th", s:"oʊ", k:"though" },
+    { w:"thr", s:"u", k:"through" }, { w:"t",  s:"ʌ",  k:"tough" },
+    { w:"b",  s:"aʊ", k:"bough" },   { w:"thor", s:"ə", k:"thorough" }
+  ];
+  const col = ipa => { const p = ALL_P.find(x => x.ipa === ipa); return p ? hue(p.g) : "var(--ink)"; };
+  const rest = { thought:"t", though:"", through:"", tough:"f", bough:"", thorough:"" };
+  document.getElementById("ough-strip").innerHTML = cells.map(c => `
+    <div class="ough-cell">
+      <span class="w">${c.w}<u style="color:${col(c.s)}">ough</u>${rest[c.k] || ""}</span>
+      <span class="s" style="color:${col(c.s)}">/${esc(c.s)}/</span>
+      <span class="r">${esc(c.k)}</span>
+    </div>`).join("");
+}
+
+/* keyframes for the load sweep */
+const kf = document.createElement("style");
+kf.textContent = "@keyframes draw { to { stroke-dashoffset: 0; } }";
+document.head.appendChild(kf);
+
+/* Count the headline figures from the data rather than restating them, so a
+   change to the correspondence set cannot leave the masthead quietly wrong. */
+function fillThesis() {
+  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
+  set("t-vowels", PHONEMES.length);
+  set("t-spellings", GRAPHEMES.length);
+  set("t-worst", Math.max(...GRAPHEMES.map(g => g.fan)));
+  set("t-oneToOne", ALL_P.filter(p => p.edges.length === 1).length);
+}
+
+fillThesis();
+drawGraph();
+drawMatrix();
+drawAccordion();
+drawBoards();
+drawOugh();
+</script>

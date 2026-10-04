@@ -1,0 +1,338 @@
+::highlight(eos-reading-words) {
+  color: inherit;
+  background: color-mix(in srgb, #8ca8ff 28%, transparent);
+  text-decoration: underline 1.5px #667bd6;
+  text-decoration-skip-ink: auto;
+  text-underline-offset: 0.16em;
+}
+
+#eos-reading-card,
+#eos-reading-card * {
+  box-sizing: border-box;
+}
+
+#eos-reading-card {
+  --eos-ink: #1d2233;
+  --eos-paper: #f7f8fc;
+  --eos-rule: #cbd2e8;
+  --eos-muted: #68708a;
+  --eos-accent: #596fc4;
+  --eos-warn: #b45309;      /* a rated star, on light paper */
+  position: fixed;
+  z-index: 2147483647;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(430px, calc(100dvh - 24px));
+  overflow: auto;
+  padding: 16px 16px 13px;
+  color: var(--eos-ink);
+  background: color-mix(in srgb, var(--eos-paper) 96%, transparent);
+  border: 1px solid var(--eos-rule);
+  border-radius: 9px 9px 9px 2px;
+  box-shadow: 0 16px 48px rgba(23, 28, 48, 0.2);
+  font: 14px/1.48 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  text-align: left;
+  letter-spacing: normal;
+  isolation: isolate;
+  backdrop-filter: blur(14px);
+}
+
+#eos-reading-card[data-display="margin"],
+#eos-reading-card[data-display="auto"] {
+  right: 18px;
+  top: var(--eos-anchor-y, 96px);
+}
+
+#eos-reading-card[data-display="margin"]::before,
+#eos-reading-card[data-display="auto"]::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 19px;
+  width: 28px;
+  border-top: 1px solid var(--eos-accent);
+  opacity: 0.72;
+}
+
+#eos-reading-card[data-display="corner"] {
+  right: 18px;
+  bottom: 18px;
+}
+
+#eos-reading-card[data-display="ink"] {
+  left: var(--eos-anchor-x, 12px);
+  top: var(--eos-anchor-y, 96px);
+}
+
+#eos-reading-card .eos-reading-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+  color: var(--eos-muted);
+  font: 600 10px/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#eos-reading-card .eos-reading-kicker::before {
+  content: "";
+  width: 16px;
+  border-top: 1px solid var(--eos-accent);
+}
+
+#eos-reading-card .eos-reading-title {
+  margin: 0;
+  color: var(--eos-ink);
+  font: 650 22px/1.18 ui-serif, Georgia, "Times New Roman", serif;
+}
+
+#eos-reading-card .eos-reading-meta {
+  margin: 2px 0 10px;
+  color: var(--eos-muted);
+  font-size: 11px;
+}
+
+#eos-reading-card .eos-reading-meaning {
+  margin: 0 0 7px;
+  font-weight: 520;
+}
+
+#eos-reading-card .eos-reading-definition,
+#eos-reading-card .eos-reading-sentence,
+#eos-reading-card .eos-reading-error {
+  margin: 7px 0 0;
+  color: var(--eos-muted);
+  font-size: 12px;
+}
+
+#eos-reading-card .eos-reading-sentence {
+  padding-left: 9px;
+  border-left: 1px solid var(--eos-rule);
+  font-style: italic;
+}
+
+#eos-reading-card .eos-reading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--eos-rule);
+}
+
+#eos-reading-card button {
+  appearance: none;
+  margin: 0;
+  padding: 5px 8px;
+  color: var(--eos-muted);
+  background: transparent;
+  border: 1px solid var(--eos-rule);
+  border-radius: 6px;
+  font: 600 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+#eos-reading-card button[data-action="save"] {
+  color: #fff;
+  background: var(--eos-accent);
+  border-color: var(--eos-accent);
+}
+
+/* Close is last and outlives every other button, so it carries the right
+   anchor. Save used to, and Save is removed once a verdict saves the word —
+   which made Close jump across the row at the moment of a successful click. */
+#eos-reading-card button[data-action="close"] {
+  margin-left: auto;
+}
+
+#eos-reading-card button:hover {
+  border-color: var(--eos-accent);
+  color: var(--eos-ink);
+}
+
+#eos-reading-card button:focus-visible {
+  outline: 2px solid var(--eos-accent);
+  outline-offset: 2px;
+}
+
+/* The card itself takes focus when it opens (tabIndex -1), so it needs an
+   indicator of its own — without one a keyboard user gets no signal that focus
+   moved into the card at all, only that it left wherever it was. */
+#eos-reading-card:focus-visible {
+  outline: 2px solid var(--eos-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  #eos-reading-card {
+    --eos-ink: #edf0fb;
+    --eos-paper: #171a25;
+    --eos-rule: #373d55;
+    --eos-muted: #a8afc5;
+    --eos-accent: #91a7ff;
+    --eos-warn: #fbbf24;
+    box-shadow: 0 18px 54px rgba(0, 0, 0, 0.46);
+  }
+}
+
+@media (max-width: 720px) {
+  #eos-reading-card[data-display="auto"] {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+  }
+  #eos-reading-card[data-display="auto"]::before { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #eos-reading-card { scroll-behavior: auto; }
+}
+
+/* ── The rail: every flagged word currently on screen, in reading order ──────
+   Docked to the page, not the viewport centre, so it never covers the prose.
+   Its own stacking context + `all: initial`-ish resets on children would be
+   overkill; the #id selectors already out-specify almost every host page. */
+
+#eos-reading-rail {
+  position: fixed;
+  top: 84px;
+  right: 16px;
+  z-index: 2147483646;          /* one below the card, which must sit above it */
+  width: 268px;
+  max-height: calc(100dvh - 140px);
+  display: flex;
+  flex-direction: column;
+  background: var(--eos-paper, #fff);
+  color: var(--eos-ink, #14161f);
+  border: 1px solid var(--eos-rule, #e3e6ef);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(20, 22, 31, 0.14);
+  font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+#eos-reading-rail.eos-rail-collapsed .eos-rail-list { display: none; }
+
+.eos-rail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--eos-rule, #e3e6ef);
+}
+
+.eos-rail-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eos-muted, #6b7280);
+  flex: 1;
+}
+
+.eos-rail-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--eos-accent, #4c6ef5);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.eos-rail-count:empty { display: none; }
+
+.eos-rail-collapse {
+  all: unset;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+  border-radius: 6px;
+  color: var(--eos-muted, #6b7280);
+}
+.eos-rail-collapse:hover { background: rgba(127, 127, 127, 0.12); }
+
+.eos-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.eos-rail-empty {
+  padding: 14px 10px;
+  color: var(--eos-muted, #6b7280);
+  font-size: 12px;
+  text-align: center;
+}
+
+.eos-rail-row {
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.eos-rail-row + .eos-rail-row { border-top: 1px solid var(--eos-rule, #e3e6ef); }
+.eos-rail-row:hover { background: rgba(76, 110, 245, 0.07); }
+
+.eos-rail-head { display: flex; align-items: baseline; gap: 6px; }
+.eos-rail-word { font-weight: 650; font-size: 14px; flex: 1; }
+
+.eos-rail-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--eos-rule, #e3e6ef);
+  color: var(--eos-muted, #6b7280);
+}
+/* The reader's own note outranks anything a model said — say so. */
+.eos-rail-chip-vault { border-color: #2f9e68; color: #2f9e68; }
+.eos-rail-chip-cache { border-color: #7a8194; color: #7a8194; }
+.eos-rail-chip-model { border-color: var(--eos-accent, #4c6ef5); color: var(--eos-accent, #4c6ef5); }
+
+.eos-rail-meta { font-size: 11px; color: var(--eos-muted, #6b7280); margin-top: 1px; }
+.eos-rail-meaning { font-size: 12px; margin-top: 4px; }
+
+.eos-rail-actions { display: flex; gap: 6px; margin-top: 7px; }
+
+.eos-rail-save,
+.eos-reading-say {
+  all: unset;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--eos-rule, #e3e6ef);
+  color: var(--eos-muted, #6b7280);
+}
+.eos-rail-save:hover,
+.eos-reading-say:hover { border-color: var(--eos-accent, #4c6ef5); color: var(--eos-accent, #4c6ef5); }
+.eos-reading-say-off { opacity: 0.45; cursor: not-allowed; }
+
+/* Difficulty — the reader's own 1-5 rating on a word already in their vault.
+   `all: unset` because this card is injected into arbitrary pages and inherits
+   whatever button styling the host site happens to define. */
+.eos-reading-difficulty { display: flex; gap: 1px; margin: 2px 0 0; }
+.eos-reading-star {
+  all: unset;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 1px;
+  color: var(--eos-rule, #e3e6ef);
+  transition: color 0.12s, transform 0.12s;
+}
+.eos-reading-star:hover { transform: scale(1.2); color: var(--eos-muted, #6b7280); }
+.eos-reading-star.on { color: var(--eos-warn, #b45309); }
+.eos-reading-star:focus-visible { outline: 2px solid var(--eos-accent, #4c6ef5); outline-offset: 1px; border-radius: 3px; }
+
+.eos-reading-titlebar { display: flex; align-items: center; gap: 8px; }
+.eos-reading-titlebar .eos-reading-title { flex: 1; }
+
+@media (max-width: 900px) {
+  /* On a narrow screen the rail would sit on top of the words it describes. */
+  #eos-reading-rail { display: none; }
+}
+
+.eos-rail-failed { color: #c2410c; }

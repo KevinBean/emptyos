@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conversation Ingest</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+.ci-shell {
+  width: min(1100px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 32px 0 64px;
+}
+.ci-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.ci-title h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+.ci-title p {
+  margin: 0;
+  max-width: 680px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ci-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ci-controls label,
+.ci-filter label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ci-controls select,
+.ci-filter select,
+.ci-filter input {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: 13px;
+}
+.ci-controls select { max-width: 280px; }
+.ci-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+.ci-tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  min-height: 44px;
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ci-tab:hover,
+.ci-tab:focus-visible { color: var(--text); }
+.ci-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.ci-panel {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  padding: 20px;
+}
+.ci-panel + .ci-panel { margin-top: 16px; }
+.ci-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ci-panel h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+.ci-panel h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.ci-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ci-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-word;
+}
+.ci-stats { margin-bottom: 24px; }
+.ci-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+.ci-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.ci-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.ci-import {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--bg);
+}
+.ci-import.current { border-color: var(--accent); }
+.ci-import-top {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.ci-import h3 {
+  font-size: 14px;
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.ci-kv {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  gap: 8px 16px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.ci-kv span:nth-child(odd) { color: var(--text-muted); }
+.ci-kv span:nth-child(even) {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.ci-filter {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.ci-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ci-filter input { min-width: 280px; }
+.ci-table-wrap { overflow-x: auto; }
+.ci-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ci-table th {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ci-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.ci-table tr[data-open] { cursor: pointer; }
+.ci-table tr[data-open]:hover td,
+.ci-table tr[data-open]:focus-visible td {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+}
+.ci-table tr[data-open]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ci-title-cell {
+  min-width: 260px;
+  max-width: 480px;
+}
+.ci-title-cell strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.ci-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ci-reasons {
+  display: grid;
+  gap: 8px;
+}
+.ci-reason {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.ci-reason code { overflow-wrap: anywhere; }
+.ci-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+.ci-detail {
+  display: grid;
+  gap: 16px;
+}
+.ci-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ci-stage-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.ci-stage {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.ci-stage-mark {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.ci-stage.ok .ci-stage-mark { color: var(--success); }
+.ci-stage.fail .ci-stage-mark { color: var(--danger); }
+.ci-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ci-receipt {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--bg);
+}
+.ci-receipt.ok { border-color: color-mix(in srgb, var(--success) 48%, var(--border)); }
+.ci-receipt.fail { border-color: color-mix(in srgb, var(--danger) 48%, var(--border)); }
+.ci-receipt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ci-receipt h4 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+.ci-receipt-detail {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ci-receipt-notes {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ci-links {
+  display: grid;
+  gap: 10px;
+}
+.ci-link-row {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.ci-contract-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ci-contract-list li {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.ci-domain-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.ci-domain {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.ci-loading {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+}
+.ci-inline-error {
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--danger);
+  font-size: 13px;
+}
+.ci-empty { padding: 32px 0; }
+@media (max-width: 900px) {
+  .ci-grid,
+  .ci-domain-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .ci-shell {
+    width: calc(100% - 32px);
+    padding-top: 24px;
+  }
+  .ci-header { flex-direction: column; }
+  .ci-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .ci-controls select,
+  .ci-filter input { width: 100%; max-width: none; min-width: 0; }
+  .ci-filter-group { width: 100%; }
+  .ci-stage-list,
+  .ci-receipt-grid { grid-template-columns: 1fr; }
+  .ci-panel { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<main class="ci-shell">
+  <header class="ci-header">
+    <div class="ci-title">
+      <h1>Conversation Ingest</h1>
+      <p>One control plane for queue coverage, legacy backfill, source integrity, and source-to-note evidence.</p>
+    </div>
+    <div class="ci-controls">
+      <label for="import-select">Import</label>
+      <select id="import-select" aria-label="Import directory" onchange="selectImport(this.value)"></select>
+      <button class="eos-btn eos-btn-sm" type="button" title="Copy the exact prompt for the next atomic item" onclick="copyResume()">Copy resume prompt</button>
+      <button class="eos-btn eos-btn-sm" type="button" title="Configure the optional import root" onclick="openAppSettings()">Settings</button>
+    </div>
+  </header>
+
+  <nav class="ci-tabs" aria-label="Conversation ingestion views">
+    <button class="ci-tab active" type="button" data-tab="overview" title="Show import coverage" onclick="switchTab('overview')">Overview</button>
+    <button class="ci-tab" type="button" data-tab="queue" title="Show pending conversations" onclick="switchTab('queue')">Queue</button>
+    <button class="ci-tab" type="button" data-tab="routing" title="Show semantic routing reviews" onclick="switchTab('routing')">Routing review</button>
+    <button class="ci-tab" type="button" data-tab="backfill" title="Show legacy evidence gaps" onclick="switchTab('backfill')">Backfill</button>
+    <button class="ci-tab" type="button" data-tab="mechanism" title="Show the canonical workflow contract" onclick="switchTab('mechanism')">Mechanism</button>
+  </nav>
+
+  <section id="content" aria-live="polite">
+    <div class="ci-loading"><span class="eos-spinner" aria-label="Loading"></span></div>
+  </section>
+</main>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+EOS.nav('conversation-ingest');
+
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'conversation-ingest-settings-panel',
+  title: 'Conversation Ingest Settings',
+  app: 'conversation-ingest',
+  onSave: function() { loadOverview(); }
+});
+function openAppSettings() { _appSettings.open(); }
+
+var STATE = {
+  overview: null,
+  selectedImport: '',
+  tab: 'overview',
+  items: null,
+  mechanism: null,
+  resume: null,
+  detail: null,
+  loading: true,
+  error: '',
+  query: '',
+  offset: 0,
+  limit: 50
+};
+
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function escAttr(value) { return esc(value); }
+function fmt(value) {
+  var n = Number(value || 0);
+  return isFinite(n) ? n.toLocaleString() : '0';
+}
+function pct(done, total) {
+  return total ? Math.round((Number(done || 0) / Number(total)) * 100) : 0;
+}
+// Every target here must be one of EOS_UI.STATUS_VARIANTS. `done`, `pending`
+// and `warning` were not, so they fell through to `neutral` — and the span was
+// then built as 'eos-badge-status-' + variant, double-prefixing what
+// statusVariant had already prefixed. Between the two, all ten states rendered
+// an unstyled class. EOS_UI.statusBadge owns the concatenation now.
+var CI_STATUS_MAP = {
+  audited: 'completed', queued: 'draft', degraded: 'blocked',
+  'audit-only': 'draft', complete: 'completed', partial: 'draft',
+  verified: 'completed', missing: 'blocked'
+};
+function badge(label, status) {
+  return EOS_UI.statusBadge(label, status || '', CI_STATUS_MAP);
+}
+function loadingHtml() {
+  return '<div class="ci-loading"><span class="eos-spinner" aria-label="Loading"></span></div>';
+}
+function errorHtml(message) {
+  return '<div class="ci-inline-error">' + esc(message || 'Could not load this view.') + '</div>';
+}
+function emptyHtml(message) {
+  return '<div class="ci-empty">' + EOS_UI.emptyState({ icon: '○', message: message }) + '</div>';
+}
+function activeImport() {
+  var rows = STATE.overview && STATE.overview.imports || [];
+  return rows.find(function(row) { return row.key === STATE.selectedImport; }) || null;
+}
+// conversation-ingest-single-import-scope: a dedicated sentinel (not '') for
+// "every import merged" — '' is reserved for the "nothing discovered yet"
+// state so the two can never be confused when the select re-renders.
+var ALL_IMPORTS = '__all__';
+function importOptions() {
+  var select = document.getElementById('import-select');
+  var rows = STATE.overview && STATE.overview.imports || [];
+  select.innerHTML = rows.length
+    ? '<option value="' + ALL_IMPORTS + '"' +
+        (STATE.selectedImport === ALL_IMPORTS ? ' selected' : '') + '>All imports</option>' +
+      rows.map(function(row) {
+        return '<option value="' + escAttr(row.key) + '"' +
+          (row.key === STATE.selectedImport ? ' selected' : '') + '>' +
+          esc(row.key) + '</option>';
+      }).join('')
+    : '<option value="">No supported imports</option>';
+  select.disabled = !rows.length;
+}
+function setActiveTab() {
+  document.querySelectorAll('.ci-tab').forEach(function(button) {
+    var active = button.dataset.tab === STATE.tab;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+}
+
+async function loadOverview() {
+  STATE.loading = true;
+  STATE.error = '';
+  render();
+  var result = await EOS.apiSafe('/conversation-ingest/api/overview');
+  if (result.error && !result.imports) {
+    STATE.error = result.error;
+    STATE.overview = { imports: [], active: null, root_ok: false };
+  } else {
+    STATE.overview = result;
+    if (!STATE.selectedImport) STATE.selectedImport = result.active || '';
+    // '__all__' is a deliberate choice, not a stale import key — never reset it.
+    if (STATE.selectedImport && STATE.selectedImport !== ALL_IMPORTS &&
+        !(result.imports || []).some(function(row) { return row.key === STATE.selectedImport; })) {
+      STATE.selectedImport = result.active || '';
+    }
+  }
+  STATE.loading = false;
+  importOptions();
+  await loadResume();
+  render();
+}
+
+async function loadResume() {
+  STATE.resume = null;
+  // No single resume target when every import is merged — resume is
+  // inherently per-import (it names one atomic next item).
+  if (!STATE.selectedImport || STATE.selectedImport === ALL_IMPORTS) return;
+  var result = await EOS.apiSafe(
+    '/conversation-ingest/api/resume?import=' + encodeURIComponent(STATE.selectedImport)
+  );
+  if (!result.error) STATE.resume = result;
+}
+
+async function selectImport(key) {
+  STATE.selectedImport = key;
+  STATE.offset = 0;
+  STATE.items = null;
+  STATE.detail = null;
+  _route.clear();
+  await loadResume();
+  if (STATE.tab === 'queue') await loadItems('pending');
+  else if (STATE.tab === 'routing') await loadItems('routing-review');
+  else if (STATE.tab === 'backfill') await loadItems('backfill');
+  else render();
+}
+
+async function switchTab(tab) {
+  STATE.tab = tab;
+  STATE.offset = 0;
+  STATE.items = null;
+  STATE.detail = null;
+  _route.clear();
+  setActiveTab();
+  if (tab === 'queue') await loadItems('pending');
+  else if (tab === 'routing') await loadItems('routing-review');
+  else if (tab === 'backfill') await loadItems('backfill');
+  else if (tab === 'mechanism') await loadMechanism();
+  else render();
+}
+
+async function loadItems(bucket) {
+  if (!STATE.selectedImport) { render(); return; }
+  STATE.loading = true;
+  STATE.error = '';
+  render();
+  var url = '/conversation-ingest/api/items?' +
+    (STATE.selectedImport === ALL_IMPORTS ? '' : 'import=' + encodeURIComponent(STATE.selectedImport) + '&') +
+    'bucket=' + encodeURIComponent(bucket) +
+    '&q=' + encodeURIComponent(STATE.query) +
+    '&offset=' + STATE.offset + '&limit=' + STATE.limit;
+  var result = await EOS.apiSafe(url);
+  if (result.error) {
+    STATE.error = result.error;
+    STATE.items = null;
+  } else {
+    STATE.items = result;
+  }
+  STATE.loading = false;
+  render();
+}
+
+async function loadMechanism() {
+  if (STATE.mechanism) { render(); return; }
+  STATE.loading = true;
+  STATE.error = '';
+  render();
+  var result = await EOS.apiSafe('/conversation-ingest/api/mechanism');
+  if (result.error) STATE.error = result.error;
+  else STATE.mechanism = result;
+  STATE.loading = false;
+  render();
+}
+
+function applySearch(event) {
+  if (event && event.key !== 'Enter') return;
+  var input = document.getElementById('ci-query');
+  STATE.query = input ? input.value.trim() : '';
+  STATE.offset = 0;
+  loadItems(STATE.tab === 'backfill'
+    ? 'backfill'
+    : STATE.tab === 'routing'
+      ? 'routing-review'
+      : 'pending');
+}
+
+function pageBy(delta) {
+  if (!STATE.items) return;
+  STATE.offset = Math.max(0, STATE.offset + delta * STATE.limit);
+  loadItems(STATE.items.bucket);
+}
+function previousPage() { pageBy(-1); }
+function nextPage() { pageBy(1); }
+
+function openItem(importKey, providerId) {
+  _route.set(importKey + '::' + providerId);
+}
+function openItemFromRow(row) {
+  openItem(row.dataset.importKey || '', row.dataset.providerId || '');
+}
+
+async function loadDetail(composite) {
+  var split = composite.indexOf('::');
+  if (split < 1) { _route.clear(); return; }
+  var importKey = composite.slice(0, split);
+  var providerId = composite.slice(split + 2);
+  STATE.selectedImport = importKey;
+  importOptions();
+  STATE.loading = true;
+  STATE.error = '';
+  STATE.detail = null;
+  render();
+  var result = await EOS.apiSafe(
+    '/conversation-ingest/api/items/' + encodeURIComponent(providerId) +
+    '?import=' + encodeURIComponent(importKey)
+  );
+  if (result.error) STATE.error = result.error;
+  else STATE.detail = result;
+  STATE.loading = false;
+  render();
+}
+
+var _route = EOS_UI.hashRoute({
+  onShow: function(id) { loadDetail(id); },
+  onHide: function() {
+    STATE.detail = null;
+    STATE.error = '';
+    render();
+  }
+});
+
+function copyResume() {
+  if (STATE.selectedImport === ALL_IMPORTS) {
+    EOS_UI.toast('Select a specific import to copy its resume prompt.', 'warning');
+    return;
+  }
+  var prompt = STATE.resume && STATE.resume.prompt || '';
+  if (!prompt) {
+    EOS_UI.toast('No pending or backfill item is available.', 'warning');
+    return;
+  }
+  navigator.clipboard.writeText(prompt).then(function() {
+    EOS_UI.toast('Resume prompt copied.');
+  }).catch(function() {
+    EOS_UI.toast('Could not copy the prompt.', 'error');
+  });
+}
+
+function renderOverview() {
+  var current = activeImport();
+  var allMode = STATE.selectedImport === ALL_IMPORTS;
+  if (!current && !allMode) return emptyHtml('No supported queue or evidence-audit artifacts were found under the import root.');
+  var html = '<div class="ci-stats" id="ci-stats"></div>';
+  if (current) {
+    var progress = pct(current.processed, current.total);
+    html += '<section class="ci-panel">' +
+      '<div class="ci-panel-head"><div><h2>Active coverage</h2>' +
+      '<div class="ci-meta ci-mono">' + esc(current.key) + '</div></div>' +
+      badge(current.status, current.status) + '</div>' +
+      '<div class="ci-progress" aria-label="' + progress + '% processed"><span style="width:' + progress + '%"></span></div>' +
+      '<div class="ci-meta">' + fmt(current.processed) + ' of ' + fmt(current.total) +
+      ' indexed by the current queue. Telemetry alone never marks an item complete.</div>' +
+    '</section>';
+  }
+  if (current && current.top_backfill_reasons && current.top_backfill_reasons.length) {
+    html += '<section class="ci-panel"><div class="ci-panel-head"><h2>Largest evidence gaps</h2>' +
+      '<button class="eos-btn eos-btn-sm" type="button" title="Open the backfill queue" onclick="switchTab(\'backfill\')">Review backfill</button></div>' +
+      '<div class="ci-reasons">' +
+      current.top_backfill_reasons.map(function(row) {
+        return '<div class="ci-reason"><code>' + esc(row.reason) + '</code><strong>' + fmt(row.count) + '</strong></div>';
+      }).join('') + '</div></section>';
+  }
+  html += '<section class="ci-panel"><div class="ci-panel-head"><h2>Import inventories</h2>' +
+    '<div class="ci-meta">Newest supported artifacts first</div></div><div class="ci-grid">' +
+    (STATE.overview.imports || []).map(function(row) {
+      return '<article class="ci-import' + (row.key === STATE.selectedImport ? ' current' : '') + '">' +
+        '<div class="ci-import-top"><div><h3>' + esc(row.key) + '</h3>' +
+        '<div class="ci-meta">' + esc(row.provider || 'provider not declared') + '</div></div>' +
+        badge(row.status, row.status) + '</div>' +
+        '<div class="ci-kv"><span>Total</span><span>' + fmt(row.total) + '</span>' +
+        '<span>Pending</span><span>' + fmt(row.pending) + '</span>' +
+        '<span>New schema complete</span><span>' + fmt(row.new_schema_complete) + '</span>' +
+        '<span>Living-note mutations</span><span>' + fmt(row.living_note_mutations) + '</span>' +
+        '<span>Routing review</span><span>' + fmt(row.routing_review_required) + '</span>' +
+        '<span>Needs backfill</span><span>' + fmt(row.needs_backfill) + '</span></div>' +
+        (row.errors && row.errors.length ? '<div class="ci-inline-error" style="margin-top:12px">' + esc(row.errors.join('; ')) + '</div>' : '') +
+        '</article>';
+    }).join('') + '</div></section>';
+  setTimeout(function() {
+    // In "All imports" mode there's no single current row — sum across every
+    // discovered import instead of leaving the stat tiles blank.
+    var stats = current || (allMode ? sumImports(STATE.overview.imports || []) : null);
+    if (!stats) return;
+    EOS_UI.statCards('ci-stats', [
+      { label: 'Processed', value: fmt(stats.processed) },
+      { label: 'Pending', value: fmt(stats.pending), variant: stats.pending ? 'warning' : 'success' },
+      { label: 'Living-note mutations', value: fmt(stats.living_note_mutations), variant: 'accent' },
+      { label: 'Routing review', value: fmt(stats.routing_review_required), variant: stats.routing_review_required ? 'danger' : 'success' },
+      { label: 'Backfill', value: fmt(stats.needs_backfill), variant: stats.needs_backfill ? 'danger' : 'success' },
+      { label: 'Accounted no-mutation', value: fmt(stats.accounted_no_mutation), variant: 'muted' }
+    ]);
+  }, 0);
+  return html;
+}
+function sumImports(rows) {
+  var fields = ['processed', 'pending', 'living_note_mutations', 'routing_review_required',
+    'needs_backfill', 'accounted_no_mutation'];
+  var out = {};
+  fields.forEach(function(f) { out[f] = 0; });
+  rows.forEach(function(row) {
+    fields.forEach(function(f) { out[f] += Number(row[f] || 0); });
+  });
+  return out;
+}
+
+function renderItems(bucket) {
+  var data = STATE.items;
+  var label = bucket === 'backfill'
+    ? 'Legacy/backfill queue'
+    : bucket === 'routing-review'
+      ? 'Semantic routing-review queue'
+      : 'Pending conversations';
+  if (!data) return emptyHtml('Choose a supported import to inspect its queue.');
+  var aggregated = data.import_key == null;
+  var html = '<section class="ci-panel"><div class="ci-panel-head"><div><h2>' + label + '</h2>' +
+    '<div class="ci-meta">' + fmt(data.total) + ' matching records' +
+    (aggregated ? ' across ' + fmt((data.imports || []).length) + ' import(s)' : '') + '</div></div></div>' +
+    '<div class="ci-filter"><div class="ci-filter-group"><label for="ci-query">Search title, ID, path, or failure</label>' +
+    '<input id="ci-query" type="search" value="' + escAttr(STATE.query) + '" placeholder="Press Enter to search" onkeydown="applySearch(event)"></div>' +
+    '<button class="eos-btn eos-btn-sm" type="button" title="Apply the current search query" onclick="applySearch()">Search</button></div>';
+  if (aggregated && ((data.import_errors && data.import_errors.length) || (data.truncated_imports && data.truncated_imports.length))) {
+    var notes = [];
+    if (data.truncated_imports && data.truncated_imports.length) {
+      // 200 mirrors MAX_PAGE_SIZE in store.py — the per-import cap this merged
+      // view fetches before pagination. Keep in sync if that constant moves.
+      notes.push('showing only the first 200 matches per import for: ' +
+        data.truncated_imports.map(esc).join(', '));
+    }
+    if (data.import_errors && data.import_errors.length) {
+      notes.push('could not read: ' + data.import_errors.map(function(e) {
+        return esc(e.import_key) + ' (' + esc(e.error) + ')';
+      }).join('; '));
+    }
+    html += '<div class="ci-inline-error">' + notes.join(' — ') + '</div>';
+  }
+  if (!data.rows.length) {
+    html += emptyHtml(bucket === 'backfill'
+      ? 'No records need evidence backfill in this view.'
+      : bucket === 'routing-review'
+        ? 'No conversation is waiting for semantic routing review.'
+        : 'No pending conversations match this search.');
+  } else {
+    html += '<div class="ci-table-wrap"><table class="ci-table"><thead><tr>' +
+      '<th>Conversation</th><th>Messages</th><th>Fidelity</th><th>Evidence</th><th>Issues</th>' +
+      '</tr></thead><tbody>' + data.rows.map(function(row) {
+        var evidence = row.new_schema_complete
+          ? badge('complete', 'complete')
+          : (row.audited ? badge('backfill', 'partial') : badge('not audited', 'missing'));
+        var fidelity = row.capture_fidelity
+          ? badge(row.capture_fidelity, row.capture_fidelity === 'partial' ? 'partial' : 'queued')
+          : badge('unknown', 'neutral');
+        var receiptStatus = Number(row.receipt_verified || 0) === Number(row.receipt_total || 4)
+          ? 'complete' : 'partial';
+        var receipt = '<div class="ci-badges">' +
+          badge(fmt(row.receipt_verified) + '/' + fmt(row.receipt_total || 4) + ' verified', receiptStatus) +
+          badge(row.derived_display || ('routing ' + (row.derived_outcome || 'unknown')),
+            row.derived_outcome === 'updated' ||
+            row.derived_outcome === 'accounted-no-mutation' ||
+            row.derived_outcome === 'no-durable-delta' ? 'verified' : 'missing') +
+          '</div>';
+        // In the aggregated (all-imports) view every row carries its own
+        // import_key (store.py's aggregate_items tags it); a single-import
+        // view has no per-row import_key, so data.import_key is the fallback.
+        var rowImportKey = row.import_key || data.import_key;
+        return '<tr tabindex="0" role="button" data-open="1" data-import-key="' +
+          escAttr(rowImportKey) + '" data-provider-id="' + escAttr(row.provider_id) +
+          '" aria-label="Open ' + escAttr(row.title) + '"' +
+          ' onclick="openItemFromRow(this)"' +
+          ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openItemFromRow(this)}">' +
+          '<td class="ci-title-cell"><strong>' + esc(row.title) + '</strong>' +
+          (aggregated ? '<div class="ci-meta ci-mono">' + esc(rowImportKey) + '</div>' : '') +
+          '<div class="ci-meta ci-mono">' + esc(row.provider_id) + '</div>' +
+          '<div class="ci-meta">' + esc(String(row.date || '').slice(0, 10)) + '</div></td>' +
+          '<td class="ci-mono">' + (row.message_count == null ? '-' : fmt(row.message_count)) + '</td>' +
+          '<td>' + fidelity + '</td><td>' + evidence + receipt + '</td>' +
+          '<td class="ci-meta">' + esc((row.reasons || []).slice(0, 2).join(', ') || '-') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    html += '<div class="ci-pager"><button class="eos-btn eos-btn-sm" type="button" title="Show the previous page"' +
+      (data.offset <= 0 ? ' disabled' : '') + ' onclick="previousPage()">Previous</button>' +
+      '<div class="ci-meta">Rows ' + fmt(data.offset + 1) + '-' +
+      fmt(Math.min(data.offset + data.rows.length, data.total)) + ' of ' + fmt(data.total) + '</div>' +
+      '<button class="eos-btn eos-btn-sm" type="button" title="Show the next page"' +
+      (data.offset + data.rows.length >= data.total ? ' disabled' : '') + ' onclick="nextPage()">Next</button></div>';
+  }
+  return html + '</section>';
+}
+
+function noteAction(path, label) {
+  if (!path) return '';
+  return window.EOS && EOS.noteActions ? EOS.noteActions(path, label || path) : esc(path);
+}
+
+function renderReceipt(receipt) {
+  var notes = receipt.notes || [];
+  var dispositions = receipt.dispositions || [];
+  var path = receipt.path
+    ? '<div class="ci-mono">' + noteAction(receipt.path, receipt.path) + '</div>'
+    : '';
+  var routed = notes.length
+    ? '<div class="ci-receipt-notes">' + notes.map(function(note) {
+        return '<div><div class="ci-meta">Routed note ' +
+          badge(note.reciprocal ? 'reciprocal' : 'link missing',
+            note.reciprocal ? 'verified' : 'missing') +
+          '</div>' + noteAction(note.path, note.path) + '</div>';
+      }).join('') + '</div>'
+    : '';
+  var accounted = dispositions.length
+    ? '<div class="ci-receipt-notes">' + dispositions.map(function(item) {
+        return '<div><div class="ci-meta">' + esc(item.domain) + ' ' +
+          badge(item.disposition || 'missing', item.disposition ? 'verified' : 'missing') +
+          '</div><div class="ci-meta">' + esc(item.reason || 'No reason recorded') +
+          '</div><div class="ci-mono">' + esc(item.target || 'This digest') + '</div>' +
+          (item.routing_evidence
+            ? '<div class="ci-meta">Routing evidence: ' + esc(item.routing_evidence) + '</div>'
+            : '') + '</div>';
+      }).join('') + '</div>'
+    : '';
+  // `legacy-assumed` is ok-but-not-verified: a v1 record that completed under
+  // the pre-readback schema. Painting it green would put back the exact claim
+  // this receipt exists to stop making.
+  var status = receipt.ok
+    ? (receipt.outcome === 'accounted-no-mutation' ||
+       receipt.outcome === 'no-durable-delta' ||
+       receipt.outcome === 'legacy-assumed' ? 'partial' : 'verified')
+    : 'missing';
+  return '<article class="ci-receipt ' + (receipt.ok ? 'ok' : 'fail') + '">' +
+    '<div class="ci-receipt-head"><h4>' + esc(receipt.label) + '</h4>' +
+    badge(receipt.display_outcome || receipt.outcome, status) + '</div>' +
+    '<p class="ci-receipt-detail">' + esc(receipt.detail) + '</p>' +
+    path + routed + accounted + '</article>';
+}
+
+function renderDetail() {
+  var detail = STATE.detail;
+  if (!detail) return emptyHtml('Conversation detail is unavailable.');
+  var audit = detail.audit || {};
+  var queue = detail.queue || {};
+  var title = queue.title || audit.title || detail.provider_id;
+  var html = '<div class="ci-detail"><button class="ci-back" type="button" title="Return to the current list" onclick="_route.clear()">Back to list</button>' +
+    '<section class="ci-panel"><div class="ci-panel-head"><div><h2>' + esc(title) + '</h2>' +
+    '<div class="ci-meta ci-mono">' + esc(detail.provider + ':' + detail.provider_id) + '</div></div>' +
+    (detail.complete ? badge('contract complete', 'complete') : badge('incomplete', 'partial')) + '</div>' +
+    '<div class="ci-stage-list">' + (detail.stages || []).map(function(stage) {
+      return '<div class="ci-stage ' + (stage.ok ? 'ok' : 'fail') + '"><span class="ci-stage-mark">' +
+        (stage.ok ? 'OK' : '--') + '</span><span>' + esc(stage.label) + '</span></div>';
+    }).join('') + '</div></section>' +
+    '<section class="ci-panel"><div class="ci-panel-head"><div><h3>Vault evidence receipt</h3>' +
+    '<div class="ci-meta">Source, digest, living-note routing, and ledger are four independent outcomes. ' +
+    'A verified no-mutation result still means the source, digest, and ledger were written to Vault.</div></div>' +
+    (detail.receipt_complete ? badge('4/4 verified', 'complete') : badge('incomplete', 'partial')) +
+    '</div><div class="ci-receipt-grid">' +
+    (detail.receipts || []).map(renderReceipt).join('') + '</div></section>';
+  if (detail.reasons && detail.reasons.length) {
+    html += '<section class="ci-panel"><h3>Audit reasons</h3><div class="ci-reasons">' +
+      detail.reasons.map(function(reason) {
+        return '<div class="ci-reason"><code>' + esc(reason) + '</code></div>';
+      }).join('') + '</div></section>';
+  }
+  html += '<section class="ci-panel"><div class="ci-panel-head"><h3>Evidence chain</h3>' +
+    '<a class="eos-btn eos-btn-sm" title="Open the existing Vault graph" href="/vault-graph/">Open graph</a></div>' +
+    '<div class="ci-links">' +
+    (audit.source_path ? '<div class="ci-link-row"><div class="ci-meta">Immutable source</div>' + noteAction(audit.source_path, audit.source_path) + '</div>' : '') +
+    (audit.digest_path ? '<div class="ci-link-row"><div class="ci-meta">Audited digest</div>' + noteAction(audit.digest_path, audit.digest_path) + '</div>' : '') +
+    ((audit.derived_notes || []).map(function(path) {
+      var linked = audit.reciprocal_links && audit.reciprocal_links[path];
+      return '<div class="ci-link-row"><div class="ci-meta">Derived note ' +
+        (linked ? badge('reciprocal', 'verified') : badge('link missing', 'missing')) +
+        '</div>' + noteAction(path, path) + '</div>';
+    }).join('')) +
+    (!audit.source_path && !audit.digest_path && !(audit.derived_notes || []).length
+      ? emptyHtml('No source, digest, or derived-note paths are recorded for this item.')
+      : '') +
+    '</div></section></div>';
+  return html;
+}
+
+function renderMechanism() {
+  var m = STATE.mechanism;
+  if (!m) return emptyHtml('The canonical mechanism could not be read.');
+  return '<section class="ci-panel"><div class="ci-panel-head"><div><h2>Canonical owner</h2>' +
+    '<div class="ci-meta">The App derives this view from the Skill files; it does not own a second SOP.</div></div>' +
+    badge(m.canonical_owner, 'verified') + '</div>' +
+    '<div class="ci-links"><div class="ci-link-row ci-mono">' + esc(m.skill_path) + '</div>' +
+    '<div class="ci-link-row ci-mono">' + esc(m.archive_contract_path) + '</div>' +
+    '<div class="ci-link-row ci-mono">' + esc(m.routing_contract_path) + '</div></div></section>' +
+    '<section class="ci-panel"><h2>Required digest sections</h2><div style="height:12px"></div>' +
+    '<ul class="ci-contract-list">' + (m.required_sections || []).map(function(value) {
+      return '<li class="ci-mono">' + esc(value) + '</li>';
+    }).join('') + '</ul></section>' +
+    '<section class="ci-panel"><div class="ci-panel-head"><h2>Full-domain scan</h2>' +
+    '<div class="ci-meta">' + fmt((m.domains || []).length) + ' domains</div></div>' +
+    '<div class="ci-domain-grid">' + (m.domains || []).map(function(value) {
+      return '<div class="ci-domain">' + esc(value) + '</div>';
+    }).join('') + '</div></section>' +
+    '<section class="ci-panel"><h2>Output path layers</h2><div style="height:12px"></div>' +
+    '<div class="ci-table-wrap"><table class="ci-table"><thead><tr><th>Layer</th><th>Standard</th><th>Sensitive</th></tr></thead><tbody>' +
+    (m.output_paths || []).map(function(row) {
+      return '<tr><td>' + esc(row.layer) + '</td><td class="ci-mono">' + esc(row.standard) +
+        '</td><td class="ci-mono">' + esc(row.sensitive) + '</td></tr>';
+    }).join('') + '</tbody></table></div></section>';
+}
+
+function render() {
+  setActiveTab();
+  var content = document.getElementById('content');
+  if (STATE.loading) { content.innerHTML = loadingHtml(); return; }
+  if (STATE.error) { content.innerHTML = errorHtml(STATE.error); return; }
+  if (STATE.detail) { content.innerHTML = renderDetail(); return; }
+  if (!STATE.overview || !STATE.overview.root_ok) {
+    content.innerHTML = errorHtml((STATE.overview && STATE.overview.error) || 'Import root unavailable.');
+    return;
+  }
+  if (STATE.tab === 'overview') content.innerHTML = renderOverview();
+  else if (STATE.tab === 'queue') content.innerHTML = renderItems('pending');
+  else if (STATE.tab === 'routing') content.innerHTML = renderItems('routing-review');
+  else if (STATE.tab === 'backfill') content.innerHTML = renderItems('backfill');
+  else content.innerHTML = renderMechanism();
+}
+
+async function init() {
+  await loadOverview();
+  _route.init();
+}
+init();
+</script>
+</body>
+</html>

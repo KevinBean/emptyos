@@ -1,0 +1,87 @@
+[app]
+id = "braindump"
+name = "Brain Dump"
+version = "0.1.0"
+description = "Dump a pile of mixed thoughts (type or speak) — it summarizes, splits them into tasks / journal / notes, and proposes each for your review. Triggered, never always-on."
+icon = "🧠"
+store_category = "productivity"
+dimensions = ["occupational", "intellectual"]
+user_intent = [
+    "brain-dump everything on my mind",
+    "I have a pile of thoughts to sort",
+    "turn what I just said into tasks and notes",
+    "offload my head into the system",
+    "把脑子里的事情倒出来整理成任务",
+]
+
+[app.entry]
+module = "app"
+class = "BrainDumpApp"
+
+[provides.web]
+prefix = "/braindump"
+
+[provides.settings]
+schema = [
+    {key = "braindump.feature.enabled", label = "Enable Brain Dump", type = "boolean", default = false},
+    {key = "braindump.capture_hotkey", label = "Start hotkey (blank = off)", type = "text", default = ""},
+    {key = "braindump.max_actions", label = "Max proposed items", type = "number", default = 6},
+    {key = "braindump.keep_summary_default", label = "Offer to keep summary note by default", type = "boolean", default = true},
+]
+
+[provides.events]
+emits = [
+    "braindump:started",
+    "braindump:transcribed",
+    "braindump:proposed",
+    "braindump:summary_kept",
+    "braindump:recalled",
+]
+# Session lifecycle observability — UI-only; kept captures already land in the
+# inbox via the capture path, so no journal ripple needed.
+internal = [
+    "braindump:started", "braindump:transcribed", "braindump:proposed",
+    "braindump:summary_kept", "braindump:recalled",
+]
+
+# ── Unified verb registry (single source of truth) ──────────────────────────
+# Starting a dump is gated (not a stable auto-payload). The voice surface only
+# opens/arms the page; recording happens on the Brain Dump page.
+[[provides.verbs]]
+verb = "braindump.start_session"
+method = "voice_start_session"
+summary = "Start a brain-dump session"
+args = {}
+eligibility = "gated"
+surfaces = ["voice"]
+voice = { example = "start a brain dump", description = "Open and arm a brain-dump session. Use when the user says 'brain dump', 'start a capture', 'offload my head', or 'sort my thoughts'.", always = true }
+
+[[contributes.hub.panel]]
+id = "braindump-panel"
+title = "🧠 Recent Brain Dumps"
+method = "panel_recent_captures"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 170
+
+[[contributes.tour.step]]
+id = "braindump.start"
+group = "core"
+priority = 350
+route = "/braindump/"
+spotlight = "#start-capture"
+title = "Dump your thoughts"
+body = "Brain-dump by voice or text — I summarize, split it into tasks / journal / notes, and propose each for review before anything is saved. <strong>Triggered, never always-on.</strong>"
+requires = ["think"]
+
+[requires]
+capabilities = ["listen", "think", "read", "write"]
+# rooms is the only hard dependency — propose_action routes every item through
+# its review gate (call_app("rooms", ...)). The app is useless without it.
+apps = ["rooms"]
+# task/journal/kb are proposal *targets* applied later by rooms' apply_pending,
+# not called directly here — soft, so a missing one just disables that item
+# type. voice-assistant hosts the start intent. All tolerated if absent.
+optional_apps = ["task", "journal", "kb", "voice-assistant"]
+services = []
+events = []

@@ -1,0 +1,54 @@
+[app]
+id = "vault-backup"
+name = "Vault Backup"
+version = "1.0.0"
+description = "Scheduled OS-agnostic snapshots of the mounted vault with retention + staleness alerts."
+store_category = "core"
+
+[app.entry]
+module = "app"
+class = "VaultBackupApp"
+
+[provides.cli]
+commands = ["vault-backup"]
+
+[provides.web]
+prefix = "/vault-backup"
+
+[provides.events]
+emits = ["vault-backup:completed", "vault-backup:failed"]
+# Backup outcomes land in the app's own record + activity log — no cross-app listener by design.
+internal = [
+    "vault-backup:completed",
+    "vault-backup:failed",
+]
+
+[requires]
+capabilities = []
+apps = []
+services = []
+events = []
+
+[provides.settings]
+schema = [
+    {key = "vault-backup.dest", label = "Backup destination folder", type = "text", default = "", hint = "Absolute path. Leave blank to use <vault-parent>/<vault-name>-backups."},
+    {key = "vault-backup.mode", label = "Snapshot mode", type = "select", default = "incremental", options = ["incremental", "zip", "folder"], hint = "incremental = hardlink deltas (best for large vaults); zip = single archive; folder = full copy."},
+    {key = "vault-backup.retention_days", label = "Keep snapshots for (days)", type = "number", default = 7},
+    {key = "vault-backup.include_media", label = "Also back up media locally", type = "boolean", default = false, hint = "Off = video/audio excluded (smaller snapshots; rely on the off-site push for media). On = include media in local snapshots."},
+    {key = "vault-backup.backup_data", label = "Back up local settings and secrets", type = "boolean", default = true, hint = "Creates a separate local data archive. It is never sent by the off-site command, so OAuth tokens stay local."},
+    {key = "vault-backup.data_include", label = "Local data entries to include", type = "text", default = "settings.json secrets store", hint = "Space-separated paths under data/. data/apps plus events.db/syslog.db are always excluded because hot SQLite copies are unsafe."},
+    {key = "vault-backup.extra_exclude_dirs", label = "Extra folders to exclude", type = "text", default = "", hint = "Space-separated folder names, e.g. build dist target"},
+    {key = "vault-backup.extra_exclude_suffixes", label = "Extra file types to exclude", type = "text", default = "", hint = "Space-separated, e.g. .psd .iso .bak"},
+    {key = "vault-backup.schedule_cron", label = "Schedule (cron)", type = "text", default = "0 2 * * *", hint = "Local time. Default: 02:00 daily."},
+    {key = "vault-backup.stale_hours", label = "Warn if no backup for (hours)", type = "number", default = 36},
+    {key = "vault-backup.offsite_cmd", label = "Off-site push command", type = "text", default = "", hint = "Optional. Pushes only the vault snapshot; the local data archive (including secrets) never leaves this machine. Placeholders {snapshot} {name}."},
+    {key = "vault-backup.enabled", label = "Run scheduled backups", type = "boolean", default = true},
+]
+
+[[contributes.hub.panel]]
+id = "vault-backup-status"
+title = "💾 Vault Backup"
+method = "panel_backup_status"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 180

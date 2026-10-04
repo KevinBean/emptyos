@@ -1,0 +1,6 @@
+
+
+- **Long output goes to a file, not the chat.** Audits, reports, generated content, and full file dumps are written to a file (an HTML report, a vault note, a `docs/` file) and referenced by path — never printed inline. Blown output caps silently lose whole sessions. Analysis, tradeoffs, and reasoning still belong in the reply.
+- **Front-load naming + keybinding decisions.** Before renaming anything or assigning a shortcut, list the proposals, check conflicts (existing names, `GET /api/shortcuts`, `.claude/rules/shared-frontend.md`), and wait for approval. See `[[feedback_front_load_naming_keybinding]]`.
+- **Prose answers are structured for a terminal, not a page.** Paragraphs ~3 sentences, each section opens with a `##` header or bold lead-in, multi-part answers broken into named sections. Reading happens in WezTerm; an unbroken wall of prose has no landmarks. Formatting rule, not a brevity rule.
+- **Use the full markdown range, and don't lean on bold alone to carry structure.** Headings, tables, fenced code with a language tag, blockquotes, nested lists. **Bold is nearly indistinguishable from body text in this terminal theme** — load-bearing distinctions get a heading, table row, or list item.

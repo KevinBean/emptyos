@@ -1,0 +1,389 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Library</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; }
+  .app-shell { max-width: 1100px; margin: 0 auto;
+    padding: calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 48px); }
+  .app-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .app-header h1 { font-size: 1.35rem; margin: 0; }
+  .app-header-actions { display: flex; gap: 8px; align-items: center; }
+  .lib-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .lib-toolbar input[type=text] { flex: 1; min-width: 180px; }
+  .lib-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .lib-chip { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); cursor: pointer; font-size: .85rem; }
+  .lib-chip.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  #detail-view { display: none; }
+  .lib-detail-meta { color: var(--text-muted); margin: 4px 0 14px; }
+  .lib-detail-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  .lib-abstract { line-height: 1.5; margin: 14px 0; }
+  .lib-hl-item { border-left: 3px solid var(--accent); padding: 6px 10px; margin: 8px 0; background: var(--bg-card); border-radius: 4px; font-size: .92rem; }
+  .lib-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .lib-back { margin-bottom: 12px; }
+  .lib-topics { display: flex; gap: 6px; flex-wrap: wrap; }
+  .lib-topics span { background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: .8rem; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header">
+    <h1>📚 Library</h1>
+    <div class="app-header-actions">
+      <button class="eos-btn" onclick="openImportModal()">+ Add paper</button>
+      <button class="btn-settings" onclick="openAppSettings()">&#9881; Settings</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="list-view">
+      <div class="lib-toolbar">
+        <input type="text" id="lib-search" placeholder="Search title, author, abstract…" oninput="onSearchInput(this.value)">
+        <div class="lib-chips" id="lib-chips"></div>
+      </div>
+      <div id="lib-grid" class="lib-grid"></div>
+    </div>
+
+    <div id="detail-view">
+      <button class="eos-btn-sm eos-btn-ghost lib-back" onclick="hideDetail()">&larr; Back to library</button>
+      <div id="detail-body"></div>
+    </div>
+  </main>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script src="/static/eos-pdf-viewer.js"></script>
+<script>
+var STATUSES = ['to-read', 'reading', 'read', 'archived'];
+var STATUS_MAP = { 'to-read': 'draft', 'reading': 'running', 'read': 'completed', 'archived': 'archived' };
+
+var STATE = { papers: [], filterStatus: '', query: '', current: null, pendingPdfFile: null };
+var _searchTimer = null;
+
+// ── Settings panel (mandatory — [provides.settings] declared) ──────
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'library-settings-panel',
+    title: 'Library Settings',
+    app: 'library',
+});
+function openAppSettings() { _appSettings.open(); }
+
+// ── Hash routing (mandatory — detail view exists) ───────────────────
+var _route = EOS_UI.hashRoute({
+    onShow: function(id) { showDetail(id); },
+    onHide: function() { hideDetail(); },
+});
+function openPaper(citekey) { _route.set(citekey); }
+
+// ── List view ─────────────────────────────────────────────────────
+
+function renderChips() {
+    var chips = [{ key: '', label: 'All' }].concat(STATUSES.map(function(s) {
+        return { key: s, label: s };
+    }));
+    document.getElementById('lib-chips').innerHTML = chips.map(function(c) {
+        var cls = 'lib-chip' + (STATE.filterStatus === c.key ? ' active' : '');
+        return '<span class="' + cls + '" onclick="setFilter(' + EOS_UI.jsArg(c.key) + ')">' + EOS_UI.esc(c.label) + '</span>';
+    }).join('');
+}
+
+function setFilter(status) {
+    STATE.filterStatus = status;
+    renderChips();
+    renderGrid();
+}
+
+function onSearchInput(val) {
+    STATE.query = val;
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function() { loadPapers(); }, 250);
+}
+
+function paperCitekey(p) {
+    return p.citekey || (p.file || '').replace(/\.md$/, '');
+}
+
+function renderGrid() {
+    var grid = document.getElementById('lib-grid');
+    var items = STATE.papers.filter(function(p) {
+        return !STATE.filterStatus || p.status === STATE.filterStatus;
+    });
+    if (!items.length) {
+        grid.innerHTML = EOS_UI.emptyState({
+            message: (STATE.query || STATE.filterStatus)
+                ? 'No matching papers.'
+                : 'No papers yet — add one by DOI, title, or by dropping a PDF.',
+            actionLabel: '+ Add paper',
+            onAction: 'openImportModal()',
+        });
+        return;
+    }
+    grid.innerHTML = items.map(function(p) {
+        var ck = paperCitekey(p);
+        var sub = (p.authors || []).join(', ') + (p.year ? ' · ' + p.year : '');
+        return EOS_UI.entityCard({
+            title: p.title || ck,
+            subtitle: sub,
+            meta: EOS_UI.esc(p.journal || p.venue || ''),
+            badges: [{ label: p.status || 'to-read', variant: EOS_UI.statusVariant(p.status || 'to-read', STATUS_MAP) }],
+            onClick: 'openPaper(' + JSON.stringify(ck) + ')',
+        });
+    }).join('');
+}
+
+async function loadPapers() {
+    var q = STATE.query ? '?q=' + encodeURIComponent(STATE.query) : '';
+    var items = await EOS.apiSafe('/library/api/papers' + q);
+    STATE.papers = Array.isArray(items) ? items : [];
+    renderGrid();
+}
+
+// ── Detail view ──────────────────────────────────────────────────
+
+function parseHighlights(body) {
+    var m = (body || '').split(/^##\s+Highlights\s*$/m);
+    if (m.length < 2) return [];
+    return m[1].split('\n').filter(function(l) { return l.trim().indexOf('- ') === 0; })
+        .map(function(l) { return l.trim().slice(2); });
+}
+
+async function showDetail(citekey) {
+    var p = await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(citekey));
+    if (p.error) {
+        document.getElementById('detail-body').innerHTML = EOS_UI.errorState({ message: 'Paper not found: ' + p.error });
+        document.getElementById('list-view').style.display = 'none';
+        document.getElementById('detail-view').style.display = '';
+        return;
+    }
+    STATE.current = p;
+    renderDetail(p);
+    document.getElementById('list-view').style.display = 'none';
+    document.getElementById('detail-view').style.display = '';
+}
+
+function hideDetail() {
+    STATE.current = null;
+    document.getElementById('detail-view').style.display = 'none';
+    document.getElementById('list-view').style.display = '';
+    loadPapers();
+}
+
+function renderDetail(p) {
+    var ck = paperCitekey(p);
+    var authors = (p.authors || []).join(', ');
+    var highlights = parseHighlights(p.body);
+    var topicsHtml = (p.topics || []).map(function(t) { return '<span>' + EOS_UI.esc(t) + '</span>'; }).join('');
+
+    var pdfSection = p.local_pdf
+        ? '<button class="eos-btn-sm" onclick="openPdf()">&#128196; Open PDF</button>'
+        : '<input type="file" accept="application/pdf" onchange="attachPdf(this.files[0])">';
+
+    var linksHtml = [];
+    if (p.doi) linksHtml.push('<a href="https://doi.org/' + encodeURIComponent(p.doi) + '" target="_blank" rel="noopener">doi:' + EOS_UI.esc(p.doi) + '</a>');
+    if (p.url && !p.doi && /^https?:\/\//i.test(p.url)) linksHtml.push('<a href="' + EOS_UI.escAttr(p.url) + '" target="_blank" rel="noopener noreferrer">source link</a>');
+
+    document.getElementById('detail-body').innerHTML =
+        '<h2>' + EOS_UI.esc(p.title || ck) + '</h2>' +
+        '<div class="lib-detail-meta">' + EOS_UI.esc(authors) + (p.year ? ' · ' + EOS_UI.esc(p.year) : '') +
+            (p.journal ? ' · ' + EOS_UI.esc(p.journal) : '') + '</div>' +
+        '<div class="lib-detail-row">' +
+            '<label>Status ' +
+                '<select id="lib-status-select" onchange="updateField(' + EOS_UI.jsArg(ck) + ', \'status\', this.value)">' +
+                STATUSES.map(function(s) { return '<option value="' + s + '"' + (s === p.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+                '</select>' +
+            '</label>' +
+            '<label>Rating <input type="number" min="0" max="5" step="1" style="width:52px" value="' + EOS_UI.escAttr(Number(p.rating) || 0) +
+                '" onchange="updateField(' + EOS_UI.jsArg(ck) + ', \'rating\', this.value)"></label>' +
+        '</div>' +
+        (topicsHtml ? '<div class="lib-topics">' + topicsHtml + '</div>' : '') +
+        (linksHtml.length ? '<div class="lib-detail-row">' + linksHtml.join(' · ') + '</div>' : '') +
+        (p.abstract ? '<div class="lib-abstract">' + EOS_UI.esc(p.abstract) + '</div>' : '') +
+        '<div class="lib-detail-row">' + pdfSection + '</div>' +
+        '<h3>Highlights</h3>' +
+        '<div id="lib-highlights">' +
+            (highlights.length ? highlights.map(function(h) { return '<div class="lib-hl-item">' + EOS_UI.esc(h) + '</div>'; }).join('')
+                                : '<div class="lib-detail-meta">No highlights yet.</div>') +
+        '</div>' +
+        '<button class="eos-btn-sm" onclick="openAddHighlight()">+ Add highlight</button>' +
+        '<div class="lib-actions">' +
+            '<a class="eos-btn-sm" href="/library/api/export?format=bibtex&citekey=' + encodeURIComponent(ck) + '" download>Export BibTeX</a>' +
+            '<a class="eos-btn-sm" href="/library/api/export?format=csl-json&citekey=' + encodeURIComponent(ck) + '" download>Export CSL-JSON</a>' +
+            '<button class="eos-btn-sm" onclick="sendToKb(' + EOS_UI.jsArg(ck) + ')">&rarr; Send to KB</button>' +
+            '<button class="eos-btn-sm eos-btn-danger" onclick="deletePaper(' + EOS_UI.jsArg(ck) + ')">&#128465; Delete</button>' +
+        '</div>';
+}
+
+function openPdf() {
+    if (!STATE.current || !STATE.current.local_pdf) return;
+    var ck = paperCitekey(STATE.current);
+    EOS_PDF.open({
+        path: STATE.current.local_pdf,
+        serveBase: '/library/api/pdf',
+        title: STATE.current.title || ck,
+        onHighlight: function(page) { openAddHighlight(page); },
+    });
+}
+
+async function attachPdf(file) {
+    if (!file || !STATE.current) return;
+    var ck = paperCitekey(STATE.current);
+    var fd = new FormData();
+    fd.append('file', file);
+    var r = await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(ck) + '/pdf', { method: 'POST', body: fd });
+    if (r.error) { EOS_UI.toast('Upload failed: ' + r.error, false); return; }
+    EOS_UI.toast('PDF attached', true);
+    showDetail(ck);
+}
+
+function openAddHighlight(page) {
+    if (!STATE.current) return;
+    var ck = paperCitekey(STATE.current);
+    EOS_UI.formModal('Add highlight', [
+        { key: 'page', label: 'Page', value: page ? String(page) : '', autofocus: !page },
+        { key: 'quote', label: 'Quote', type: 'textarea' },
+        { key: 'note', label: 'Note (optional)', type: 'textarea' },
+    ], async function(vals) {
+        var r = await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(ck) + '/highlight', {
+            method: 'POST', body: JSON.stringify(vals),
+        });
+        if (r.error) { EOS_UI.toast('Failed: ' + r.error, false); return; }
+        showDetail(ck);
+    });
+}
+
+async function updateField(citekey, field, value) {
+    var r = await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(citekey), {
+        method: 'PUT', body: JSON.stringify((function() { var o = {}; o[field] = value; return o; })()),
+    });
+    if (r.error) EOS_UI.toast('Update failed: ' + r.error, false);
+}
+
+async function sendToKb(citekey) {
+    var r = await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(citekey) + '/send-to-kb', { method: 'POST' });
+    if (r.error) { EOS_UI.toast('Failed: ' + r.error, false); return; }
+    EOS_UI.toast('Proposed — review it in the pending-actions dashboard', true);
+}
+
+function deletePaper(citekey) {
+    EOS_UI.confirm('Delete this paper (and its attached PDF)? This cannot be undone.', async function() {
+        var r = await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(citekey), { method: 'DELETE' });
+        if (r.error) { EOS_UI.toast('Delete failed: ' + r.error, false); return; }
+        _route.clear();
+    });
+}
+
+// ── Import modal ─────────────────────────────────────────────────
+
+function openImportModal() {
+    STATE.pendingPdfFile = null;
+    EOS_UI.modal({
+        title: 'Add a paper',
+        width: '640px',
+        body:
+            '<div class="lib-detail-row">' +
+                '<input type="text" id="imp-doi" class="eos-form-input" placeholder="DOI (e.g. 10.1109/...)" style="flex:1">' +
+                '<button class="eos-btn-sm" onclick="lookupByDoi()">Look up DOI</button>' +
+            '</div>' +
+            '<div class="lib-detail-row">' +
+                '<input type="file" id="imp-pdf" accept="application/pdf" onchange="scanPdf(this.files[0])">' +
+                '<span class="lib-detail-meta" id="imp-pdf-status"></span>' +
+            '</div>' +
+            '<hr>' +
+            EOS_UI.formHtml([
+                { key: 'title', label: 'Title', required: true, autofocus: true },
+                { key: 'authors', label: 'Authors (comma-separated)' },
+                { key: 'year', label: 'Year' },
+                { key: 'journal', label: 'Journal / venue' },
+                { key: 'url', label: 'URL' },
+                { key: 'abstract', label: 'Abstract', type: 'textarea' },
+                { key: 'topics', label: 'Topics (comma-separated)' },
+            ]) +
+            '<div class="lib-detail-row" style="justify-content:flex-end;margin-top:14px">' +
+                '<button class="eos-btn-sm" onclick="EOS_UI.closeModal()">Cancel</button>' +
+                '<button class="eos-btn" onclick="saveImport()">Save</button>' +
+            '</div>',
+    });
+}
+
+function fillImportForm(meta) {
+    if (!meta) return;
+    var map = { title: 'title', authors: (meta.authors || []).join(', '), year: meta.year, journal: meta.journal, url: meta.url };
+    Object.keys(map).forEach(function(k) {
+        var el = document.getElementById('eos-form-' + k);
+        var val = k === 'authors' ? map.authors : meta[k];
+        if (el && val) el.value = val;
+    });
+    var doiEl = document.getElementById('imp-doi');
+    if (doiEl && meta.doi && !doiEl.value) doiEl.value = meta.doi;
+}
+
+async function lookupByDoi() {
+    var doi = (document.getElementById('imp-doi').value || '').trim();
+    if (!doi) { EOS_UI.toast('Enter a DOI first', false); return; }
+    var r = await EOS.apiSafe('/library/api/import/preview', { method: 'POST', body: JSON.stringify({ doi: doi }) });
+    if (r.error || !r.metadata || !Object.keys(r.metadata).length) { EOS_UI.toast('No metadata found for that DOI', false); return; }
+    fillImportForm(r.metadata);
+    EOS_UI.toast('Metadata filled — review before saving', true);
+}
+
+async function scanPdf(file) {
+    if (!file) return;
+    STATE.pendingPdfFile = file;
+    var status = document.getElementById('imp-pdf-status');
+    status.textContent = 'Scanning…';
+    var fd = new FormData();
+    fd.append('file', file);
+    var r = await EOS.apiSafe('/library/api/import/pdf-scan', { method: 'POST', body: fd });
+    if (r.error) { status.textContent = 'Scan failed: ' + r.error; return; }
+    if (r.metadata && Object.keys(r.metadata).length) {
+        fillImportForm(r.metadata);
+        status.textContent = 'DOI found — metadata filled';
+    } else {
+        status.textContent = r.doi_found ? 'DOI found but not resolved — fill in manually' : 'No DOI found — fill in manually';
+    }
+}
+
+async function saveImport() {
+    var vals = EOS_UI.formValues([
+        { key: 'title' }, { key: 'authors' }, { key: 'year' }, { key: 'journal' },
+        { key: 'url' }, { key: 'abstract' }, { key: 'topics' },
+    ]);
+    if (!vals.title) { EOS_UI.toast('Title is required', false); return; }
+    var doi = (document.getElementById('imp-doi').value || '').trim();
+    var r = await EOS.apiSafe('/library/api/papers', {
+        method: 'POST',
+        body: JSON.stringify({
+            title: vals.title, authors: vals.authors, year: vals.year, journal: vals.journal,
+            url: vals.url, abstract: vals.abstract, topics: vals.topics, doi: doi,
+            source: doi ? 'crossref' : 'manual',
+        }),
+    });
+    if (r.error) { EOS_UI.toast('Save failed: ' + r.error, false); return; }
+    EOS_UI.closeModal();
+    var pdfFile = STATE.pendingPdfFile;
+    if (pdfFile && r.citekey) {
+        var fd = new FormData();
+        fd.append('file', pdfFile);
+        await EOS.apiSafe('/library/api/papers/' + encodeURIComponent(r.citekey) + '/pdf', { method: 'POST', body: fd });
+    }
+    EOS_UI.toast('Paper added', true);
+    loadPapers();
+    if (r.citekey) openPaper(r.citekey);
+}
+
+// ── Initial load ──────────────────────────────────────────────────
+renderChips();
+loadPapers().then(function() { _route.init(); });
+</script>
+</body>
+</html>

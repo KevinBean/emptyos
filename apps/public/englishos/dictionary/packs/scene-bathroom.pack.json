@@ -1,0 +1,69 @@
+{
+  "id": "scene-bathroom",
+  "groups": [
+    {
+      "id": "fixtures",
+      "label": "Fixtures",
+      "members": [
+        "toilet",
+        "bathtub",
+        "shower",
+        "sink",
+        "tap",
+        "mirror",
+        "towel-rail",
+        "shower-cap",
+        "rubber-duck",
+        "medicine-cabinet",
+        "toilet-brush",
+        "plunger"
+      ]
+    },
+    {
+      "id": "teeth-and-skin",
+      "label": "Teeth, hair and skin",
+      "members": [
+        "toothbrush",
+        "toothpaste",
+        "dental-floss",
+        "mouthwash",
+        "soap",
+        "shampoo",
+        "conditioner",
+        "shower-gel",
+        "deodorant",
+        "sunscreen",
+        "moisturiser",
+        "perfume",
+        "cotton-bud",
+        "tissue",
+        "toilet-paper"
+      ]
+    },
+    {
+      "id": "grooming",
+      "label": "Grooming",
+      "members": [
+        "razor",
+        "shaving-cream",
+        "hairdryer",
+        "comb",
+        "hairbrush",
+        "nail-clippers",
+        "tweezers",
+        "scissors"
+      ]
+    },
+    {
+      "id": "laundry",
+      "label": "Towels and more",
+      "members": [
+        "towel",
+        "bathrobe",
+        "scales",
+        "laundry-basket",
+        "washing-machine"
+      ]
+    }
+  ]
+}

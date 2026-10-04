@@ -1,0 +1,612 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>EmptyOS</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f7f7f8;
+    --bg-card: #f0f1f3;
+    --text: #1a1a1a;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --user-bg: #eff6ff;
+    --asst-bg: transparent;
+    --ok: #4a7;
+    --err: #d66;
+    --warn: #c80;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a; --bg-soft: #1f1f1f; --bg-card: #262626;
+      --text: #ececec; --muted: #9ca3af; --border: #2e2e2e;
+      --accent: #60a5fa; --accent-soft: #1e293b;
+      --user-bg: #1e293b;
+      --ok: #5b8; --err: #e88; --warn: #db8;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header .title { font-weight: 600; font-size: 13px; }
+  header select, header button {
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text); cursor: pointer; padding: 4px 8px;
+    border-radius: 6px; font: inherit; font-size: 12px;
+  }
+  header button { border: none; }
+  header button:hover, header select:hover { background: var(--border); }
+  header .spacer { flex: 1; }
+  header select { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Model pill */
+  .model-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--bg-card); border: none; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--text);
+  }
+  .model-pill:hover { background: var(--border); }
+  .model-pill .icon { font-size: 11px; }
+  .model-pill.cost-free { color: var(--ok); }
+  .model-pill.cost-local { color: var(--accent); }
+  .model-pill.cost-paid { color: var(--warn); }
+
+  /* Reading layer — a compact control strip, not a second app. */
+  /* padding/background/border now come from .eos-section */
+  .reading-head, .reading-detail {
+    display: flex; align-items: center; gap: 7px;
+  }
+  .reading-head { margin-bottom: 7px; }
+  .reading-title {
+    font: 650 11px ui-monospace, "SFMono-Regular", Consolas, monospace;
+    letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+  }
+  .reading-site {
+    margin-left: auto; padding: 2px 6px; border: 0; border-radius: 5px;
+    background: transparent; color: var(--muted); font: inherit; font-size: 10px;
+    cursor: pointer;
+  }
+  .reading-site:hover { background: var(--border); color: var(--text); }
+  .reading-modes {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    padding: 2px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg);
+  }
+  .reading-mode {
+    padding: 5px 8px; border: 0; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--muted); font: 600 11px system-ui, sans-serif;
+  }
+  .reading-mode.active { background: var(--text); color: var(--bg); }
+  .reading-detail { margin-top: 7px; }
+  .reading-detail label { color: var(--muted); font-size: 10px; white-space: nowrap; }
+  /* One label column, one control column. The old layout packed two label+select
+     pairs onto each row, so nothing lined up and every control was cramped into a
+     third of a narrow panel. */
+  .reading-grid {
+    display: grid; grid-template-columns: 74px 1fr;
+    align-items: center; gap: 6px 8px; margin-top: 9px;
+  }
+  .reading-grid > label {
+    color: var(--muted); font-size: 11px; white-space: nowrap;
+  }
+  .reading-grid select {
+    width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+    font-size: 11px;
+  }
+  .reading-grid select:disabled { opacity: .55; }
+  .reading-model { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .reading-warm {
+    flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text);
+    font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .reading-warm:hover:not(:disabled) { background: var(--border); }
+  .reading-warm:disabled { opacity: .6; cursor: default; }
+  .reading-toggles {
+    display: flex; align-items: center; gap: 14px;
+    margin-top: 9px; padding-left: 82px;
+  }
+  .reading-status {
+    margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.35;
+  }
+  .reading-status .warm { color: var(--ok, var(--muted)); }
+  .reading-status .cold { color: var(--warn); }
+  .reading-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .reading-toggle input { margin: 0; }
+  .reading-note { margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+  .reading-note.reading-error { color: var(--err); }
+  #reading-consent {
+    margin: 8px 10px 0; padding: 9px 10px; border: 1px solid var(--warn);
+    border-radius: 8px; background: color-mix(in srgb, var(--warn) 10%, var(--bg));
+    font-size: 11px; line-height: 1.35;
+  }
+  #reading-consent strong { display: block; margin-bottom: 3px; }
+  #reading-consent-summary { max-height: 110px; overflow: auto; white-space: pre-wrap; color: var(--muted); }
+  #reading-consent .consent-actions { display: flex; gap: 6px; margin-top: 7px; }
+  #reading-consent button {
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg); color: var(--text); cursor: pointer; font: inherit; font-size: 10px;
+  }
+  #reading-consent .allow { background: var(--accent); border-color: var(--accent); color: white; }
+
+  /* ── Messages ───────────────────────────────── */
+  #messages {
+    flex: 1; overflow-y: auto; padding: 14px 12px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .turn { display: flex; flex-direction: column; gap: 4px; }
+  .turn .role-row { display: flex; align-items: center; gap: 6px; }
+  .turn .role { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .turn .provenance {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: var(--bg-card); border-radius: 999px; padding: 1px 7px;
+    font-size: 10px; color: var(--muted);
+  }
+  .turn .provenance.cloud { color: var(--warn); }
+  .turn .provenance.local { color: var(--accent); }
+  .turn .provenance.free { color: var(--ok); }
+  .turn .body {
+    padding: 10px 12px; border-radius: 10px; line-height: 1.5;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .turn.user .body { background: var(--user-bg); }
+  .turn.assistant .body { background: var(--asst-bg); padding-left: 4px; padding-right: 4px; }
+  .turn.system .body { background: var(--bg-card); color: var(--muted); font-size: 12px; }
+  .turn .body code {
+    background: var(--bg-card); padding: 1px 5px; border-radius: 3px;
+    font: 12px ui-monospace, "SF Mono", monospace;
+  }
+  .turn .body a { color: var(--accent); }
+
+  /* ── DO Cards ───────────────────────────────── */
+  .do-card {
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg-soft); margin-top: 6px;
+    overflow: hidden;
+  }
+  .do-card .head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .do-card .arrow { color: var(--muted); }
+  .do-card .verb {
+    font: 12px ui-monospace, "SF Mono", monospace;
+    color: var(--text); font-weight: 600;
+  }
+  .do-card .actor-chip {
+    background: var(--bg-card); color: var(--muted);
+    padding: 1px 7px; border-radius: 999px; font-size: 10px;
+  }
+  .do-card .head .spacer { flex: 1; }
+  .do-card .status {
+    font-size: 11px; color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .do-card.applied .status { color: var(--ok); }
+  .do-card.rejected .status { color: var(--muted); }
+  .do-card.failed .status { color: var(--err); }
+  .do-card .args {
+    padding: 8px 12px; font: 12px ui-monospace, "SF Mono", monospace;
+    color: var(--text); white-space: pre-wrap; word-wrap: break-word;
+    background: var(--bg);
+    max-height: 220px; overflow-y: auto;
+  }
+  .do-card .args .key { color: var(--accent); }
+  .do-card .args .str { color: var(--text); }
+  .do-card .args .empty { color: var(--muted); font-style: italic; }
+  .do-card .actions {
+    display: flex; gap: 6px; padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .do-card .actions button {
+    padding: 5px 12px; border-radius: 6px; cursor: pointer; font: inherit;
+    font-size: 12px; border: 1px solid var(--border); background: var(--bg);
+    color: var(--text);
+  }
+  .do-card .actions button.apply {
+    background: var(--accent); color: white; border-color: var(--accent);
+    font-weight: 600;
+  }
+  .do-card .actions button.apply:hover { filter: brightness(1.1); }
+  .do-card .actions button:hover { background: var(--bg-card); }
+  .do-card .result {
+    padding: 6px 12px; font-size: 12px; color: var(--muted);
+    border-top: 1px solid var(--border); background: var(--bg-card);
+  }
+  .do-card.applied .result { color: var(--ok); }
+  .do-card.failed .result { color: var(--err); }
+
+  /* ── Greeting ───────────────────────────────── */
+  .greeting { margin-top: auto; padding: 0 4px; }
+  .greeting h1 { color: var(--accent); margin: 0 0 4px; font-size: 22px; font-weight: 500; }
+  .greeting p { color: var(--text); margin: 0 0 14px; font-size: 20px; font-weight: 400; }
+  .chips { display: flex; flex-direction: column; gap: 8px; }
+  .chip {
+    text-align: left; padding: 10px 14px; background: var(--bg-soft);
+    border: 1px solid var(--border); border-radius: 999px;
+    color: var(--text); cursor: pointer; font: inherit;
+    transition: background .1s;
+  }
+  .chip:hover { background: var(--bg-card); }
+  .chip-icon { color: var(--accent); margin-right: 6px; }
+
+  /* ── Tab bar ────────────────────────────────── */
+  /* Moved inside the Browser session section: its state belongs with its
+     controls, not stranded at the far end of the panel. */
+  #tab-bar { margin-top: 6px; border-top: 1px solid var(--border); }
+  #tab-bar .header-row { padding: 6px 0; }
+  .tab-row { padding-left: 0; padding-right: 0; }
+  #tab-bar .header-row {
+    display: flex; align-items: center; padding: 6px 12px; gap: 8px;
+    cursor: pointer; user-select: none;
+  }
+  #tab-bar .header-row .label { flex: 1; font-size: 11px; color: var(--muted); }
+  #tab-bar .header-row .label strong { color: var(--text); }
+  #tab-bar .chevron { color: var(--muted); transition: transform .15s; font-size: 9px; }
+  #tab-bar.open .chevron { transform: rotate(180deg); }
+  #tab-list { max-height: 0; overflow: hidden; transition: max-height .15s ease; }
+  #tab-bar.open #tab-list { max-height: 200px; overflow-y: auto; }
+  .tab-row {
+    display: flex; align-items: center; gap: 8px; padding: 5px 12px;
+    cursor: pointer; font-size: 12px;
+  }
+  .tab-row:hover { background: var(--bg-card); }
+  .tab-row .t-fav { width: 14px; height: 14px; flex-shrink: 0; }
+  .tab-row .t-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Input ──────────────────────────────────── */
+  #input-area {
+    border-top: 1px solid var(--border); padding: 8px 10px;
+    background: var(--bg); position: relative;
+  }
+  #pills { margin-bottom: 4px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--accent-soft); color: var(--accent);
+    padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    margin: 2px; cursor: pointer;
+  }
+  .pill .x { opacity: .6; }
+  .pill:hover .x { opacity: 1; }
+  #input-wrap {
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-soft); padding: 6px 10px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  #input {
+    border: none; background: transparent; color: var(--text);
+    font: inherit; resize: none; outline: none; width: 100%;
+    min-height: 22px; max-height: 160px;
+  }
+  #input-controls { display: flex; align-items: center; gap: 4px; }
+  #input-controls .spacer { flex: 1; }
+  #input-controls button {
+    background: var(--bg-card); border: none; color: var(--text);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer; font: inherit;
+    font-size: 11px;
+  }
+  #input-controls button:hover { background: var(--border); }
+  #send { background: var(--accent); color: white; font-weight: 600; }
+  #send:disabled { opacity: .5; cursor: not-allowed; }
+  #send:hover:not(:disabled) { filter: brightness(1.1); }
+
+  /* ── Slash popup ───────────────────────────── */
+  #slash-popup {
+    display: none;
+    position: absolute; bottom: 100%; left: 12px; right: 12px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
+    max-height: 280px; overflow-y: auto; z-index: 20;
+    margin-bottom: 6px;
+  }
+  #slash-popup.open { display: block; }
+  .slash-row {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border);
+  }
+  .slash-row:last-child { border-bottom: none; }
+  .slash-row:hover, .slash-row.active { background: var(--bg-card); }
+  .slash-row .verb {
+    font: 12px ui-monospace, monospace; color: var(--accent); font-weight: 600;
+    min-width: 110px;
+  }
+  .slash-row .desc { color: var(--muted); }
+
+  /* ── Model picker ──────────────────────────── */
+  /* Replaces a window.prompt that asked you to TYPE a provider name copied out
+     of a list it printed. Blocking, unstyled, and a forbidden pattern
+     (docs/FRONTEND-DESIGN-LANGUAGE.md DL-6). */
+  #model-popover {
+    display: none;
+    position: absolute; top: 42px; right: 10px; min-width: 190px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.16);
+    max-height: 300px; overflow-y: auto; z-index: 40;
+  }
+  #model-popover.open { display: block; }
+  .model-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+    cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border);
+  }
+  .model-row:last-child { border-bottom: none; }
+  .model-row:hover { background: var(--bg-card); }
+  .model-row.current { color: var(--accent); font-weight: 600; }
+  .model-row .cost { margin-left: auto; font-size: 10px; color: var(--muted); }
+
+  /* ── Mention popup ─────────────────────────── */
+  #mention-popup {
+    position: absolute; bottom: 100%; left: 12px; right: 12px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; max-height: 240px; overflow-y: auto; z-index: 20;
+    margin-bottom: 6px;
+  }
+
+  /* ── Voice mode ─────────────────────────────── */
+  header #voice-btn.on { background: var(--accent); color: white; }
+  #mic-btn.listening {
+    background: var(--err); color: white;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+  #input.listening-hint { color: var(--muted); font-style: italic; }
+
+  /* ── Status ─────────────────────────────────── */
+  .status { font-size: 11px; color: var(--muted); padding: 2px 12px; min-height: 14px; }
+  .status.err { color: var(--err); }
+  .status.ok { color: var(--ok); }
+  /* Reading layer, Browser session and Conversation are peers — three things the
+     panel controls. They were three different visual languages (a light card, a dark
+     slab, and a strip of header chrome), which made them read as unrelated. One
+     section style, stated the same way. */
+  .eos-section {
+    padding: 9px 12px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-soft);
+  }
+  .eos-section .section-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  .eos-section .section-title {
+    font: 650 11px ui-monospace, "SFMono-Regular", Consolas, monospace;
+    letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+  }
+  .eos-section .row { display: flex; gap: 6px; align-items: center; }
+  .eos-section .row > select { flex: 1; min-width: 0; }
+  .eos-section button {
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    border-radius: 7px; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .eos-section button:hover:not(:disabled) { background: var(--border); }
+  .eos-section button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .eos-section button:disabled { opacity: .45; cursor: default; }
+  .eos-section input[type=text] {
+    padding: 4px 8px; font: inherit; font-size: 12px;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .eos-section .muted { color: var(--muted); font-size: 11px; }
+  /* Section state, e.g. "Idle" / "Disarmed": the resting state is information,
+     not an announcement. Only a live capture earns the accent. */
+  .eos-section .section-head .muted,
+  .eos-section .section-head #lecture-state { font-weight: 400; }
+  .lecture-live { color: var(--accent); font-size: 11px; font-weight: 600; }
+  /* Set-once configuration folds away: it was taking ~45% of a 375px panel to
+     show settings that change about once a month. */
+  .eos-fold { margin-top: 8px; }
+  .eos-fold > summary {
+    cursor: pointer; color: var(--muted); font-size: 11px; padding: 2px 0;
+  }
+  .eos-fold > summary:hover { color: var(--text); }
+  /* A failed capture must not read like "nothing here" — see
+     .claude/rules/audits.md on failure honesty. */
+  .eos-section .muted.err { color: var(--red, #d9534f); }
+  #browser-session-state { margin-left: auto; color: var(--muted); font-size: 11px; }
+  #chat-control #model-pill-mount { margin-left: auto; }
+  #chat-control select {
+    padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">EmptyOS</div>
+  <span class="spacer"></span>
+  <button id="opts-btn" title="Settings">&#9881;</button>
+</header>
+
+<section id="reading-control" class="eos-section" aria-label="Reading assistance">
+  <div class="section-head">
+    <span class="section-title">Reading layer</span>
+    <button class="reading-site" id="reading-site" type="button">Pause this site</button>
+  </div>
+  <div class="reading-modes" role="group" aria-label="Reading assistance mode">
+    <button class="reading-mode" data-mode="off" type="button">Off</button>
+    <button class="reading-mode" data-mode="ask" type="button">Ask</button>
+    <button class="reading-mode" data-mode="flow" type="button">Flow</button>
+  </div>
+  <div class="reading-status" id="reading-model-note"></div>
+  <div class="reading-note" id="reading-note" hidden></div>
+  <details class="eos-fold">
+    <summary>Models &amp; languages</summary>
+  <div class="reading-grid">
+    <label for="reading-flow-provider">Flow model</label>
+    <div class="reading-model">
+      <select id="reading-flow-provider" title="The model that reads each screen"></select>
+      <button class="reading-warm" id="reading-warm" type="button" hidden>Warm up</button>
+    </div>
+
+    <label for="reading-local-provider">Ask model</label>
+    <select id="reading-local-provider" title="Local model, used on demand"></select>
+
+    <label for="reading-level">Flag above</label>
+    <select id="reading-level" title="The bar a word must clear to be worth interrupting you for">
+      <option value="auto">Auto — from my judgements</option>
+      <option value="A1">A1 — beginner</option>
+      <option value="A2">A2 — elementary</option>
+      <option value="B1">B1 — intermediate</option>
+      <option value="B2">B2 — upper-intermediate</option>
+      <option value="C1">C1 — advanced</option>
+      <option value="C2">C2 — proficient</option>
+    </select>
+
+    <label for="reading-target-language">Reading</label>
+    <select id="reading-target-language" title="The language you are reading and learning"></select>
+
+    <label for="reading-native-language">Explain in</label>
+    <select id="reading-native-language" title="Your own language — glosses are written in this"></select>
+
+    <label for="reading-display">Placement</label>
+    <select id="reading-display" title="Explanation placement">
+      <option value="auto">Auto</option>
+      <option value="margin">Margin</option>
+      <option value="corner">Corner</option>
+      <option value="ink">Ink</option>
+    </select>
+  </div>
+  <div class="reading-toggles">
+    <label for="reading-rail" class="reading-toggle">
+      <input type="checkbox" id="reading-rail"> Word list
+    </label>
+    <label for="reading-pronounce" class="reading-toggle">
+      <input type="checkbox" id="reading-pronounce"> Speak
+    </label>
+  </div>
+  </details>
+</section>
+
+<div id="reading-consent" hidden>
+  <strong id="reading-consent-title">Allow this reading prompt?</strong>
+  <div id="reading-consent-summary"></div>
+  <div class="consent-actions">
+    <button id="reading-consent-deny" type="button">Deny</button>
+    <button id="reading-consent-allow" class="allow" type="button">Allow this session</button>
+  </div>
+</div>
+
+<section id="browser-session" class="eos-section" aria-label="Browser Session">
+  <div class="section-head">
+    <span class="section-title">Browser session</span>
+    <span id="browser-session-state" class="muted">Disarmed</span>
+  </div>
+  <div class="row">
+    <button id="browser-arm" class="primary" type="button">Arm</button>
+    <button id="browser-extend" type="button" disabled>Extend</button>
+    <button id="browser-disarm" type="button" disabled>Disarm</button>
+    <button id="browser-evaluate-jobs" type="button">Evaluate shared jobs</button>
+    <button id="browser-allow-origin" type="button" hidden>Allow origin</button>
+  </div>
+<div id="tab-bar">
+  <div class="header-row" id="tab-toggle">
+    <span class="label"><strong id="tab-count">No tabs shared</strong></span>
+    <span class="chevron">&#9650;</span>
+  </div>
+  <div id="tab-list"></div>
+</div>
+</section>
+
+<section id="lecture-capture" class="eos-section" aria-label="Lecture capture">
+  <div class="section-head">
+    <span class="section-title">Lecture capture</span>
+    <span id="lecture-state" class="muted">Idle</span>
+  </div>
+  <div class="row">
+    <input id="lecture-label" type="text" placeholder="label, e.g. part2-rule3"
+           title="Note filename — both start paths read this">
+    <button id="lecture-start" class="primary" type="button" disabled>Record</button>
+    <button id="lecture-stop" type="button" disabled>Stop &amp; file</button>
+  </div>
+  <div class="row"><span id="lecture-how" class="muted"></span></div>
+  <div class="row"><span id="lecture-hint" class="muted"></span></div>
+  <details class="eos-fold">
+    <summary>Destination</summary>
+    <div class="row">
+      <input id="lecture-folder" type="text" placeholder="vault folder"
+             title="Vault-relative folder for the note">
+    </div>
+  </details>
+</section>
+
+<section id="chat-control" class="eos-section" aria-label="Conversation">
+  <div class="section-head">
+    <span class="section-title">Conversation</span>
+    <span id="model-pill-mount"></span>
+  </div>
+  <div class="row">
+    <select id="session-select" title="Sessions"><option value="">Loading…</option></select>
+    <button id="voice-btn" title="Voice mode (mic + TTS)">&#128264;</button>
+    <button id="capture-btn" title="Capture current page">Capture</button>
+    <button id="new-btn" title="New chat">New</button>
+  </div>
+</section>
+
+<div id="messages">
+  <div class="greeting" id="greeting">
+    <h1 id="hello">Hello</h1>
+    <p>How can I help you today?</p>
+    <div class="chips">
+      <button class="chip" data-q="Summarise this page"><span class="chip-icon">&#9679;</span>Summarise this page</button>
+      <button class="chip" data-q="What are my open tasks?"><span class="chip-icon">&#9679;</span>What are my open tasks?</button>
+      <button class="chip" data-q="What did I work on yesterday?"><span class="chip-icon">&#9679;</span>What did I work on yesterday?</button>
+    </div>
+  </div>
+</div>
+
+<div class="status" id="status"></div>
+
+<div id="site-hint" style="display:none; padding: 6px 10px; border-top: 1px solid var(--border); background: var(--accent-soft);">
+  <button id="site-hint-btn" style="background: var(--accent); color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;"></button>
+  <span id="site-hint-label" style="margin-left: 8px; font-size: 11px; color: var(--muted);"></span>
+</div>
+
+
+<div id="input-area">
+  <div id="slash-popup"></div>
+  <div id="model-popover" role="listbox" aria-label="Switch model"></div>
+  <div id="pills"></div>
+  <div id="input-wrap">
+    <textarea id="input" rows="1" placeholder="Message · / commands · @ tabs"></textarea>
+    <div id="input-controls">
+      <button id="share-current" title="Share current tab">+ Tab</button>
+      <button id="mic-btn" title="Push to talk (Web Speech)" style="display:none;">🎤</button>
+      <span class="spacer"></span>
+      <button id="cancel" style="display:none;">Stop</button>
+      <button id="send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="content.js"></script>
+<script src="reading-config.js"></script>
+<script src="daemon-client.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,888 @@
+/* ============================================================
+   EmptyOS — Shared Theme System
+
+   Light:  eos (default), digital-garden, soft-light, tatami
+   Dark:   void-dark, warm-dark, nord, forest, deep-sea, vino
+
+   The id list lives in ONE place — `_KNOWN_THEMES` in eos.js, which
+   `EOS.THEMES` aliases. The pre-paint bootstrap in server.py deliberately
+   holds no list (it only shape-checks), so adding a theme means: a block
+   here, the id + a label in eos.js, and the settings schema. Nothing else.
+   `tests/test_unit_theme_registry.py` pins that those agree and that no page
+   has re-hardcoded the list.
+
+   Every theme must clear `python scripts/check-contrast.py` with 0 fail AND
+   0 warn — that is the current state, so any warning you see is yours.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* Shared base — non-color vars inherited by all themes.
+   Single source of truth for the tokens documented in
+   docs/FRONTEND-DESIGN-LANGUAGE.md and exported via DESIGN.md. */
+:root {
+  /* Radius scale */
+  --radius-sm:      6px;
+  --radius:         8px;
+  --radius-lg:      14px;
+  --radius-pill:    999px;
+
+  /* Fonts */
+  --font:           'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --mono:           'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --font-mono:      var(--mono);
+  --font-display:   'DM Sans', sans-serif;
+
+  /* Spacing scale — 4 / 8 / 12 / 16 / 24 / 32 / 48. Nothing in between. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Type scale — see FRONTEND-DESIGN-LANGUAGE.md §3. */
+  --fs-meta:    11px;   /* all-caps labels */
+  --fs-mono:    12px;   /* keyboard hints, mono data */
+  --fs-small:   13px;   /* captions, secondary prose */
+  --fs-body:    14px;   /* body default */
+  --fs-prose:   15px;   /* prose readers, note body */
+  --fs-h2:      22px;   /* card titles, section headers */
+  --fs-h1:      28px;   /* page titles */
+  --fs-hero:    32px;   /* hero numbers (clock, big stats) — scale up to 48 inline */
+
+  --fw-body: 400;
+  --fw-emphasis: 500;
+  --fw-label: 600;
+  --fw-display: 700;
+
+  --lh-prose:   1.5;
+  --lh-ui:      1.3;
+  --lh-heading: 1.2;
+  --lh-number:  1.0;
+
+  --tracking-display: -0.02em;
+  --tracking-heading: -0.01em;
+  --tracking-meta:    0.14em;   /* FDL §3: meta labels need ≥+1.5px tracking; 0.14em ≈ 1.54px @ 11px */
+
+  /* Motion — durations + easings. Use these instead of hardcoding ms. */
+  --dur-fast:    120ms;  /* hover/focus */
+  --dur-base:    200ms;  /* most transitions */
+  --dur-slide:   250ms;  /* drawers, slide panels */
+  --dur-max:     300ms;  /* upper bound for visible motion */
+  --ease:        ease;
+  --ease-out:    ease-out;
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  /* Z-index scale — keeps overlays predictable. */
+  --z-nav:        100;
+  --z-overlay:    200;
+  --z-drawer:     201;
+  --z-modal:      300;
+  --z-toast:      400;
+  --z-fab:        500;
+
+  /* Layout */
+  --max-prose:     720px;  /* journal, notes, articles */
+  --max-app:      1100px;  /* dashboards, lists */
+  --bp-grid:       500px;
+  --bp-nav:        640px;
+  --bp-sidebar:    900px;
+
+  /* Derived accent tints — resolve against active theme at use-time. */
+  --accent-tint-weak:   color-mix(in srgb, var(--accent)  7%, var(--bg-card));
+  --accent-tint-mid:    color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-tint-strong: color-mix(in srgb, var(--accent) 24%, transparent);
+
+  /* Semantic data colors — fulfill the FDL §4 contract. All five alias or derive
+     from theme-tuned tokens, so they desaturate per theme. Use by intent, never
+     decoratively.
+
+     --blue/--purple were fixed literals (#3b82f6 / #a855f7) until 2026-07-11 —
+     theme-invariant colours in the design system itself, which is the very
+     anti-pattern FDL §4.1 forbids. They read at ~2.4:1 as chip text on the warm
+     light themes. --purple has no semantic token of its own, so it derives from
+     --text: darkens on light themes, lightens on dark, keeps the hue. */
+  --red:    var(--danger);    /* overdue / error */
+  --amber:  var(--warning);   /* warning / stale */
+  --green:  var(--success);   /* done / success */
+  --blue:   var(--info);      /* info / pending */
+  --purple: color-mix(in srgb, #a855f7 62%, var(--text));  /* rare / special */
+
+  /* Ink for text sitting on ANY vivid fill — the accent OR a status colour
+     (`background: var(--danger); color: var(--ink-on-vivid)`).
+     Within a theme, the accent and the status colours share a lightness polarity
+     (all are vivid *against that theme's background*), so a single ink serves
+     both: it measures 4.0-11.9:1 on every status fill in every theme. Hardcoded
+     `#fff` there is the bug this replaces — it reads 1.6-2.3:1 on the dark
+     themes, whose status colours are bright (mint #34d399, rose #f87171). */
+  --ink-on-vivid: var(--accent-ink, #fff);
+
+  /* Compatibility alias, same shape as --ink-on-vivid above: declared once here,
+     substituted against the *computed* --text-muted, so it follows whichever
+     .theme-* is active without being repeated in all ten.
+     `--muted` was never a declared token, yet 241 references across 38 files
+     (eos-cad-views, learn, viz, designer, cable_network) already used it — 190
+     of them as `color:`, which therefore resolved to nothing and inherited at
+     full --text strength instead of reading as muted.
+     It belongs at :root and NOWHERE else: a theme block would bind it to one
+     theme, and a component sheet redefining it at :root wins on load order and
+     freezes it page-wide (what eos-flipbook.css did until --ex-muted).
+     Prefer --text-muted in new code; this makes the existing rules mean what
+     they already say. */
+  --muted: var(--text-muted);
+
+  /* Adaptive app-icon paint roles. The first three follow the active theme's
+     structural palette; every theme supplies its own editorial second ink. */
+  --app-icon-ink: var(--text-heading);
+  --app-icon-paper: var(--bg-card);
+  --app-icon-accent: var(--accent);
+}
+
+/* ── eos — the EmptyOS signature theme ──
+   Warm stone paper, quiet ink, violet accent.
+   Calm like a zen garden in daylight.                  */
+.theme-eos {
+  --app-icon-accent-2: #d49a27;
+  --bg:             #ede9e3;
+  --bg-surface:     #e4e0d8;
+  --bg-card:        #f8f6f2;
+  --bg-card-hover:  #faf9f6;
+  --bg-input:       #f8f6f2;
+  --text:           #2e2e36;
+  --text-heading:   #1a1a20;
+  --text-secondary: #5c5c68;
+  --text-muted:     #7a7a85;
+  --border:         #d6d2ca;
+  --border-strong:  #c4c0b6;
+  /* One step deeper than the original #6c5ce7, which read 4.02:1 as link text
+     on --bg (it cleared 4.5 only on --bg-card). The hue is unchanged. */
+  --accent:         #6353da;
+  --accent-dim:     #8b80f0;
+  --accent-bg:      rgba(99,83,218,0.08);
+  --accent-ink:     #ffffff;
+  /* Status colours are most often rendered as text on their OWN tint
+     (`background: color-mix(--success 15%, …); color: var(--success)`) — the
+     standard chip idiom. So they're tuned to clear 3.0:1 on that tint, not just
+     on --bg. Originals (#27ae76 / #d4a017 / #3a89ca) sat at 2.7–2.8:1 there. */
+  --success:        #178054;
+  --warning:        #8f6a06;
+  --danger:         #d44040;  /* already 3.3:1 on its tint */
+  --info:           #2f76b0;
+  --shadow:         rgba(30,28,24,0.08);
+  --focus-ring:     0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent);
+  --glow:           none;
+}
+
+/* ── void-dark — pure black, minimal ── */
+.theme-void-dark {
+  --app-icon-accent-2: #55c2d9;
+  --bg: #08080f; --bg-surface: #0c0c14;
+  --bg-card: rgba(255,255,255,0.025); --bg-card-hover: rgba(255,255,255,0.05);
+  --bg-input: rgba(255,255,255,0.04);
+  --text: #c8c8d0; --text-heading: #ededf0; --text-secondary: #8888a0;
+  --text-muted: #666677;
+  --border: rgba(255,255,255,0.06); --border-strong: rgba(255,255,255,0.12);
+  --accent: #8b7bf6; --accent-dim: #6858c0; --accent-bg: rgba(139,123,246,0.1); --accent-ink: #0a0a14;
+  --success: #34d399; --warning: #fbbf24; --danger: #f87171; --info: #60a5fa;
+  --shadow: rgba(0,0,0,0.4); --glow: none;
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── warm-dark — amber lantern ── */
+.theme-warm-dark {
+  --app-icon-accent-2: #d9806f;
+  --bg: #151520; --bg-surface: #1a1a28;
+  --bg-card: rgba(232,197,71,0.03); --bg-card-hover: rgba(232,197,71,0.06);
+  --bg-input: rgba(232,197,71,0.04);
+  --text: #c8c0b4; --text-heading: #e8e0d4; --text-secondary: #8a8478;
+  --text-muted: #7a7566; --border: rgba(232,197,71,0.06); --border-strong: rgba(232,197,71,0.12);
+  --accent: #e8c547; --accent-dim: #b89a30; --accent-bg: rgba(232,197,71,0.08); --accent-ink: #1a1605;
+  --success: #34d399; --warning: #fbbf24; --danger: #f87171; --info: #60a5fa;
+  --shadow: rgba(0,0,0,0.4); --glow: 0 0 20px rgba(232,197,71,0.06);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── nord — arctic twilight ── */
+.theme-nord {
+  --app-icon-accent-2: #d08770;
+  --bg: #242933; --bg-surface: #2a303c;
+  --bg-card: rgba(59,66,82,0.5); --bg-card-hover: rgba(59,66,82,0.7);
+  --bg-input: rgba(59,66,82,0.6);
+  /* secondary lifted from #8790a2 (3.78:1 on --bg-card, which is a translucent
+     slate over --bg — so it composites lighter than it looks in isolation). */
+  --text: #d0d6e0; --text-heading: #e5eaf0; --text-secondary: #9ba4b6;
+  --text-muted: #7b849a;  /* ≥3.0 on --bg-card too (was #6b7489 @ 2.6:1 on card) */
+  --border: rgba(67,76,94,0.6); --border-strong: rgba(67,76,94,0.8);
+  --accent: #81b8c4; --accent-dim: #5a8a98; --accent-bg: rgba(129,184,196,0.1); --accent-ink: #0f1417;
+  /* danger + info lifted off the nord palette (#bf616a / #5e81ac) so they clear
+     3.0:1 as text on their own tint — the chip idiom. */
+  --success: #a3be8c; --warning: #ebcb8b; --danger: #d9878d; --info: #7fa3cc;
+  --shadow: rgba(0,0,0,0.3); --glow: 0 0 20px rgba(129,184,196,0.06);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── forest — moss under canopy ──
+   Ink-black green paper, sage accent. The system had no green anywhere; this
+   is the one dark theme that reads as *outdoors* rather than as a screen.
+   Sampled from BLACK STALLION / OKROSHKA.
+
+   Accent (sage) and --success (grass) are both green and only separate by
+   chroma. That's the same trade warm-dark already makes with amber accent vs
+   amber warning — acceptable because status colour never appears alone; it
+   appears as a chip on its own tint, next to a label saying what it means. */
+.theme-forest {
+  --app-icon-accent-2: #d2a85a;
+  --bg: #0e1712; --bg-surface: #131e18;
+  --bg-card: rgba(179,201,182,0.035); --bg-card-hover: rgba(179,201,182,0.07);
+  --bg-input: rgba(179,201,182,0.05);
+  --text: #c3d0c2; --text-heading: #e3ece2; --text-secondary: #8a9a89;
+  --text-muted: #7f8f7e;
+  --border: rgba(179,201,182,0.09); --border-strong: rgba(179,201,182,0.18);
+  --accent: #9cc49a; --accent-dim: #6b9a6e; --accent-bg: rgba(156,196,154,0.10);
+  --accent-ink: #0c1410;
+  --success: #4ade80; --warning: #fbbf24; --danger: #f87171; --info: #60a5fa;
+  --shadow: rgba(0,0,0,0.45); --glow: 0 0 20px rgba(156,196,154,0.05);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── deep-sea — night navy ──
+   Deeper and bluer than nord, which is a grey-teal twilight. Reads as working
+   late rather than as arctic daylight. Sampled from BLACK IS BACK.
+   --info is pushed to cyan so it stays legible beside the blue accent. */
+.theme-deep-sea {
+  --app-icon-accent-2: #61c1b4;
+  --bg: #0d111a; --bg-surface: #141b2b;
+  --bg-card: rgba(143,172,203,0.04); --bg-card-hover: rgba(143,172,203,0.08);
+  --bg-input: rgba(143,172,203,0.05);
+  --text: #c2cddd; --text-heading: #e4ebf5; --text-secondary: #8895ab;
+  --text-muted: #7e8ba5;
+  --border: rgba(143,172,203,0.09); --border-strong: rgba(143,172,203,0.18);
+  --accent: #7fa9db; --accent-dim: #557fae; --accent-bg: rgba(127,169,219,0.11);
+  --accent-ink: #0b1018;
+  --success: #34d399; --warning: #fbbf24; --danger: #f87171; --info: #7dd3fc;
+  --shadow: rgba(0,0,0,0.45); --glow: 0 0 20px rgba(127,169,219,0.05);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── vino — cellar dark ──
+   Wine paper, berry-pink accent. Sampled from ITALIAN ROAST.
+
+   The one theme where the palette actively fights the design system: a red
+   chrome sits on top of --danger, which is also red. So --danger is pushed to
+   vermilion here — hotter and more orange than the berry accent, and the only
+   colour in the theme that leans warm. Verify error states by eye before
+   trusting this theme in a workflow where missing an error is expensive. */
+.theme-vino {
+  --app-icon-accent-2: #d8a657;
+  --bg: #1a0d10; --bg-surface: #241318;
+  --bg-card: rgba(188,120,141,0.045); --bg-card-hover: rgba(188,120,141,0.09);
+  --bg-input: rgba(188,120,141,0.055);
+  --text: #d3bcc2; --text-heading: #f0dde2; --text-secondary: #a58c94;
+  --text-muted: #997f88;
+  --border: rgba(188,120,141,0.10); --border-strong: rgba(188,120,141,0.20);
+  --accent: #d4738f; --accent-dim: #a34c68; --accent-bg: rgba(212,115,143,0.11);
+  --accent-ink: #1a0d10;
+  --success: #34d399; --warning: #fbbf24; --danger: #f4633a; --info: #7dd3fc;
+  --shadow: rgba(0,0,0,0.5); --glow: 0 0 20px rgba(212,115,143,0.06);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── soft-light — paper daylight ── */
+.theme-soft-light {
+  --app-icon-accent-2: #d97352;
+  --bg: #f8f8f4; --bg-surface: #f0f0ec;
+  --bg-card: #fff; --bg-card-hover: #fff;
+  --bg-input: #fff;
+  --text: #2a2a30; --text-heading: #141418; --text-secondary: #606068;
+  --text-muted: #83838a; --border: #e4e4e0; --border-strong: #d0d0cc;
+  --accent: #5b5fd0; --accent-dim: #4548a0; --accent-bg: rgba(91,95,208,0.06); --accent-ink: #ffffff;
+  /* success was the dark-theme mint #34d399 (1.9:1 on white); warning was #d97706
+     (2.99:1). Both now clear 3.0:1 on --bg AND on their own tint.
+     Darkened again 2026-09-21, same hue: a filled success/warning button puts
+     --accent-ink on these, and #0c8955 / #c26800 gave 4.44 / 3.98:1 under white. */
+  --success: #0c8452; --warning: #b05e00; --danger: #dc2626; --info: #0284c7;
+  --shadow: rgba(0,0,0,0.03); --glow: none;
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── tatami — rice paper and haze ──
+   Warm wood-brown ink on rice white, with a cool haze-blue accent. The three
+   existing light themes all accent warm (violet / indigo / terracotta); this
+   is the only one where the accent is *cooler* than the paper, which is what
+   makes dense forms feel calm rather than busy. Sampled from TATAMI TAN. */
+.theme-tatami {
+  --app-icon-accent-2: #a05a3a;
+  --bg:             #ebe3d8;
+  --bg-surface:     #e2d8ca;
+  --bg-card:        #f7f2ea;
+  --bg-card-hover:  #fbf8f2;
+  --bg-input:       #f7f2ea;
+  --text:           #3a2e2d;
+  --text-heading:   #241c1b;
+  --text-secondary: #5f524c;
+  --text-muted:     #77685f;
+  --border:         #d8cbb8;
+  --border-strong:  #c4b49c;
+  --accent:         #3f6b87;
+  --accent-dim:     #5b8aa8;
+  --accent-bg:      rgba(63,107,135,0.09);
+  --accent-ink:     #ffffff;
+  /* Tuned to clear 3.0:1 as text on their own tint (the chip idiom), not just
+     on --bg — same discipline as .theme-eos above. */
+  --success:        #16794f;
+  --warning:        #8a6408;
+  --danger:         #c03a2b;
+  --info:           #2c6a90;
+  --shadow:         rgba(58,46,45,0.08);
+  --focus-ring:     0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow:           none;
+}
+
+/* ── digital-garden — Maggie Appleton's warm sketchbook ──
+   Ported from apps/garden Digital Garden theme. Sage + terracotta + gold
+   on warm cream paper. The garden's *color + paper* layer, system-wide —
+   the brush filters + plant grammars stay garden-only (they'd wreck dense
+   UI). Lowest-contrast-risk of the five garden palettes. Pilot before the
+   other four (ink-wash / botanical-scroll / victorian / edo) port over. */
+.theme-digital-garden {
+  --app-icon-accent-2: #58704a;
+  --bg:             #e8dec8;
+  --bg-surface:     #ded2b6;
+  --bg-card:        #f2ebda;
+  --bg-card-hover:  #f7f1e3;
+  --bg-input:       #f2ebda;
+  --text:           #3d2817;
+  --text-heading:   #2b1c10;
+  --text-secondary: #6e5d48;
+  --text-muted:     #80715f;
+  --border:         #d4c4a0;
+  --border-strong:  #c2ad84;
+  /* Deepened from the ported #b56b3e, which read 3.06:1 as link text and gave
+     only 3.86:1 for ink on accent buttons — both below the body-text floor.
+     This is why the palette is now *inspired by* Appleton's rather than a
+     faithful port; the source was authored for prose, not for UI chrome. */
+  --accent:         #8f4e27;
+  --accent-dim:     #c89548;
+  --accent-bg:      rgba(143,78,39,0.10);
+  --accent-ink:     #fdf8ee;
+  --success:        #5c7a3a;  /* was #5f7d3c: 4.42:1 under --accent-ink on a filled button */
+  --warning:        #93691c;  /* ≥3.0 on --bg-card (was #b8852e @ 2.8:1); was #9c6f1e: 4.22:1 under --accent-ink */
+  --danger:         #b0492f;
+  --info:           #5a7a8a;
+  --shadow:         rgba(61,40,23,0.08);
+  --focus-ring:     0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow:           none;
+}
+/* Paper grain — pure-CSS dot texture, no SVG filter (keeps text crisp).
+   Mirrors apps/garden/pages/_themes/appleton.css. */
+.theme-digital-garden body {
+  background-image:
+    radial-gradient(circle at 25% 35%, rgba(120, 95, 60, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 75% 65%, rgba(120, 95, 60, 0.04) 1px, transparent 1px);
+  background-size: 7px 7px, 11px 11px;
+}
+
+/* --- Base --- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font); background: var(--bg); color: var(--text);
+  line-height: 1.55; transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent; /* iOS: kill grey tap flash */
+  overscroll-behavior-y: none; /* iOS: no rubber-band bounce on PWA */
+}
+button, a, [role="button"], [onclick], summary {
+  -webkit-touch-callout: none; /* iOS: no long-press preview menu on UI chrome */
+}
+
+a { color: var(--accent); text-decoration: none; transition: color 0.15s, opacity 0.15s; }
+a:hover { opacity: 0.8; }
+h1, h2, h3, h4 { font-family: var(--font-display, var(--font)); color: var(--text-heading); letter-spacing: -0.01em; }
+
+/* Selection */
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text-heading); }
+
+/* Focus-visible for keyboard navigation */
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+a:focus-visible { border-radius: 4px; }
+
+/* --- Layout --- */
+.page { max-width: 900px; margin: 0 auto; padding: 20px; }
+.page-header { padding: 16px 0; margin-bottom: 20px; }
+.page-header h1 { font-size: 1.5rem; color: var(--text-heading); font-weight: 600; }
+.page-header .desc { color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px; }
+
+/* --- Nav bar --- */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  padding: 8px 12px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.nav::-webkit-scrollbar { display: none; }
+.nav a { color: var(--text-muted); text-decoration: none; white-space: nowrap; padding: 5px 10px; border-radius: 6px; min-height: 32px; display: flex; align-items: center; font-size: 13px; font-weight: 500; letter-spacing: 0.01em; transition: color 0.15s, background 0.15s; }
+.nav a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); opacity: 1; }
+.nav a:active { transform: scale(0.96); }
+.nav .current { color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.nav-spacer { flex: 1; }
+.nav-more, .nav-theme, .nav-presenting { color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; line-height: 1; flex-shrink: 0; user-select: none; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+.nav-more:hover, .nav-theme:hover, .nav-presenting:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.nav-presenting { margin-left: auto; font-size: 14px; }
+.nav-presenting + .nav-theme { margin-left: 0; }
+.nav-theme { margin-left: auto; }
+.nav-presenting.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.nav-presenting.on .nav-presenting-icon { filter: drop-shadow(0 0 4px var(--accent)); }
+/* Chrome itself never gets blurred by presentation mode, even if it lives
+   inside a redacted container. */
+html.eos-redact .nav-presenting,
+html.eos-redact .nav-theme,
+html.eos-redact .nav-more,
+html.eos-redact .nav a { filter: none !important; }
+.nav-spacer + .nav-more, .nav-theme + .nav-more { margin-left: 0; }
+/* Account menu: avatar button at the far right, popup under the nav.
+   The nav scrolls sideways on a narrow screen and the avatar is its last
+   item, so it is sticky at the right edge: always on screen, with an opaque
+   (tint over --bg) fill and a --bg ring so scrolled items pass beneath it.
+   36px matches the neighbouring nav tools; 44px on phones is the tap-target
+   floor in docs/FRONTEND-DESIGN-LANGUAGE.md. */
+.nav-account {
+  position: sticky; right: 0; flex-shrink: 0; width: 36px; height: 36px; margin-left: 4px;
+  border-radius: var(--radius-pill); border: 1px solid var(--border-strong);
+  background: linear-gradient(var(--accent-tint-mid), var(--accent-tint-mid)), var(--bg);
+  /* The fade stays inside the 12px gap to the ⋯ button (4px margin + 8px nav gap). */
+  box-shadow: 0 0 0 4px var(--bg), -8px 0 4px var(--bg);
+  color: var(--text-heading); font: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.nav-account:hover, .nav-account[aria-expanded="true"] { border-color: var(--accent); }
+/* Floating, so --bg-surface (design language § surfaces). z-index sits just
+   above the app drawer (9100), which it can be opened over. */
+.eos-account-menu {
+  position: fixed; right: 12px; z-index: 9200; min-width: 200px; max-width: min(280px, calc(100vw - 24px));
+  background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--shadow); padding: 6px; font-size: 13px;
+}
+.eos-account-menu a, .eos-account-menu button {
+  display: flex; align-items: center; width: 100%; text-align: left; padding: 8px 10px; border-radius: var(--radius-sm);
+  color: var(--text); text-decoration: none; background: none; border: 0; font: inherit; cursor: pointer;
+}
+.eos-account-menu a:hover, .eos-account-menu button:hover,
+.eos-account-menu a:focus-visible, .eos-account-menu button:focus-visible { background: var(--accent-tint-mid); outline: none; }
+.eos-account-name { padding: 8px 10px 6px; color: var(--text-heading); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eos-account-menu a.eos-account-name { font-weight: 500; color: var(--accent); }
+.eos-account-sep { height: 1px; margin: 6px 4px; background: var(--border); }
+@media (max-width: 640px) {
+  .nav-account { width: 44px; height: 44px; }
+  .eos-account-menu a, .eos-account-menu button { min-height: 44px; }
+}
+/* Home link + location breadcrumb (left side) */
+.nav-home { font-weight: 600; flex-shrink: 0; }
+.nav-crumb { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 4px; flex-shrink: 0; max-width: 38vw; }
+.nav-crumb-sep { color: var(--text-muted); font-weight: 400; opacity: 0.6; }
+.nav-crumb-icon { width:16px; height:16px; font-size:14px; line-height:1; flex:0 0 16px; }
+.nav-crumb-name { color: var(--accent); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Adaptive app-identity icons. The sprite holds geometry only; themes own all
+   four paints, so already-rendered icons recolor in place. */
+.eos-app-icon { display:block; width:100%; height:100%; overflow:visible; }
+.eos-app-icon-paper { color:var(--app-icon-paper); }
+.eos-app-icon-accent { color:var(--app-icon-accent); }
+.eos-app-icon-accent-2 { color:var(--app-icon-accent-2); }
+.eos-app-icon-ink { color:var(--app-icon-ink); }
+.eos-app-icon-fallback { display:inline-flex; width:100%; height:100%; align-items:center; justify-content:center; line-height:1; }
+.eos-app-icon-monogram-bg { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+/* 520 of the 1024 viewBox ~= half the tile, which matches the drawn icons'
+   optical weight; both paints are theme tokens so the monogram follows the
+   active theme exactly as a real icon does. */
+.eos-app-icon-monogram-text { fill: var(--text-muted); font-size: 520px; font-weight: 600; font-family: inherit; letter-spacing: 0; }
+/* Search + assistant buttons — peers of the existing nav icon buttons */
+.nav-search-btn, .nav-assistant { color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 15px; line-height: 1; flex-shrink: 0; user-select: none; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+.nav-search-btn:hover, .nav-assistant:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+html.eos-redact .nav-search-btn, html.eos-redact .nav-assistant, html.eos-redact .nav-crumb { filter: none !important; }
+/* Global search overlay (EOS._openSearchOverlay) — sits below the nav so the
+   bar itself stays bright + clickable. Hosts EOS_UI.searchBar. */
+.eos-search-overlay { position: fixed; left: 0; right: 0; bottom: 0; top: calc(var(--eos-nav-h) + env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom); z-index: 150; display: none; background: color-mix(in srgb, var(--bg) 45%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.eos-search-overlay.open { display: block; }
+.eos-search-overlay-inner { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: min(680px, 92vw); }
+/* Height of the fixed kernel nav. A page that sizes or positions itself around
+   the nav reads this rather than a literal 46px: inside a host shell's pane
+   (?embed=1 -> html.eos-embed, set by the server before first paint) there is
+   no nav, and a literal leaves a 46px dead band. */
+/* First-paint estimates of the nav's rendered height (safe-area inset
+   excluded; body and the overlays add it separately). eos.js then sets the
+   measured value on <html> and keeps it in step (_syncNavHeight), because the
+   real height moves with the theme's border, a touch pointer's 44px targets
+   (eos-components.css), the viewport and the account button arriving. Measured
+   2026-10-03 on the eos theme: 52px, 60px with a touch pointer, 56px at
+   <=640px. The old literal 46px left 6-14px of every page under the nav. */
+:root { --eos-nav-h: 52px; }
+@media (pointer: coarse) { :root { --eos-nav-h: 60px; } }
+@media (max-width: 640px) { :root { --eos-nav-h: 56px; } }
+html.eos-embed { --eos-nav-h: 0px; }
+body { padding-top: calc(var(--eos-nav-h) + env(safe-area-inset-top)) !important; }
+/* Default bottom padding so app content clears the fixed FAB dock (~48px master + 16px safe-area).
+   Apps can override if their layout uses height:100dvh + flex/grid (e.g. ppt-shell). */
+body { padding-bottom: max(80px, calc(env(safe-area-inset-bottom) + 16px)); }
+
+/* App drawer overlay */
+.app-drawer-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(6px); z-index:9050; display:none; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.app-drawer-overlay.open { display:block; }
+.app-drawer { position:fixed; top:0; right:0; bottom:0; width:min(320px,85vw); background:var(--bg); border-left:1px solid var(--border); z-index:9100; transform:translateX(100%); visibility:hidden; transition:transform 0.25s ease, visibility 0s linear 0.25s; overflow-y:auto; padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+/* visibility:hidden while closed drops the drawer's app links out of tab order
+   and the a11y tree in every browser; the inert attr (set in eos.js) covers
+   pointer-events + AT where supported. visibility transitions in lockstep with
+   the slide (delayed on close) so the closing animation still plays. */
+.app-drawer.open { transform:translateX(0); visibility:visible; transition:transform 0.25s ease, visibility 0s; }
+.app-drawer-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.app-drawer-title { font-size:16px; font-weight:700; color:var(--text-heading); }
+.app-drawer-close { font-size:22px; color:var(--text-muted); cursor:pointer; padding:8px 12px; border-radius:6px; min-width:40px; min-height:40px; display:inline-flex; align-items:center; justify-content:center; }
+.app-drawer-close:hover { color:var(--text); background:color-mix(in srgb, var(--text) 5%, transparent); }
+.app-drawer-search { width:100%; padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; outline:none; margin-bottom:12px; font-family:inherit; }
+.app-drawer-search:focus { border-color:var(--accent); }
+.app-drawer-list { display:block; }
+.app-drawer-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.app-drawer-section { margin-bottom:12px; }
+.app-drawer-sec-hdr { display:flex; align-items:center; gap:6px; margin:0 0 6px; cursor:pointer; user-select:none; }
+.app-drawer-sec-hdr:hover .ads-name { color:var(--accent); }
+.ads-icon { font-size:13px; }
+.ads-name { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-heading); transition:color 0.15s; }
+.ads-count { font-size:9px; color:var(--text-muted); border:1px solid var(--border); border-radius:7px; padding:0 5px; }
+.ads-toggle { margin-left:auto; font-size:9px; color:var(--text-muted); transition:transform 0.2s; }
+.app-drawer-section.collapsed .app-drawer-grid { display:none; }
+.app-drawer-section:not(.collapsed) .ads-toggle { transform:rotate(90deg); }
+.app-drawer-item { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px; cursor:pointer; text-decoration:none; color:var(--text); transition:border-color 0.12s; display:flex; align-items:center; gap:9px; min-width:0; }
+.app-drawer-item:hover { border-color:var(--accent); }
+.app-drawer-item .adi-icon { width:32px; height:32px; flex:0 0 32px; }
+.app-drawer-item .adi-copy { min-width:0; display:block; }
+.app-drawer-item .adi-name { display:block; font-size:12px; font-weight:600; color:var(--text-heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.app-drawer-item .adi-desc { font-size:10px; color:var(--text-muted); margin-top:2px; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+@media (max-width: 640px) {
+  /* Mobile nav: collapse to Home + current app + ⋯ drawer.
+     Full app list lives in the drawer, avoiding a cramped horizontal scroll
+     that collides with iOS system overlays (AssistiveTouch, dynamic island).
+     `padding` here is split per-side because shorthand `padding: 6px 8px`
+     would reset padding-top and erase the safe-area-inset-top formula on
+     line 215, putting the nav under the iPhone notch. Do not collapse this
+     back into shorthand — that regression has shipped multiple times. */
+  .nav {
+    gap: 4px; font-size: 13px; justify-content: flex-start;
+    padding-right: 8px; padding-bottom: 6px; padding-left: 8px;
+    padding-top: calc(6px + env(safe-area-inset-top));
+  }
+  .nav a { padding: 6px 10px; }
+  .nav a:not(.current):not([href="/"]) { display: none; }
+  /* Keep location + tools visible while the app links collapse into ⋯. */
+  .nav-crumb { max-width: 42vw; }
+  .nav-more { font-size: 20px; padding: 6px 10px; }
+  .nav-theme { font-size: 18px; padding: 6px 8px; }
+  .nav-search-btn, .nav-assistant { font-size: 17px; padding: 6px 8px; }
+}
+
+@media (max-width: 500px) {
+  .app-drawer { width: 100vw; }
+
+  /* Global responsive: fix common inline grids used in custom pages */
+  .page { padding-left:12px !important; padding-right:12px !important }
+  [style*="grid-template-columns: repeat"] { grid-template-columns:1fr !important }
+  [style*="grid-template-columns:repeat"] { grid-template-columns:1fr !important }
+  [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns:1fr !important }
+  [style*="grid-template-columns:1fr 1fr"] { grid-template-columns:1fr !important }
+
+  /* Fix inline flex rows that overflow */
+  [style*="display:flex"][style*="gap"] { flex-wrap:wrap !important }
+
+  /* Common page-specific grids */
+  .hero, .compare, .streak-section, .fin-hero { grid-template-columns:1fr !important }
+  /* Short numeric stat tiles wrap fine into 2 columns even at 390px. */
+  .hero-stats, .stats-row, .stat-grid, .cat-grid, .breakdown, .quick-actions, .qa, .qa-row, .frogs, .apps-grid { grid-template-columns:repeat(2,1fr) !important }
+  .widget, .widgets, .wg { grid-template-columns:1fr !important }
+  .cd-row, .cds { flex-wrap:nowrap } /* countdowns stay horizontal scrollable */
+
+  /* Sidebar layouts collapse */
+  .sidebar-layout, .chat-layout, [style*="grid-template-columns: 260px"], [style*="grid-template-columns:260px"] {
+      grid-template-columns:1fr !important;
+  }
+}
+
+/* --- Cards --- */
+.card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.card:hover { border-color: var(--border-strong); box-shadow: 0 4px 20px var(--shadow), var(--glow); transform: translateY(-1px); }
+.card-title { font-weight: 600; color: var(--text-heading); margin-bottom: 8px; letter-spacing: -0.01em; }
+
+/* --- Badges --- */
+.badge {
+  display: inline-block; padding: 2px 10px; border-radius: 6px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+}
+.badge-cap { background: rgba(251,191,36,0.15); color: var(--warning); }
+.badge-conn { background: rgba(52,211,153,0.15); color: var(--success); }
+.badge-evt { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.badge-ok { background: rgba(52,199,89,0.12); color: var(--success); }
+.badge-warn { background: rgba(251,191,36,0.12); color: var(--warning); }
+.badge-err { background: rgba(248,113,113,0.12); color: var(--danger); }
+
+/* --- Forms --- */
+input, textarea, select {
+  background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text); padding: 8px 12px; border-radius: var(--radius);
+  font-family: var(--font); font-size: 14px; width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+textarea { font-family: var(--mono); font-size: 13px; resize: vertical; }
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+/* Native checkbox/radio honor the theme accent on every modern browser. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; padding: 0; accent-color: var(--accent); cursor: pointer;
+}
+
+/* --- Buttons --- */
+.btn {
+  background: var(--accent); color: var(--accent-ink); border: none;
+  padding: 8px 20px; border-radius: var(--radius); cursor: pointer;
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s;
+}
+.btn:hover { opacity: 0.88; box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 25%, transparent); }
+.btn:active { transform: scale(0.97); }
+.btn-sm { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+.btn-ghost {
+  background: transparent; color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { border-color: var(--border-strong); color: var(--text); box-shadow: none; }
+
+/* --- Tables --- */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 600; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; transition: background 0.1s; }
+tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+
+/* --- Section titles --- */
+.section-title {
+  font-size: 12px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 1px; margin: 24px 0 12px; font-weight: 600;
+}
+
+/* --- Result/output --- */
+.output {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.65; white-space: pre-wrap;
+  max-height: 400px; overflow-y: auto;
+  tab-size: 4;
+}
+
+/* --- Grid --- */
+.grid { display: grid; gap: 12px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 640px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+/* --- Stat cards --- */
+.stat { text-align: center; padding: 20px; }
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--text-heading); letter-spacing: -0.02em; }
+.stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* --- Frog status --- */
+.frog { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.frog-done { color: var(--success); }
+.frog-todo { color: var(--text-muted); }
+
+/* --- Safe areas (iPhone notch) --- */
+/* `body { padding-bottom }` lives on line 242 — uses `max(80px, env() + 16px)`
+   to clear the fixed FAB dock and the iOS home indicator together. Browsers
+   without env() resolve it to 0px, the max() floor keeps 80px clearance. No
+   separate @supports rule needed; an earlier one here used to override the
+   FAB clearance with the bare safe-area pad. Don't re-add. */
+
+/* --- Animations --- */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadeIn 0.3s ease; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* =============================================================
+   EOS SIGNATURE THEME — structural overrides
+   Scoped to .theme-eos so they don't leak into other themes.
+
+   Design language: zen stationery — warm paper surfaces,
+   ink-weight typography, violet thread accent, quiet motion.
+   ============================================================= */
+
+/* Paper grain texture */
+.theme-eos body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* ── Typography ── */
+.theme-eos h1 { font-weight: 700; letter-spacing: -0.02em; }
+.theme-eos h2 { font-weight: 600; letter-spacing: -0.015em; }
+
+/* Links: animated underline reveal */
+/* `:not(.eos-btn)`: a link styled as a button is a button, not a link. This rule
+   sets background-image and a 0%×1px background-size, and at (0,6,2) it beat
+   `.theme-eos .eos-btn-primary`'s gradient — so every <a class="eos-btn
+   eos-btn-primary"> rendered as white text on the page with no fill at all, at
+   rest and on hover (app-builder, bookme, gesture, drone-flight; found
+   2026-09-21). Pinned by tests/test_unit_eos_btn_hover.py. */
+.theme-eos a:not(.nav a):not(.ac):not(.qa):not(.obs-link):not(.eos-note-link a):not(.eos-btn) {
+  opacity: 1; text-decoration: none;
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-size: 0% 1px; background-position: 0 100%; background-repeat: no-repeat;
+  transition: background-size 0.25s ease;
+}
+.theme-eos a:not(.nav a):not(.ac):not(.qa):not(.obs-link):not(.eos-note-link a):not(.eos-btn):hover {
+  opacity: 1; background-size: 100% 1px;
+}
+
+/* ── Nav ── */
+.theme-eos .nav {
+  background: rgba(237,233,227,0.88);
+  border-bottom: none;
+  box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(30,28,24,0.05);
+}
+.theme-eos .nav a { color: var(--text-muted); font-weight: 500; }
+.theme-eos .nav a:hover { color: var(--text); background: rgba(99,83,218,0.05); }
+.theme-eos .nav .current {
+  color: var(--accent); background: none; position: relative; font-weight: 600;
+}
+.theme-eos .nav .current::after {
+  content: ''; position: absolute; bottom: 2px; left: 15%; right: 15%;
+  height: 2.5px; border-radius: 2px; background: var(--accent);
+}
+
+/* ── Cards ── */
+.theme-eos .card {
+  border: 1px solid var(--border); border-left: 3px solid transparent;
+  box-shadow: 0 1px 4px rgba(30,28,24,0.05);
+  transition: border-color 0.2s, box-shadow 0.25s, border-left-color 0.2s, transform 0.2s;
+}
+.theme-eos .card:hover {
+  box-shadow: 0 6px 20px rgba(30,28,24,0.08);
+  border-left-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* ── Buttons ── */
+.theme-eos .btn:not(.btn-ghost):not(.btn-deploy):not(.btn-danger):not([style*="background"]) {
+  background: linear-gradient(135deg, #7c6cf0 0%, #5a4bd4 100%);
+  box-shadow: 0 2px 8px rgba(99,83,218,0.2);
+  letter-spacing: 0.02em;
+}
+.theme-eos .btn:not(.btn-ghost):not(.btn-deploy):not([style*="background"]):hover {
+  box-shadow: 0 4px 16px rgba(99,83,218,0.3);
+  opacity: 1; filter: brightness(1.06);
+}
+.theme-eos .btn-ghost,
+.theme-eos .eos-btn-ghost {
+  border-color: var(--border-strong); color: var(--text-secondary);
+  background: var(--bg-card); box-shadow: 0 1px 3px rgba(30,28,24,0.05);
+}
+.theme-eos .btn-ghost:hover,
+.theme-eos .eos-btn-ghost:hover {
+  border-color: var(--accent); color: var(--accent); background: var(--bg-card);
+  box-shadow: 0 2px 8px rgba(99,83,218,0.1);
+}
+
+/* ── Inputs: underline in page content ── */
+.theme-eos .page input:not([type="checkbox"]):not([type="radio"]),
+.theme-eos .page textarea,
+.theme-eos .page select,
+.theme-eos .eos-modal input,
+.theme-eos .eos-modal textarea,
+.theme-eos .eos-modal select {
+  border: none; border-bottom: 2px solid var(--border);
+  border-radius: 0; background: transparent; padding: 10px 4px;
+  transition: border-color 0.2s;
+}
+.theme-eos .page input:focus,
+.theme-eos .page textarea:focus,
+.theme-eos .page select:focus,
+.theme-eos .eos-modal input:focus,
+.theme-eos .eos-modal textarea:focus,
+.theme-eos .eos-modal select:focus {
+  border-bottom-color: var(--accent); box-shadow: none;
+  background: rgba(99,83,218,0.02);
+}
+
+/* ── Section titles: violet thread ── */
+.theme-eos .section-title,
+.theme-eos .eos-section-title {
+  padding-left: 12px; border-left: 3px solid var(--accent);
+  letter-spacing: 1.5px; font-size: 11px;
+}
+
+/* ── Badges ── */
+.theme-eos .badge {
+  border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  font-weight: 600;
+}
+
+/* ── Tables ── */
+.theme-eos th { border-bottom: 2px solid var(--accent); color: var(--text-secondary); }
+.theme-eos td { border-bottom: 1px solid rgba(0,0,0,0.04); }
+.theme-eos tr:hover td { background: rgba(99,83,218,0.03); }
+
+/* ── Code/output ── */
+.theme-eos .output {
+  background: var(--bg-surface); border: none;
+  box-shadow: inset 0 1px 4px rgba(30,28,24,0.06);
+  border-left: 3px solid var(--border-strong);
+}
+
+/* ── Stats ── */
+.theme-eos .stat-value { color: var(--accent); }
+
+/* ── Blockquotes ── */
+.theme-eos blockquote {
+  border-left-color: var(--accent); background: rgba(99,83,218,0.03);
+}
+
+/* ── Scrollbar: warm toned ── */
+.theme-eos ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+.theme-eos ::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* ── App drawer ── */
+.theme-eos .app-drawer {
+  background: var(--bg-card); box-shadow: -4px 0 24px rgba(30,28,24,0.12);
+}
+.theme-eos .app-drawer-search {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); padding: 8px 12px;
+}
+.theme-eos .app-drawer-search:focus {
+  border-color: var(--accent); border-bottom-width: 1px;
+  background: var(--bg);
+}
+
+/* ── Alert banners (inline styled) ── */
+.theme-eos [style*="border-left: 4px"],
+.theme-eos [style*="border-left:4px"] {
+  border-radius: 0 var(--radius) var(--radius) 0 !important;
+}

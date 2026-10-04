@@ -1,0 +1,106 @@
+{
+  "_comment": "IP-Adapter character-consistency workflow for cubiq's ComfyUI_IPAdapter_plus. Uses the explicitly installed SDXL, ViT-H, and IP-Adapter Plus weights so runtime filename auto-detection cannot silently miss them.",
+  "_requires": ["ComfyUI_IPAdapter_plus", "RealVisXL_V4.0.safetensors", "clip_vision_h.safetensors", "ip-adapter-plus_sdxl_vit-h.safetensors"],
+
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "RealVisXL_V4.0.safetensors"
+    }
+  },
+
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{image}",
+      "upload": "image"
+    }
+  },
+
+  "3": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    }
+  },
+
+  "4": {
+    "class_type": "IPAdapterAdvanced",
+    "inputs": {
+      "model": ["1", 0],
+      "ipadapter": ["11", 0],
+      "image": ["2", 0],
+      "weight": 0.65,
+      "weight_type": "ease out",
+      "combine_embeds": "concat",
+      "start_at": 0.0,
+      "end_at": 0.8,
+      "embeds_scaling": "V only",
+      "clip_vision": ["3", 0]
+    }
+  },
+
+  "11": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+    }
+  },
+
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{prompt}",
+      "clip": ["1", 1]
+    }
+  },
+
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{negative_prompt}, lowres, bad anatomy, blurry, deformed, extra limbs, watermark, text, signature, cartoon, anime",
+      "clip": ["1", 1]
+    }
+  },
+
+  "7": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": "{width}",
+      "height": "{height}",
+      "batch_size": 1
+    }
+  },
+
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["4", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["7", 0],
+      "seed": "{seed}",
+      "steps": 25,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1.0
+    }
+  },
+
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["1", 2]
+    }
+  },
+
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["9", 0],
+      "filename_prefix": "reader_scene"
+    }
+  }
+}

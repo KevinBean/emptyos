@@ -1,0 +1,31 @@
+/* Garden theme — edo · 江户木版画 (Hokusai / Hiroshige / 琳派)
+ * Page-level chrome only. Plant fills come from themes.py inline SVG —
+ * flat Prussian-blue / vermillion / ochre, heavy black outlines.
+ */
+.eos-garden[data-theme="edo"] {
+  --g-bg: #ede0c4;
+  --g-text: #1a1a1a;
+  --g-muted: #8b7c5c;
+  --g-border: #1a1a1a;
+  --g-accent: #c0383a;
+  font-family: "Yu Mincho", "Hiragino Mincho ProN", "Source Han Serif JP",
+               "Noto Serif JP", serif;
+}
+.eos-garden[data-theme="edo"] .eos-g-card {
+  background: #f0e6d2;
+  border: 2px solid var(--g-border);
+  border-radius: 0;
+  padding: 12px;
+  box-shadow: 4px 4px 0 rgba(26, 26, 26, 0.25);
+}
+.eos-garden[data-theme="edo"] .eos-g-label {
+  color: var(--g-text);
+  font-size: 11px;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+.eos-garden[data-theme="edo"] .eos-g-annot {
+  color: var(--g-muted);
+  font-size: 10px;
+  font-weight: 500;
+}

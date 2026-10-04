@@ -1,0 +1,60 @@
+{
+  "id": "hand-tools-power",
+  "groups": [
+    {
+      "id": "hand-tools",
+      "label": "Hand tools",
+      "members": [
+        "hammer",
+        "screwdriver",
+        "pliers",
+        "wrench",
+        "handsaw",
+        "chisel",
+        "file",
+        "clamp"
+      ]
+    },
+    {
+      "id": "power-tools",
+      "label": "Power tools",
+      "members": [
+        "drill",
+        "circular-saw",
+        "jigsaw",
+        "sander",
+        "angle-grinder",
+        "nail-gun",
+        "rotary-tool",
+        "heat-gun"
+      ]
+    },
+    {
+      "id": "fixings",
+      "label": "Fixings",
+      "members": [
+        "nail",
+        "screw",
+        "bolt",
+        "nut",
+        "washer",
+        "wall-plug",
+        "hook",
+        "hinge"
+      ]
+    },
+    {
+      "id": "measuring-tools",
+      "label": "Measuring tools",
+      "members": [
+        "tape-measure",
+        "ruler",
+        "spirit-level",
+        "try-square",
+        "caliper",
+        "stud-finder",
+        "laser-level"
+      ]
+    }
+  ]
+}

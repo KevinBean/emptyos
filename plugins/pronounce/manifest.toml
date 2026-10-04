@@ -1,0 +1,15 @@
+[plugin]
+id = "pronounce"
+name = "Pronounce"
+version = "1.0.0"
+description = "Sound-by-sound pronunciation scoring on your machine. Needs extra packages (services/pronounce/requirements.txt, several GB including torch) and downloads a ~1.2 GB model on first use."
+# Off on a fresh install: it starts a local scoring service at boot and can download a 1.2 GB model.
+default_enabled = false
+
+[plugin.entry]
+module = "plugin"
+class = "PronouncePlugin"
+
+[provides]
+services = ["pronounce"]
+tags = ["audio", "speech", "learning"]

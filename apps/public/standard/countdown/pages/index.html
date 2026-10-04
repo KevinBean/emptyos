@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Countdown - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
+.page { max-width:960px; margin:0 auto; min-width:0 }
+
+.cd-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 0 12px; flex-wrap:wrap }
+.cd-toolbar h1 { font-size:22px; font-weight:700; color:var(--text-heading) }
+.cd-toolbar .sub { font-size:13px; color:var(--text-secondary); margin-top:2px }
+.cd-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+
+.cd-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-bottom:14px; border-bottom:1px solid var(--border); margin-bottom:16px }
+.cd-chip { padding:5px 12px; border-radius:999px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-size:12px; cursor:pointer; white-space:nowrap; transition:all .15s }
+.cd-chip.active { background:var(--accent); border-color:var(--accent); color:var(--ink-on-vivid) }
+.cd-filters select { margin-left:auto; padding:5px 8px; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); color:var(--text); font-size:12px }
+
+.cd-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:12px }
+.cd-tile { position:relative; background:var(--bg-card); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:var(--radius-md,10px); padding:14px; cursor:pointer; transition:transform .12s, box-shadow .12s; animation:cardIn .3s ease both }
+.cd-tile:hover { box-shadow:0 4px 14px rgba(0,0,0,0.12); transform:translateY(-1px) }
+.cd-tile.today { border-left-color:var(--warning) }
+.cd-tile.archived { opacity:.55 }
+.cd-tile.has-cover { background-size:cover; background-position:center; color:#fff }
+.cd-tile.has-cover::before { content:''; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.68)); z-index:0 }
+.cd-tile.has-cover > * { position:relative; z-index:1 }
+.cd-tile.has-cover .cd-title, .cd-tile.has-cover .cd-days, .cd-tile.has-cover .cd-dir, .cd-tile.has-cover .cd-meta, .cd-tile.has-cover .cd-days-unit { color:#fff }
+.cd-tile.has-cover .cd-op-btn { color:rgba(255,255,255,.85) }
+.cd-tile.has-cover .cd-op-btn.pinned { color:var(--warning) }
+.cd-tile-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px }
+.cd-icon { font-size:22px }
+.cd-tile-ops { display:flex; gap:4px }
+.cd-op-btn { background:none; border:none; cursor:pointer; font-size:14px; color:var(--text-muted); padding:2px 4px; border-radius:4px; line-height:1 }
+.cd-op-btn:hover { background:var(--bg-hover, color-mix(in srgb, var(--accent) 10%, transparent)) }
+.cd-op-btn.pinned { color:var(--warning) }
+.cd-days { font-size:34px; font-weight:700; line-height:1; color:var(--text-heading) }
+.cd-days-unit { font-size:13px; font-weight:500; color:var(--text-muted); margin-left:4px }
+.cd-dir { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px }
+.cd-title { font-size:14px; font-weight:600; margin-top:8px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.cd-meta { font-size:11px; color:var(--text-muted); margin-top:3px }
+.cd-today-badge { display:inline-block; background:var(--warning); color:var(--ink-on-vivid); font-size:10px; font-weight:700; padding:2px 6px; border-radius:6px; margin-top:6px; letter-spacing:.03em }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('countdown');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Countdown — days until or since your events (birthdays, trips, deadlines, anniversaries).",quickActions:[{label:"Add a countdown",msg:"Help me add a countdown for an upcoming event."},{label:"What's coming up",msg:"What countdowns do I have coming up soon?"}]});}
+</script>
+
+<div class="page">
+    <div class="cd-toolbar">
+        <div>
+            <h1>📅 Countdown</h1>
+            <div class="sub">Days until — and since — the things that matter.</div>
+        </div>
+        <div class="cd-actions">
+            <button class="eos-btn eos-btn-primary eos-btn-sm" onclick="openAdd()" title="Add a new countdown">+ Add</button>
+            <button class="eos-btn eos-btn-sm" onclick="openImportIcs()" title="Import events from an .ics calendar file">&#8613; Import .ics</button>
+            <input type="file" id="ics-file-input" accept=".ics,text/calendar" style="display:none" onchange="handleIcsFile(event)">
+            <button class="eos-btn eos-btn-sm" onclick="openAppSettings()" title="Settings">&#9881;</button>
+        </div>
+    </div>
+
+    <div class="cd-filters" id="cd-filters"></div>
+
+    <div id="cd-body"></div>
+</div>
+
+<script>
+var CATEGORIES = ['birthday','anniversary','holiday','travel','deadline','work','health','personal','other'];
+var CATEGORY_ICONS = {birthday:'🎂',anniversary:'💍',holiday:'🎉',travel:'✈️',deadline:'⏰',work:'💼',health:'❤️‍🩹',personal:'⭐',other:'📌'};
+var COLORS = ['accent','success','warning','danger','info','purple'];
+
+var S = EOS_UI.store({events: [], filter: 'all', showArchived: false, loading: true}, render);
+
+async function loadEvents() {
+    S.set('loading', true);
+    try {
+        var url = '/countdown/api/events' + (S.get('showArchived') ? '?archived=1' : '');
+        var data = await EOS.api(url);
+        S.set({events: data.events || [], loading: false});
+    } catch (e) {
+        S.set({events: [], loading: false});
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Could not load countdowns.', false);
+    }
+}
+
+function colorVar(c) { return 'var(--' + (COLORS.indexOf(c) >= 0 ? c : 'accent') + ')'; }
+
+function fmtDate(iso) {
+    if (!iso) return '';
+    try {
+        var d = new Date(iso + 'T00:00:00');
+        return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+    } catch (e) { return iso; }
+}
+
+function renderFilters(state) {
+    var cats = {};
+    state.events.forEach(function(e) { if (e.category) cats[e.category] = (cats[e.category] || 0) + 1; });
+    var chips = ['<button class="cd-chip' + (state.filter === 'all' ? ' active' : '') + '" title="Show every countdown" onclick="setFilter(\'all\')">All (' + state.events.length + ')</button>'];
+    Object.keys(cats).sort().forEach(function(c) {
+        chips.push('<button class="cd-chip' + (state.filter === c ? ' active' : '') + '" title="Filter to ' + escAttr(c) + '" onclick="setFilter(\'' + c + '\')">' +
+            (CATEGORY_ICONS[c] || '') + ' ' + esc(c) + ' (' + cats[c] + ')</button>');
+    });
+    chips.push('<button class="cd-chip' + (state.showArchived ? ' active' : '') + '" title="' + (state.showArchived ? 'Hide' : 'Show') + ' archived countdowns" onclick="toggleArchived()">📦 Archived</button>');
+    document.getElementById('cd-filters').innerHTML = chips.join('');
+}
+
+function tileHtml(e) {
+    var days = e.days;
+    var isToday = days === 0;
+    var isFuture = days > 0;
+    var big = Math.abs(days);
+    var dir = isToday ? 'Today!' : (isFuture ? 'days to go' : 'days ago');
+    var occ = e.occurrence ? (' · ' + ordinal(e.occurrence)) : '';
+    var repeatLabel = (e.repeat && e.repeat !== 'none') ? (' · repeats ' + e.repeat) : '';
+    var reminderLabel = e.remind_days_before ? (' · &#128276; ' + esc(e.remind_days_before) + 'd before') : '';
+    var style = 'border-left-color:' + colorVar(e.color);
+    if (e.has_cover) style += ';background-image:url(' + '/countdown/api/events/' + encodeURIComponent(e.file) + '/cover)';
+    return '<div class="cd-tile' + (isToday ? ' today' : '') + (e.archived ? ' archived' : '') + (e.has_cover ? ' has-cover' : '') + '" ' +
+        'style="' + escAttr(style) + '" onclick="openEdit(' + escAttr(JSON.stringify(e.file)) + ')">' +
+        '<div class="cd-tile-top">' +
+            '<span class="cd-icon">' + (e.icon || '📌') + '</span>' +
+            '<div class="cd-tile-ops">' +
+                '<button class="cd-op-btn' + (e.pinned ? ' pinned' : '') + '" title="Pin" onclick="event.stopPropagation();togglePin(' + escAttr(JSON.stringify(e.file)) + ',' + !e.pinned + ')">' + (e.pinned ? '★' : '☆') + '</button>' +
+                '<button class="cd-op-btn" title="' + (e.archived ? 'Unarchive' : 'Archive') + '" onclick="event.stopPropagation();toggleArchive(' + escAttr(JSON.stringify(e.file)) + ',' + !e.archived + ')">📦</button>' +
+                '<button class="cd-op-btn" title="Delete" onclick="event.stopPropagation();deleteEvent(' + escAttr(JSON.stringify(e.file)) + ')">🗑</button>' +
+            '</div>' +
+        '</div>' +
+        '<div class="cd-days">' + big + '<span class="cd-days-unit">days</span></div>' +
+        '<div class="cd-dir">' + esc(dir) + '</div>' +
+        (isToday ? '<div class="cd-today-badge">TODAY</div>' : '') +
+        '<div class="cd-title">' + esc(e.title || '') + '</div>' +
+        '<div class="cd-meta">' + esc(fmtDate(e.target_date)) + occ + repeatLabel + reminderLabel + '</div>' +
+    '</div>';
+}
+
+function ordinal(n) {
+    var s = ['th','st','nd','rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]) + ' year';
+}
+
+function render(state) {
+    renderFilters(state);
+    var body = document.getElementById('cd-body');
+    if (state.loading) { body.innerHTML = '<div class="eos-empty">Loading…</div>'; return; }
+    var items = state.events.filter(function(e) { return state.filter === 'all' || e.category === state.filter; });
+    if (!items.length) {
+        body.innerHTML = EOS_UI.emptyState({
+            icon: '📅',
+            message: state.events.length ? 'Nothing in this filter.' : 'No countdowns yet — add the first one.',
+            actionLabel: '+ Add a countdown', onAction: 'openAdd()',
+        });
+        return;
+    }
+    body.innerHTML = '<div class="cd-grid">' + items.map(tileHtml).join('') + '</div>';
+}
+
+function setFilter(f) { S.set('filter', f); }
+function toggleArchived() { S.set('showArchived', !S.get('showArchived')); loadEvents(); }
+
+// ── CRUD ──────────────────────────────────────────────────────────
+function formFields(existing) {
+    existing = existing || {};
+    return [
+        {key: 'title', label: 'What', type: 'text', value: existing.title || '', placeholder: "Mom's birthday, flight to Tokyo…"},
+        {key: 'date', label: 'Date', type: 'date', value: existing.base_date || existing.date || ''},
+        {key: 'repeat', label: 'Repeats', type: 'select', options: ['none','yearly','monthly','weekly'], value: existing.repeat || 'none'},
+        {key: 'category', label: 'Category', type: 'select', options: CATEGORIES, value: existing.category || 'other'},
+        {key: 'icon', label: 'Icon (optional)', type: 'text', value: existing.icon || '', placeholder: 'auto from category'},
+        {key: 'color', label: 'Color', type: 'select', options: COLORS, value: existing.color || 'accent'},
+        {key: 'remind_days_before', label: 'Remind me (days before, optional)', type: 'text',
+         value: existing.remind_days_before || '', placeholder: 'e.g. 3'},
+        {key: 'notes', label: 'Notes (optional)', type: 'textarea', value: existing.notes || ''},
+    ];
+}
+
+// Calendar (.ics) import (countdown-no-calendar-import) — preview/confirm,
+// same shape as the other CSV-style imports this session.
+function openImportIcs() { document.getElementById('ics-file-input').click(); }
+
+async function handleIcsFile(event) {
+    var file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    var form = new FormData();
+    form.append('file', file);
+    var res = await fetch('/countdown/api/import-ics/preview', { method: 'POST', body: form })
+        .then(function(r) { return r.json(); })
+        .catch(function() { return { error: 'upload failed' }; });
+    if (res.error) { EOS_UI.toast(res.error, false); return; }
+    showIcsPreview(res);
+}
+
+function showIcsPreview(res) {
+    var s = res.summary || {};
+    var warnHtml = (res.warnings || []).map(function(w) {
+        return '<div style="color:var(--warning);font-size:0.8rem;margin-bottom:4px">⚠ ' + esc(w) + '</div>';
+    }).join('');
+    var rowsHtml = (res.rows || []).slice(0, 200).map(function(r, i) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
+            '<input type="checkbox" class="ics-row-check" data-idx="' + i + '"' + (r.duplicate ? '' : ' checked') + '>' +
+            '<span style="flex:1;font-size:0.85rem">' + esc(r.title) + '</span>' +
+            '<span style="font-size:0.8rem;color:var(--text-muted)">' + esc(r.date) + '</span>' +
+            (r.duplicate ? '<span style="font-size:0.75rem;color:var(--text-muted)">already exists</span>' : '') +
+        '</div>';
+    }).join('') || '<div class="eos-empty">No importable events</div>';
+
+    window._icsRows = res.rows || [];
+    EOS_UI.modal({
+        title: 'Import from calendar',
+        width: '480px',
+        body:
+            '<div style="margin-bottom:10px;font-size:0.85rem;color:var(--text-secondary)">' +
+                (s.total || 0) + ' events found — ' + (s.new || 0) + ' new, ' + (s.duplicate || 0) + ' already exist' +
+            '</div>' +
+            warnHtml +
+            '<div style="max-height:320px;overflow-y:auto;border-top:1px solid var(--border)">' + rowsHtml + '</div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">' +
+                '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+                '<button class="eos-btn eos-btn-primary" onclick="confirmIcsImport()">Import selected</button>' +
+            '</div>',
+    });
+}
+
+async function confirmIcsImport() {
+    var checks = document.querySelectorAll('.ics-row-check:checked');
+    var rows = Array.prototype.slice.call(checks).map(function(c) {
+        return window._icsRows[parseInt(c.getAttribute('data-idx'), 10)];
+    }).filter(Boolean);
+    if (!rows.length) { EOS_UI.toast('No events selected', false); return; }
+    var res = await EOS.apiSafe('/countdown/api/import-ics/confirm', {
+        method: 'POST', body: JSON.stringify({ rows: rows }),
+    });
+    if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+    EOS_UI.closeModal();
+    EOS_UI.toast('Imported ' + res.imported + ' countdown' + (res.imported === 1 ? '' : 's') + (res.skipped ? ' (' + res.skipped + ' skipped)' : ''));
+    loadEvents();
+}
+
+function openAdd() {
+    EOS_UI.formModal('Add a countdown', formFields(), async function(vals) {
+        var res = await EOS.api('/countdown/api/events', {method: 'POST', body: JSON.stringify(vals)});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Countdown added');
+        loadEvents();
+    });
+}
+
+var _editing = null;
+async function openEdit(file) {
+    var detail = await EOS.api('/countdown/api/events/' + encodeURIComponent(file));
+    if (!detail || detail.error) { EOS_UI.toast((detail && detail.error) || 'Could not load event.', false); return; }
+    _editing = file;
+    EOS_UI.formModal('Edit countdown', formFields(detail), async function(vals) {
+        var res = await EOS.api('/countdown/api/events/' + encodeURIComponent(file), {method: 'PUT', body: JSON.stringify(vals)});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Saved');
+        loadEvents();
+    });
+}
+
+async function togglePin(file, next) {
+    await EOS.api('/countdown/api/events/' + encodeURIComponent(file), {method: 'PUT', body: JSON.stringify({pinned: next})});
+    loadEvents();
+}
+async function toggleArchive(file, next) {
+    await EOS.api('/countdown/api/events/' + encodeURIComponent(file), {method: 'PUT', body: JSON.stringify({archived: next})});
+    EOS_UI.toast(next ? 'Archived' : 'Restored');
+    loadEvents();
+}
+async function deleteEvent(file) {
+    if (!await EOS_UI.confirm({message: 'Delete this countdown? This cannot be undone.', action: 'Delete', danger: true})) return;
+    await EOS.api('/countdown/api/events/' + encodeURIComponent(file), {method: 'DELETE'});
+    EOS_UI.toast('Deleted');
+    loadEvents();
+}
+
+// App Settings slide-out
+var _appSettings = EOS_UI.settingsPanel({id: 'app-settings-panel', title: 'Countdown Settings', app: 'countdown'});
+function openAppSettings() { _appSettings.open(); }
+
+loadEvents();
+</script>
+</body>
+</html>

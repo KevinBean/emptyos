@@ -1,0 +1,46 @@
+[app]
+id = "dictation"
+# Standalone by design: a browser input overlay with no natural app-to-app
+# edges (single-shot tool shape). leaf keeps the P3 orphan audit honest.
+leaf = true
+name = "Dictation"
+version = "0.1.0"
+description = "Hold a hotkey in any text field and speak — your words are transcribed, lightly polished (punctuation, casing, your custom terms preserved), and inserted at the caret. Works in any EmptyOS input, textarea, or rich editor. Speak to create, type to refine."
+icon = "🎙"
+store_category = "ai"
+dimensions = ["occupational", "intellectual"]
+user_intent = [
+    "let me dictate into this field",
+    "type by voice",
+    "speak instead of typing",
+    "voice input anywhere in the app",
+    "用语音输入到这个框里",
+]
+
+[app.entry]
+module = "app"
+class = "DictationApp"
+
+[provides.web]
+prefix = "/dictation"
+
+[provides.settings]
+schema = [
+    {key = "dictation.feature.enabled", label = "Enable Dictation", type = "boolean", default = false},
+    {key = "dictation.hotkey", label = "Push-to-talk hotkey (hold)", type = "text", default = "ctrl+shift+d"},
+    {key = "dictation.cleanup_threshold_words", label = "Polish with AI above N words", type = "number", default = 6},
+    {key = "dictation.mic_language", label = "Microphone language", type = "text", default = "en-US"},
+    {key = "dictation.vocabulary", label = "Custom terms to preserve (names, project codes, acronyms)", type = "textarea", default = ""},
+    {key = "dictation.stt_provider", label = "Speech engine", type = "select", default = "web-speech", options = ["web-speech", "server"]},
+]
+
+[requires]
+# think — polish the transcript above the word threshold (a short utterance
+# skips it). listen + write — the server-side STT path (stt_provider="server"):
+# the overlay uploads an audio blob, we save it and run the `listen` chain
+# (voice-api Whisper). Web Speech (default) needs no capability.
+capabilities = ["think", "listen", "write"]
+apps = []
+optional_apps = []
+services = []
+events = []

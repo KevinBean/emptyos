@@ -1,0 +1,16 @@
+[plugin]
+id = "translate"
+name = "Translate (NLLB-200)"
+version = "1.0.0"
+description = "Local deterministic translation via Meta NLLB-200 (CTranslate2). English fans out to ~200 languages with stable output. Dark until a converted model is installed; the LLM translate provider covers everything until then."
+
+[plugin.entry]
+module = "plugin"
+class = "TranslatePlugin"
+
+[provides]
+services = []
+tags = ["i18n", "translation", "nllb"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

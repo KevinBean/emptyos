@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tasks — EmptyOS</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/eos-components.css">
+  <style>
+    body { padding-top:calc(44px + env(safe-area-inset-top,0px)); padding-bottom:env(safe-area-inset-bottom); }
+    .stats-bar { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease }
+    .eos-stat-card.eos-stat-active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset }
+    .decay-bar { display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:16px; background:var(--border); animation:fadeDown 0.4s ease 0.05s both }
+    .decay-seg { height:100%; min-width:0 }
+    .decay-fresh{background:var(--success)} .decay-aging{background:var(--warning)} .decay-stale{background:var(--danger)} .decay-zombie{background:var(--purple)}
+    .decay-legend { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; font-size:11px; color:var(--text-muted) }
+    .decay-legend span { display:flex; align-items:center; gap:4px }
+    .decay-dot { width:8px; height:8px; border-radius:50%; display:inline-block }
+    .add-bar { display:flex; gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.08s both; align-items:stretch }
+    .add-bar input[type="text"] { flex:1 1 240px; min-width:0; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; font-size:15px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+    .add-bar input[type="text"]:focus{border-color:var(--accent)} .add-bar input[type="text"]::placeholder{color:var(--text-secondary)}
+    .add-bar input[type="date"] { flex:0 0 160px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; font-size:13px; color:var(--text); outline:none; font-family:inherit }
+    .search-bar { margin-bottom:12px; animation:fadeDown 0.4s ease 0.1s both }
+    .search-bar input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px 12px 36px; font-size:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+    .search-bar input:focus{border-color:var(--accent)} .search-bar input::placeholder{color:var(--text-secondary)}
+    .search-wrap{position:relative} .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text-secondary);pointer-events:none;display:flex;align-items:center;justify-content:center}
+    .search-icon svg{width:14px;height:14px;display:block}
+    .focus-section { margin-bottom:24px }
+    .focus-card { background:var(--bg-card); border-left:3px solid var(--accent); border-radius:14px; padding:16px 16px; margin-bottom:8px; display:flex; align-items:center; gap:12px; animation:cardIn 0.35s ease both; box-shadow:0 0 0 1px var(--border) }
+    .focus-card:nth-child(2){animation-delay:0.05s} .focus-card:nth-child(3){animation-delay:0.1s}
+    .focus-score { min-width:36px; height:36px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0 }
+    .focus-text{flex:1;min-width:0} .focus-text .task-name{font-weight:600;color:var(--text-heading);font-size:14px} .focus-text .task-meta{font-size:12px;color:var(--text-secondary);margin-top:2px}
+    .tier-group{margin-bottom:24px}
+    .tier-header { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1px; padding:8px 0; display:flex; align-items:center; gap:8px; color:var(--text-secondary) }
+    .tier-count { background:var(--bg-card); padding:2px 8px; border-radius:8px; font-size:11px; color:var(--text-muted); border:1px solid var(--border) }
+    .action-header { text-transform:none; letter-spacing:0; font-size:14px }
+    .action-hint { font-weight:400; font-size:11px; color:var(--text-muted); text-transform:none; letter-spacing:0 }
+    .action-next .tier-header { color:var(--accent) }
+    .action-someday .tier-header { color:var(--text-muted) }
+    .fold-toggle { cursor:pointer; user-select:none }
+    .fold-toggle:hover .tier-count { border-color:var(--accent) }
+    .fold-chev { font-size:10px; color:var(--text-muted); width:12px; display:inline-block }
+    .domain-strip { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 12px; }
+    .domain-chip { font-size:11px; color:var(--text-secondary); background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:2px 9px; }
+    .domain-chip b { color:var(--text); font-weight:600; }
+    .tag-strip { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
+    .tag-chip { font-size:11px; color:var(--text-secondary); background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:3px 10px; cursor:pointer; transition:all 0.15s; }
+    .tag-chip:hover { border-color:var(--accent); color:var(--accent); }
+    .tag-chip-active { border-color:var(--accent); color:var(--accent); background:var(--accent-bg); }
+    .tag-chip b { color:var(--text); font-weight:600; }
+    .focus-toolbar { display:flex; justify-content:flex-end; margin-bottom:6px; }
+    .triage-section code { background:var(--bg-card); padding:1px 5px; border-radius:4px; }
+    .task-item { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:8px; margin-bottom:4px; transition:all 0.2s; position:relative; background:var(--bg-card); border-left:3px solid transparent; animation:cardIn 0.35s ease both }
+    .task-item:hover{box-shadow:0 2px 8px var(--shadow)}
+    .task-item.completing{opacity:0;transform:translateX(40px) scale(0.95);transition:opacity 0.3s ease-out,transform 0.3s ease-out}
+    .task-item.tier-fresh{border-left-color:var(--success)} .task-item.tier-aging{border-left-color:var(--warning)} .task-item.tier-stale{border-left-color:var(--danger)} .task-item.tier-zombie{border-left-color:var(--purple)}
+    .task-item.tier-zombie .task-text{text-decoration:line-through;color:var(--text-muted)}
+    .task-cb { width:32px; height:32px; border-radius:50%; border:2px solid var(--border-strong); cursor:pointer; flex-shrink:0; transition:all 0.2s; display:flex; align-items:center; justify-content:center }
+    .task-cb:hover{border-color:var(--accent);background:var(--accent-bg);transform:scale(1.1)}
+    .task-cb.done{background:var(--success);border-color:var(--success);transform:scale(1.1)} .task-cb.done::after{content:"\2713";color:var(--accent-ink);font-size:13px;font-weight:700}
+    .task-body{flex:1;min-width:0} .task-text{font-size:14px;color:var(--text);line-height:1.4;word-break:break-word} .task-file{font-size:11px;color:var(--text-muted);margin-top:2px}
+    .task-blocked{font-size:11px;color:var(--warn,var(--amber));margin-top:2px;word-break:break-word}
+    .project-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue);text-decoration:none;vertical-align:middle;margin-right:2px}
+    .task-due { font-size:11px; padding:4px 12px; border-radius:6px; white-space:nowrap; flex-shrink:0; font-weight:500 }
+    .task-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.2s;flex-wrap:wrap;justify-content:flex-end} .task-item:hover .task-actions{opacity:1}
+    .task-actions button{background:var(--bg);border:1px solid var(--border);color:var(--text-secondary);border-radius:6px;padding:8px 12px;font-size:11px;cursor:pointer;transition:all 0.15s;min-height:32px;white-space:nowrap}
+    .task-actions button:hover{border-color:var(--accent);color:var(--accent)}
+    .task-list-busy .task-cb,.task-list-busy .task-actions button{opacity:.55;cursor:wait}
+    .due-fresh{background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)} .due-aging{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning)} .due-stale{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)} .due-zombie{background:color-mix(in srgb,var(--purple) 15%,transparent);color:var(--purple)} .due-future{background:var(--bg);color:var(--text-secondary)}
+    /* Calendar tab — uses EOS_UI.monthGrid (.eos-mg-*) from eos-components.css.
+       Only the day-detail panel below the grid stays local. */
+    .cal-day-tasks{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:12px;animation:cardIn 0.25s ease}
+    .cal-day-tasks h3{margin:0 0 12px;font-size:15px;color:var(--text-heading)}
+    .cal-day-task{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px}
+    .cal-day-task:last-child{border-bottom:none} .cal-day-task.done-task{color:var(--text-muted);text-decoration:line-through}
+    .cal-task-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+    .refresh-btn.spinning .refresh-icon{animation:spin 0.8s linear infinite} .refresh-icon{display:inline-block}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .empty-state{text-align:center;padding:48px 24px;color:var(--text-muted)} .empty-state .icon{font-size:40px;margin-bottom:12px;opacity:0.6}
+    .confetti-particle{position:fixed;width:8px;height:8px;border-radius:50%;z-index:999;pointer-events:none}
+    @media(max-width:640px){.stats-bar{grid-template-columns:repeat(2,1fr)} .task-item{flex-wrap:wrap} .task-actions{opacity:1;flex:1 1 calc(100% - 44px);justify-content:flex-start;margin-left:44px} .task-due{margin-left:44px} .add-bar{flex-wrap:wrap} .add-bar input[type="text"]{flex:1 1 100%} .add-bar input[type="date"]{flex:1 1 0;min-width:0}}
+    @media(max-width:400px){.stat-num{font-size:22px}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div id="task-header-mount"></div>
+
+    <!-- Stats -->
+    <div class="stats-bar" id="stats"></div>
+
+    <!-- Decay bar -->
+    <div id="decay-section">
+      <div class="decay-bar" id="decay-bar"></div>
+      <div class="decay-legend" id="decay-legend"></div>
+    </div>
+
+    <!-- Add task -->
+    <div class="add-bar">
+      <input type="text" id="add-text" placeholder="Add a task..." onkeydown="if(event.key==='Enter')addTask()">
+      <input type="date" id="add-date">
+      <button class="eos-btn eos-btn-sm" onclick="addTask()" title="Add this task to the inbox (Enter)">Add</button>
+    </div>
+
+    <!-- Search -->
+    <div class="search-bar">
+      <div class="search-wrap">
+        <span class="search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
+        <input type="text" id="search-input" placeholder="Filter tasks..." oninput="filterTasks()">
+      </div>
+    </div>
+
+    <!-- Focus -->
+    <div class="focus-section" id="focus-section"></div>
+
+    <!-- Tabs -->
+    <div class="eos-tabs">
+      <div class="eos-tab active" data-tab="focus" onclick="switchTab('focus')">Focus</div>
+      <div class="eos-tab" data-tab="list" onclick="switchTab('list')">By date</div>
+      <div class="eos-tab" data-tab="done" onclick="switchTab('done')">Done</div>
+      <div class="eos-tab" data-tab="calendar" onclick="switchTab('calendar')">Calendar</div>
+    </div>
+
+    <!-- Focus view (actionability-first: Next / Waiting / Someday) -->
+    <div id="view-focus" class="eos-tab-content active"></div>
+
+    <!-- List view (grouped by decay tier) -->
+    <div id="view-list" class="eos-tab-content"></div>
+
+    <!-- Done view (completed tasks, grouped by completion date, reopenable) -->
+    <div id="view-done" class="eos-tab-content"></div>
+
+    <!-- Calendar view -->
+    <div id="view-calendar" class="eos-tab-content"></div>
+  </div>
+
+  <!-- Toast -->
+  <div class="eos-toast" id="toast"></div>
+
+  <script src="/static/eos-components.js"></script>
+  <script src="/static/eos.js"></script>
+  <script src="/task/pages/task.js"></script>
+</body>
+</html>

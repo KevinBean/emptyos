@@ -1,0 +1,40 @@
+[app]
+id = "garden"
+store_category = "creative"
+name = "Garden"
+version = "0.2.0"
+description = "Programmatic SVG garden mirroring vault entities across the 4 V1 wellbeing plots"
+dimensions = ["spiritual", "emotional"]
+
+[app.entry]
+module = "app"
+class = "GardenApp"
+
+[provides.web]
+prefix = "/garden"
+
+[provides.events]
+emits = ["garden:tick"]
+internal = ["garden:tick"]
+
+[requires]
+optional_apps = ["projects"]
+capabilities = ["read"]
+apps = []
+services = []
+events = ["kernel:started"]
+
+[provides.settings]
+schema = [
+    {key = "garden.theme", label = "Theme", type = "select", default = "appleton", options = ["sumi-e", "appleton", "scroll", "cottage", "edo"], hint = "Visual style"},
+    {key = "garden.window_days", label = "Signal window (days)", type = "number", default = 30, hint = "Lookback for wheel signals (6h tick — Animal-Crossing model, independent of visits)"},
+]
+
+[[contributes.hub.panel]]
+id = "garden-mini"
+method = "panel_mini"
+renderer = "garden-mini"
+title = "Garden"
+priority = 220
+group = "ambient"
+lazy = true

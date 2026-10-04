@@ -1,0 +1,22 @@
+<!-- eos-nav: skip — redirect stub; it replaces itself before paint, so there is
+     no page for a nav bar to sit on. The destination carries the nav. -->
+<!-- eos-ui: exempt — redirect stub; location.replace fires before paint, so
+     there is no surface to style and loading the shared bundle would only
+     delay it.
+
+     The picture packs were a standalone page for about a day (absorbed from
+     picture-dict 2026-08-19, folded into the dictionary's tab bar the same
+     evening). This keeps any link that still points here working, including
+     `#<slug>` deep links, which map onto the namespaced `#pictures/<slug>`. -->
+<title>Picture packs</title>
+<script>
+(function () {
+    var slug = (location.hash || '').replace(/^#/, '');
+    // `#review` and friends were sub-tab names on the old page, not slugs.
+    var TABS = { browse: 1, quiz: 1, review: 1, speak: 1 };
+    var target = '/dictionary/#pictures';
+    if (slug && !TABS[slug]) target += '/' + encodeURIComponent(slug);
+    location.replace(target);
+})();
+</script>
+<noscript><a href="/dictionary/#pictures">Open the picture packs</a></noscript>

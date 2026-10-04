@@ -1,0 +1,26 @@
+[plugin]
+id = "health"
+name = "Health"
+version = "1.0.0"
+description = "System health checks — capabilities, connectors, apps"
+default = true
+
+[plugin.entry]
+module = "plugin"
+class = "HealthPlugin"
+
+[provides]
+services = ["health"]
+tags = ["system", "monitoring"]
+
+# Periodic liveness beat. Kept as a forward-compatible audit stream (the
+# 2026-07-10 dead-emit decision), declared so the topology graph reflects what
+# the code actually emits.
+#
+# `internal` because a cross-app listener would be a mistake, not a gap: this
+# fires every `watchdog_interval` seconds (60 by default, ~1440/day), so any
+# reactor handler journalling it would drown the daily note. Consumers wanting
+# liveness should read the health service, not subscribe to the beat.
+[provides.events]
+emits = ["health:heartbeat"]
+internal = ["health:heartbeat"]

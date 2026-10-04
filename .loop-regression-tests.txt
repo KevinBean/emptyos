@@ -1,0 +1,7 @@
+# Regression tests added by the autonomous fix loop. One pytest node id per line.
+tests/test_unit_check_career_verdict.py::test_career_gate_sources_carry_no_personal_patterns
+tests/test_unit_agent_bus_mirror.py::test_agent_bus_skill_mirror_matches_claude_skills_at_head
+tests/test_unit_skill_tree_sync.py::test_repaired_skill_pairs_stay_in_sync
+tests/test_unit_loops.py
+tests/test_unit_search_candidates.py
+tests/test_unit_search_voice.py

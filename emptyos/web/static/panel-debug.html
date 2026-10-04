@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hub Panels · Debug</title>
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text);
+  margin: 0; padding: 20px; min-height: 100dvh; }
+.wrap { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 18px; margin: 0 0 6px; color: var(--text-heading); }
+.sub { color: var(--text-muted); font-size: 12px; margin-bottom: 20px; font-family: monospace; }
+.panel-row { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  margin-bottom: 14px; overflow: hidden; }
+.panel-head { padding: 10px 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 70%, var(--accent) 3%); }
+.panel-id { font-weight: 700; color: var(--text-heading); font-size: 14px; }
+.panel-head .eos-badge { font-family: monospace; }
+.panel-head .reload { margin-left: auto; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+.pane { padding: 12px 14px; }
+.pane h3 { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
+  margin: 0 0 8px; font-weight: 700; }
+.pane.data { border-right: 1px solid var(--border); }
+@media (max-width: 900px) { .pane.data { border-right: none; border-bottom: 1px solid var(--border); } }
+pre { margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.45;
+  color: var(--text); white-space: pre-wrap; word-break: break-word;
+  background: var(--bg); padding: 8px 10px; border-radius: 6px;
+  max-height: 260px; overflow: auto; }
+.rendered { max-height: 260px; overflow: auto; background: var(--bg); border-radius: 6px; padding: 10px; }
+.summary { display: flex; gap: 12px; margin-bottom: 12px; }
+a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<link rel="stylesheet" href="/static/eos-components.css">
+<div class="wrap">
+  <h1>Hub Panels — Debug</h1>
+  <div class="sub">
+    Live introspection: every panel contribution this board aggregates, from every app
+    (<code>hub.panel</code>, plus <code>hub-life.panel</code> on the life dashboard).
+    Shows raw method output next to the rendered HTML so you can eyeball the data → renderer contract.
+    <a id="back-link" href="/hub/">← back to the board</a>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div id="panels"><p>Loading…</p></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var esc = EOS_UI.esc;
+// One file serves every panel host (/hub/debug/panels, /hub-life/debug/panels),
+// so the API base comes from the URL it was served at — never a sibling's board.
+// Keyed on the '/debug/' segment, not just position: this file also sits in the
+// platform static dir, and opened directly from there the URL names no board,
+// so it falls back to the core hub instead of fetching /static/api/...
+var _seg = location.pathname.split('/');
+var BASE = (_seg[2] === 'debug') ? '/' + _seg[1] : '/hub';
+document.getElementById('back-link').href = BASE + '/';
+
+var PANELS = [];   // last full listing; reloadOne swaps one row in place
+
+async function loadAll(){
+  try {
+    var r = await fetch(BASE + '/api/panels/all');
+    var data = await r.json();
+    PANELS = data.panels || [];
+    render(PANELS);
+  } catch(e) {
+    document.getElementById('panels').innerHTML = EOS_UI.errorState({message: 'Failed: ' + e.message, onRetry: 'loadAll()'});
+  }
+}
+
+function render(panels){
+  var summary = document.getElementById('summary');
+  var lazy = panels.filter(function(p){ return p.lazy; }).length;
+  var grouped = new Set(panels.map(function(p){ return p.group; }).filter(Boolean)).size;
+  summary.innerHTML =
+    EOS_UI.statusBadge(panels.length + ' panels', '') +
+    EOS_UI.statusBadge(lazy + ' lazy', '') +
+    EOS_UI.statusBadge(grouped + ' groups', '') +
+    EOS_UI.statusBadge('sorted by priority', '');
+
+  document.getElementById('panels').innerHTML = panels.map(function(p){
+    return '<div class="panel-row" data-pid="' + EOS_UI.escAttr(p.id) + '">' +
+      '<div class="panel-head">' +
+        '<span class="panel-id">' + esc(p.id) + '</span>' +
+        EOS_UI.statusBadge('priority ' + p.priority, '') +
+        EOS_UI.statusBadge(p.renderer, 'running') +
+        (p.group ? EOS_UI.statusBadge('group: ' + p.group, 'shelved') : '') +
+        (p.lazy ? EOS_UI.statusBadge('lazy', 'completed') : '') +
+        (p.unavailable ? EOS_UI.statusBadge('over budget', 'shelved') : '') +
+        EOS_UI.statusBadge('src: ' + p.source, '') +
+        '<button class="eos-btn eos-btn-sm eos-btn-ghost reload" onclick="reloadOne(' + EOS_UI.jsArg(p.id) + ', this)">↻ reload</button>' +
+      '</div>' +
+      '<div class="split">' +
+        '<div class="pane data">' +
+          '<h3>data (raw)</h3>' +
+          '<pre>' + esc(JSON.stringify(p.data, null, 2)) + '</pre>' +
+        '</div>' +
+        '<div class="pane">' +
+          '<h3>rendered (best-effort preview)</h3>' +
+          '<div class="rendered">' + previewRender(p) + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function previewRender(p){
+  /* A very rough preview: we don't re-import the board's renderer
+     registry, so this just formats the data cheaply so you can see what
+     the real renderer receives. For full fidelity open the board itself
+     (the back link above). */
+  if (p.unavailable) {
+    // The budget expired. Not "broken" — the listing hydrates every lazy panel
+    // at once and LLM-backed ones queue behind a one-slot semaphore. The single
+    // panel refresh is unbudgeted, so ↻ above gets the real data.
+    return '<em style="color:var(--text-muted)">' + esc(p.unavailable) +
+           ' — the ↻ reload above is unbudgeted and will hydrate it</em>';
+  }
+  if (p.data == null) return '<em style="color:var(--text-muted)">no data</em>';
+  if (Array.isArray(p.data)) {
+    return p.data.map(function(item, i){
+      return '<div style="padding:4px 0;border-bottom:1px dashed var(--border)">' +
+        '<strong>#' + i + '</strong>: ' + esc(JSON.stringify(item)).slice(0, 200) + '</div>';
+    }).join('');
+  }
+  if (typeof p.data === 'object') {
+    return '<code>' + esc(JSON.stringify(p.data).slice(0, 400)) + '</code>';
+  }
+  return esc(String(p.data));
+}
+
+async function reloadOne(id, btn){
+  // One panel, one fetch: /api/panel/{id} hydrates just that contributor
+  // (sdk.panels `only=`), so a reload never re-runs the whole board.
+  //
+  // This call is deliberately unbudgeted, which means it can take minutes: the
+  // panels worth reloading are the LLM-backed ones the board's budget marked,
+  // and one measured 177s to answer "nothing to show". Without a pending state
+  // the button looked inert for that whole time, so the honest wait read as a
+  // broken control.
+  if (btn) { btn.disabled = true; btn.textContent = '↻ hydrating…'; }
+  try {
+    var r = await fetch(BASE + '/api/panel/' + encodeURIComponent(id));
+    var p = await r.json();
+    var i = PANELS.findIndex(function(x){ return x.id === id; });
+    if (p.empty) {
+      // The contributor ran and returned None — the documented empty state, not
+      // a failure. Clear any over-budget mark so the row stops claiming one.
+      if (i >= 0) {
+        PANELS[i] = Object.assign({}, PANELS[i], {data: null, unavailable: ''});
+        render(PANELS);
+      }
+      EOS_UI.toast('Nothing to show right now', true);
+      return;
+    }
+    if (p.error) { EOS_UI.toast('Reload failed: ' + p.error, false); return; }
+    if (i < 0) PANELS.push(p); else PANELS[i] = p;
+    render(PANELS);
+  } catch(e) { EOS_UI.toast('Reload failed: ' + e.message, false); }
+  finally {
+    // render() rebuilds the row (and this button) on the success paths; restore
+    // anyway for the ones that return early, or the control stays disabled.
+    if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = '↻ reload'; }
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>

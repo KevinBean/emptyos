@@ -1,0 +1,58 @@
+<!--
+  EmptyOS LaunchAgent — macOS auto-start
+  Install:
+    cp service/com.emptyos.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.emptyos.plist
+
+  Manual control:
+    launchctl start com.emptyos
+    launchctl stop com.emptyos
+    launchctl unload ~/Library/LaunchAgents/com.emptyos.plist  # disable auto-start
+
+  Logs:
+    tail -f /tmp/emptyos.log
+    tail -f /tmp/emptyos-err.log
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.emptyos</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Edit this path to your Python 3 -->
+        <string>/usr/local/bin/python3</string>
+        <string>-m</string>
+        <string>emptyos</string>
+        <string>start</string>
+    </array>
+
+    <!-- Edit this to your emptyos directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/YOU/emptyos</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/emptyos.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/emptyos-err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+</dict>
+</plist>

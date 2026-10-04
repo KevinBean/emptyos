@@ -1,0 +1,157 @@
+[app]
+id = "projects"
+icon_id = "projects"
+store_category = "productivity"
+name = "Projects"
+version = "1.0.0"
+description = "Project portfolio — scan vault, parse status, track progress"
+icon = "📁"
+dimensions = ["occupational"]
+user_intent = [
+    "I want to manage a project",
+    "what's the status of my projects",
+    "start a new project",
+    "看一下我手上的项目",
+    "see what's blocked or stalled",
+    "track this multi-step thing I'm building",
+]
+
+[app.entry]
+module = "app"
+class = "ProjectsApp"
+
+[requires]
+capabilities = ["read", "write", "search", "think", "artifact"]
+apps = ["github-connector", "git", "reports"]
+optional_apps = ["worklog", "staff"]
+
+[provides.cli]
+commands = ["projects"]
+
+[provides.web]
+prefix = "/projects"
+
+[provides.events]
+emits = ["projects:refreshed", "projects:status_changed", "projects:task_toggled", "projects:task_added", "projects:created", "projects:doc_created", "projects:doc_saved", "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled", "projects:sprint_created", "projects:sprint_closed", "projects:milestone_created", "projects:release_created", "projects:scene_visualized", "projects:dates_cascaded", "project:updated", "projects:task_assigned"]
+# UI-render observability — scene_visualized fires when the user opens a
+# visual scene; no cross-app consumer wants per-view notifications.
+# project:updated / projects:doc_saved are high-frequency save signals —
+# status/task events already ripple, so no cross-app listener by design
+# (marked 2026-07-02).
+internal = ["projects:scene_visualized", "project:updated", "projects:doc_saved", "projects:dates_cascaded"]
+
+[provides.settings]
+schema = [
+    {key = "projects.stale_days", label = "Stale After (days)", type = "number", default = 90},
+]
+
+[provides.timeline]
+entity_source = "project_path"
+
+[provides.export]
+enabled = true
+mode = "standalone"
+# Ship only what the pages use — pages load realtime.js. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["realtime"]
+fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_app:bundled", "viewer:none"]
+
+# Assistant slash commands now live in the unified verb registry below
+# (.claude/rules/verb-registry.md). The legacy [provides.assistant] block was
+# removed in the same migration — the assistant consumer reads for_surface("assistant").
+
+[[provides.verbs]]
+verb = "projects.list"
+method = "list_projects"
+summary = "List projects"
+args = {}
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/projects", method = "list_projects" }
+
+[[provides.verbs]]
+verb = "projects.deadlines"
+method = "get_deadlines"
+summary = "List projects with upcoming deadlines"
+args = {}
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/deadlines", method = "get_deadlines" }
+
+[[provides.verbs]]
+verb = "projects.tasks"
+method = "get_all_tasks"
+summary = "List all tasks across every project"
+args = {}
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/project-tasks", method = "get_all_tasks" }
+
+[[provides.verbs]]
+verb = "projects.add_task"
+method = "add_task_to_project"
+summary = "Add a task to a project"
+args = { project_id = "string", text = "string", due = "string?" }
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/project-add", method = "add_task_to_project" }
+
+[[contributes.hub.needs_attention]]
+id = "overdue-deadlines"
+method = "slot_needs_attention"
+limit = 3
+priority = 8
+
+[[contributes.hub.today]]
+id = "deadlines-today"
+method = "slot_today"
+limit = 3
+priority = 8
+
+[[contributes.hub.resume]]
+id = "active-projects"
+method = "slot_resume"
+limit = 3
+priority = 10
+
+# ── Legacy-parity panels ──
+
+[[contributes.hub.panel]]
+id = "active-projects-registry"
+title = "📁 Active Projects"
+method = "panel_active_projects"
+renderer = "plain-list"
+priority = 120
+
+[[contributes.hub.panel]]
+id = "upcoming-deadlines"
+title = "📆 Upcoming Deadlines"
+method = "panel_upcoming_deadlines"
+renderer = "deadline-row"
+priority = 200
+
+[[contributes.hub.panel]]
+id = "project-countdowns"
+method = "panel_project_countdowns"
+renderer = "countdown-tile"
+group = "countdowns"
+priority = 190
+
+[[contributes.hub.panel]]
+id = "projects-pipeline"
+method = "panel_projects_pipeline"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 150
+
+[[contributes.voice-assistant.context]]
+id = "active-projects"
+method = "assistant_context"
+priority = 100
+
+[provides.welcome]
+title = "Projects & Case Studies"
+tagline = "Project portfolio with timelines, tasks, and linked documents."
+href = "/projects/"
+order = 60

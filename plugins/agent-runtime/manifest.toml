@@ -1,0 +1,13 @@
+[plugin]
+id = "agent-runtime"
+name = "Agent Runtime"
+version = "1.0.0"
+description = "Generic ephemeral CLI subprocess driver for agent-style tools (claude-cli, codex, gemini, etc.). Spawns a CLI per turn, drains stdout/stderr with line callbacks, supports periodic tick callbacks for live UI updates, kills on timeout. Lifted from dogfood-agent's run loop so any app needing 'spawn a coding-agent CLI for one turn' can share the same plumbing. No persistent daemon — each call is a one-shot subprocess."
+
+[plugin.entry]
+module = "plugin"
+class = "AgentRuntimePlugin"
+
+[provides]
+services = ["agent-runtime"]
+tags = ["agent", "subprocess"]

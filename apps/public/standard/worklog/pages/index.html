@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Work Log - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.wrap { max-width:760px; margin:0 auto }
+.topbar { display:flex; align-items:center; gap:10px; padding:14px 0 10px; flex-wrap:wrap }
+.topbar h1 { font-size:22px; font-weight:700 }
+.topbar .right { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end }
+/* A flex-shrunk <select> truncates its own label illegibly rather than
+   eliding gracefully — the employer filter was the first to visibly break
+   this way once the timer chip added a new item to an already-full
+   toolbar. Everything else here (buttons, the model pill) degrades fine
+   under shrink/wrap, so only the select needs protecting. */
+#emp-filter { flex-shrink:0 }
+select, input, textarea { font-family:inherit }
+.sel { background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:7px 10px; font-size:13px; cursor:pointer }
+.tabs { display:flex; gap:6px; margin:6px 0 16px; flex-wrap:wrap }
+.tab { padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); cursor:pointer }
+.tab.active { background:color-mix(in srgb,var(--accent) 14%,var(--bg-card)); border-color:var(--accent); color:var(--accent) }
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:12px }
+.day-card { cursor:pointer; transition:border-color .15s }
+.day-card:hover { border-color:var(--accent) }
+.day-head { display:flex; align-items:center; gap:8px; margin-bottom:6px }
+.day-date { font-weight:700; font-size:14px }
+.day-week { color:var(--text-muted); font-size:12px }
+.emp-chip { font-size:11px; padding:2px 8px; border-radius:10px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-weight:600 }
+.day-snippet { font-size:12px; color:var(--text-secondary); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.proj-badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px }
+.proj-badge { font-size:11px; padding:3px 9px; border-radius:10px; background:var(--bg); border:1px solid var(--border); color:var(--text-secondary) }
+/* A project label that resolves to a real project note. Renders INSIDE the
+   existing badge/title element so no layout changes; unmatched labels keep the
+   plain treatment above — most headings are history-only ("General"). */
+a.proj-link { color:var(--accent); text-decoration:none; cursor:pointer }
+a.proj-link:hover { text-decoration:underline }
+.pills { display:flex; gap:8px; margin-left:auto; font-size:12px; color:var(--text-muted) }
+.muted { color:var(--text-muted); font-size:13px }
+.item { display:flex; gap:8px; align-items:flex-start; padding:6px 4px; border-radius:8px; cursor:pointer }
+.item:hover { background:var(--bg) }
+.item .em { font-size:14px; width:20px; flex:0 0 20px; text-align:center }
+.item .tx { font-size:14px; line-height:1.45 }
+.grp-title { font-weight:700; font-size:14px; margin:12px 0 2px }
+/* CPEng competency tags: shown as chips so the raw #cN never reads as prose. */
+.cp-tag { font-size:11px; font-weight:700; padding:2px 6px; border-radius:999px;
+          background:var(--bg); border:1px solid var(--border); color:var(--text-muted);
+          margin-left:6px; white-space:nowrap }
+.cp-tag.focus { border-color:var(--red); color:var(--red) }
+.cp-prop { padding:8px 4px; border-top:1px solid var(--border) }
+.cp-prop .why { font-size:12px; color:var(--text-muted); margin-top:2px }
+.cp-prop .row { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap }
+/* Calendar cell — the status WORD carries the meaning, tone only reinforces it. */
+.cal-cell { display:flex; flex-direction:column; gap:1px; margin-top:2px; overflow:hidden }
+.cal-status { font-size:10px; font-weight:600; line-height:1.2; color:var(--text-secondary);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.cal-status.tone-overdue { color:var(--danger) }
+.cal-status.tone-today { color:var(--warning) }
+.cal-status.tone-done { color:var(--text-muted) }
+.cal-projs { font-size:10px; line-height:1.2; color:var(--text-muted);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.form-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+.form-row input.tx-in { flex:1; min-width:160px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 11px; font-size:14px; outline:none }
+.form-row input.proj-in { width:160px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 11px; font-size:14px; outline:none }
+textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px; font-size:14px; line-height:1.5; outline:none; resize:vertical }
+.back { background:none; border:none; color:var(--accent); font-size:14px; cursor:pointer; padding:6px 0; margin-bottom:6px }
+.section-label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin:14px 0 4px; font-weight:700 }
+.hidden { display:none }
+.heat-wrap, .rollup { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px }
+/* auto-fit so a 5th card (Hours, shown only when time is recorded) doesn't
+   leave an orphan on its own row */
+.wl-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:8px; margin-bottom:12px }
+@media (max-width:640px) { .wl-stats { grid-template-columns:repeat(2,1fr) } }
+.prose-view { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:11px 13px; font-size:14px; line-height:1.55; color:var(--text) }
+.prose-view p { margin:0 0 8px } .prose-view p:last-child { margin-bottom:0 }
+.prose-view a { color:var(--accent); text-decoration:none } .prose-view a:hover { text-decoration:underline }
+.ps-edit { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:12px; padding:0 4px }
+.ps-edit:hover { color:var(--accent) }
+.ps-add { background:none; border:1px dashed var(--border); color:var(--text-muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer }
+.ps-add:hover { border-color:var(--accent); color:var(--accent) }
+.ps-prov { margin-left:6px; vertical-align:middle }
+.ts-btns { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px }
+/* theme.css sets a global `input, textarea, select { width:100% }`. The text
+   inputs here override it with an explicit width, but `.sel` never did — so
+   every select in a .form-row claimed the whole row and pushed the controls
+   after it onto their own lines (the Log work, Add-to-this-day and Search rows
+   all stacked). Scoped to this page rather than touching the global rule,
+   which plenty of full-width form layouts rely on. */
+.form-row .sel, #ts-range input[type="date"] { width:auto; flex:0 0 auto }
+#ts-range input[type="date"] { min-width:148px }
+.hours-chip { font-size:11px; padding:2px 8px; border-radius:10px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-weight:700; text-transform:none; letter-spacing:0 }
+/* #timer-widget: the day-card hours-chip is designed for a short "3h" label
+   and wraps badly under a longer running-project name, breaking the whole
+   topbar's height. Give the running state its own nowrap+ellipsis chip. */
+#timer-widget { display:inline-flex; align-items:center; gap:6px }
+.timer-chip { display:inline-flex; align-items:center; font-size:11px; padding:2px 8px; border-radius:10px;
+  background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-weight:700;
+  font-variant-numeric:tabular-nums; white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis }
+.sq-hit { background:color-mix(in srgb,var(--accent) 26%,transparent); color:inherit; border-radius:4px; padding:0 1px }
+.sq-kind { font-size:10px; width:20px; flex:0 0 20px; text-align:center; color:var(--text-muted); text-transform:uppercase; letter-spacing:var(--tracking-meta); font-weight:700 }
+.sq-cycle { background:none; border:none; padding:0; cursor:pointer; font-size:14px; line-height:1.45; color:var(--text-muted); border-radius:4px }
+.sq-cycle:hover { background:color-mix(in srgb,var(--accent) 18%,transparent) }
+.sq-cycle:disabled { opacity:.5; cursor:default }
+.sq-toggle { display:inline-flex; align-items:center; gap:6px; margin-top:8px; font-size:13px; color:var(--text-muted); cursor:pointer }
+.sq-toggle input { width:auto; margin:0; cursor:pointer }
+.wl-pending-atts { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px }
+.wl-pending-atts:empty { display:none }
+.wl-pend-chip { display:inline-flex; align-items:center; gap:5px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:3px 7px 3px 3px; font-size:12px; color:var(--text-secondary) }
+.wl-pend-chip img { width:22px; height:22px; object-fit:cover; border-radius:6px }
+.wl-pend-x { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; padding:0 2px; line-height:1 }
+.wl-pend-x:hover { color:var(--red) }
+.wl-att-chips { display:inline-flex; gap:4px; margin-left:6px; vertical-align:middle }
+.wl-att-thumb { width:26px; height:26px; object-fit:cover; border-radius:6px; vertical-align:middle; cursor:pointer; border:1px solid var(--border) }
+.wl-att-chip { display:inline-flex; align-items:center; font-size:13px; cursor:pointer; vertical-align:middle }
+.wl-att-dot { font-size:11px; margin-left:3px; opacity:.75 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>🗂️ Work Log</h1>
+    <div class="right">
+      <select id="emp-filter" class="sel" onchange="onEmployerChange()"><option value="">All employers</option></select>
+      <span id="model-pill"></span>
+      <span id="timer-widget"></span>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="openRollup()" title="AI summary of your recent work, grouped by project">✨ Rollup</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="exportTimesheet()" title="Download a timesheet PDF">PDF</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="exportCsv()" title="Download work items as a spreadsheet-ready CSV">CSV</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="openDataTools()" title="Import or export portable Work Log data">Data</button>
+      <span id="board-link"></span>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="openAppSettings()" title="Open Work Log settings">⚙</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-view="timeline" onclick="switchTab('timeline')">Timeline</div>
+    <div class="tab" data-view="calendar" onclick="switchTab('calendar')">Calendar</div>
+    <div class="tab" data-view="project" onclick="switchTab('project')">By project</div>
+    <div class="tab" data-view="heatmap" onclick="switchTab('heatmap')">Heatmap</div>
+    <div class="tab" data-view="search" onclick="switchTab('search')">Search</div>
+    <div class="tab" data-view="cpeng" onclick="switchTab('cpeng')" title="Engineers Australia Stage 2 — evidence tagged #cN in your work items">CPEng</div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div id="view-timeline">
+    <div class="wl-stats" id="wl-stats"></div>
+    <div class="card">
+      <div class="section-label">Log work</div>
+      <div class="form-row" style="margin-bottom:8px">
+        <input id="wl-proj" class="proj-in" list="proj-list" placeholder="Project">
+        <datalist id="proj-list"></datalist>
+        <input id="wl-add-text" class="tx-in" placeholder="What did you do?  (✨ parses project/status/date · paste a screenshot to attach)" onkeydown="if(event.key==='Enter')submitLog()">
+        <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="smartParse(this)" title="AI-fill project / status / date from the sentence — you still press Log">✨</button>
+        <input id="wl-att-file" type="file" multiple style="display:none" onchange="onAttachFilePicked(this)">
+        <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="document.getElementById('wl-att-file').click()" title="Attach a screenshot, image or file to this log entry">📎</button>
+        <select id="wl-status" class="sel">
+          <option value="in-progress">🔄 In progress</option>
+          <option value="complete">✅ Complete</option>
+          <option value="todo">⬜ Todo</option>
+          <option value="next">⏭️ Next</option>
+          <option value="waiting">⏳ Waiting</option>
+          <option value="review">👀 Review</option>
+          <option value="blocked">⛔ Blocked</option>
+        </select>
+        <input id="wl-date" type="date" class="sel">
+        <button class="eos-btn eos-btn-sm eos-btn-primary" onclick="submitLog()" title="Log this work item">Log</button>
+        <!-- last in the row: appears only after ✨, and must not displace an input -->
+        <span id="sp-prov"></span>
+      </div>
+      <div id="wl-pending-atts" class="wl-pending-atts"></div>
+    </div>
+    <div id="capture-banner"></div>
+    <div id="carryover-banner"></div>
+    <div id="timeline-list"></div>
+  </div>
+
+  <!-- DETAIL -->
+  <div id="view-detail" class="hidden">
+    <button class="back" onclick="closeDetail()" title="Return to the current Work Log view">← Back</button>
+    <div id="detail-body"></div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div id="view-calendar" class="hidden">
+    <div id="cal-grid" class="card"></div>
+  </div>
+
+  <!-- BY PROJECT -->
+  <div id="view-project" class="hidden">
+    <div class="card">
+      <div class="form-row">
+        <select id="proj-pick" class="sel" style="flex:1" onchange="loadByProject()"><option value="">Pick a project…</option></select>
+      </div>
+    </div>
+    <div id="project-rollup"></div>
+  </div>
+
+  <!-- HEATMAP -->
+  <div id="view-heatmap" class="hidden">
+    <div class="heat-wrap"><div id="heatmap"></div></div>
+    <div class="rollup" id="status-rollup"></div>
+  </div>
+
+  <!-- SEARCH -->
+  <div id="view-search" class="hidden">
+    <div class="card">
+      <div class="form-row">
+        <input id="sq" class="tx-in" placeholder="Search work items, plans and updates…"
+               onkeydown="if(event.key==='Enter')runSearch()" title="All terms must match (case-insensitive)">
+        <select id="sq-status" class="sel" onchange="runSearch()" title="Filter by status">
+          <option value="">Any status</option>
+          <option value="none">No status yet</option>
+        </select>
+        <button class="eos-btn eos-btn-sm eos-btn-primary" onclick="runSearch()" title="Search the work log">Search</button>
+      </div>
+      <label class="sq-toggle" title="Hide pasted links, id blobs and page numbers that imported content left behind as items">
+        <input type="checkbox" id="sq-clean" onchange="runSearch()"> Hide import debris
+      </label>
+    </div>
+    <div id="search-results"></div>
+  </div>
+
+  <!-- CPENG — Engineers Australia Stage 2 competency evidence -->
+  <div id="view-cpeng" class="hidden">
+    <div class="card">
+      <div class="form-row">
+        <label style="font-size:13px;color:var(--text-muted)">Window</label>
+        <select id="cp-window" class="sel" onchange="loadCompetency()" title="How far back to gather evidence">
+          <option value="90">Last 90 days</option>
+          <option value="180" selected>Last 180 days</option>
+          <option value="365">Last 12 months</option>
+          <option value="3650">Everything</option>
+        </select>
+        <span id="cp-summary" style="font-size:13px;color:var(--text-muted)"></span>
+      </div>
+      <div style="font-size:13px;color:var(--text-muted);margin-top:6px">
+        Tag any work item with <code>#c11</code> to file it against element 11.
+        The tag lives in the item text, so it survives export, import and the
+        offline bundle.
+      </div>
+    </div>
+    <div id="cp-results"></div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/worklog/pages/competency-chips.js"></script>
+<script src="/worklog/pages/worklog.js"></script>
+</body>
+</html>

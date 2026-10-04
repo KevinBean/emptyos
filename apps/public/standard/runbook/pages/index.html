@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Runbook · EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('eos-theme') || 'eos'; if(!/^[a-z][a-z0-9-]{0,31}$/.test(t))t='eos';
+      document.documentElement.className = 'theme-' + t;
+    } catch (e) { document.documentElement.className = 'theme-eos'; }
+  })();
+</script>
+<style>
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font, system-ui, sans-serif); }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+  header.top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  header.top h1 { font-size: 22px; margin: 0; flex: 1; }
+  .rb-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); margin-bottom: 8px; cursor: pointer; }
+  .rb-row:hover { border-color: var(--accent); }
+  .rb-row .title { font-weight: 600; flex: 1; }
+  .rb-row .meta { color: var(--text-muted); font-size: 12.5px; }
+  .blk { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); margin-bottom: 12px; padding: 12px 16px; }
+  .blk .head { display: flex; align-items: center; gap: 8px; }
+  .blk .ty { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--accent); }
+  .blk .io { color: var(--text-muted); font-size: 12px; flex: 1; }
+  .blk pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; overflow-x: auto; margin: 8px 0 0; white-space: pre-wrap; }
+  .blk .out { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; }
+  .rb-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .rb-table th, .rb-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .rb-table th { color: var(--text); background: var(--bg); font-weight: 600; }
+  .rb-table td { color: var(--text-muted); }
+  .muted { color: var(--text-muted); }
+  .st { font-size: 11px; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--border); text-transform: uppercase; letter-spacing: var(--tracking-meta); }
+  .st-ok { color: var(--success); border-color: var(--success); }
+  .st-error { color: var(--danger); border-color: var(--danger); }
+  .st-stale, .st-needs-grant { color: var(--warning); border-color: var(--warning); }
+  .st-pending { color: var(--info); border-color: var(--info); }
+  .st-blocked, .st-never, .st-invalid { color: var(--text-muted); }
+  .row-in { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  textarea, input[type=text] { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; font-family: var(--font-mono, monospace); }
+  .err { color: var(--danger); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Runbook</h1>
+    <button class="eos-btn" onclick="openNew()">+ New</button>
+    <button class="eos-btn" onclick="openFromSession()">From exploration</button>
+    <a class="eos-btn eos-btn-ghost" href="/">home</a>
+  </header>
+  <div id="list"></div>
+  <div id="detail" style="display:none"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+var STATE = { runbooks: [], current: null };
+// Standalone local escape — must NOT reference window.esc: a global `function
+// esc` IS window.esc, so the old `(window.esc) ? window.esc(s) : ...` recursed
+// forever (Maximum call stack size exceeded).
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+
+var _route = EOS_UI.hashRoute({ onShow: function(id){ showDetail(id); }, onHide: function(){ hideDetail(); } });
+
+async function loadList(){
+  STATE.runbooks = (await fetch('/runbook/api/runbooks').then(r=>r.json())).runbooks || [];
+  renderList();
+}
+function renderList(){
+  var el = document.getElementById('list');
+  if(!STATE.runbooks.length){ el.innerHTML = EOS_UI.emptyState ? EOS_UI.emptyState({title:'No runbooks yet', body:'Create one, or draft from an exploration.'}) : '<p class="muted">No runbooks yet.</p>'; return; }
+  el.innerHTML = STATE.runbooks.map(function(r){
+    var sch = r.schedule ? '<span class="st">⏱ '+esc(r.schedule)+'</span>' : '';
+    return '<div class="rb-row" onclick="goDetail(' + escAttr(JSON.stringify(r.id)) + ')"><span class="title">'+esc(r.title)+'</span><span class="meta">'+r.block_count+' blocks</span>'+sch+'</div>';
+  }).join('');
+}
+function goDetail(id){ _route.set(id); }
+
+async function showDetail(id){
+  document.getElementById('list').style.display='none';
+  var d = document.getElementById('detail');
+  d.style.display='block';
+  d.innerHTML = '<p class="muted">loading…</p>';
+  var rb = await fetch('/runbook/api/runbooks/'+encodeURIComponent(id)).then(r=>r.json());
+  if(rb.error){ d.innerHTML = '<p class="err">'+esc(rb.error)+'</p><p><a href="#" onclick="backToList();return false">← back</a></p>'; return; }
+  STATE.current = rb;
+  d.setAttribute('data-entity-path', rb._vault_path || '');
+  d.innerHTML = renderDetail(rb);
+  hydrateRichOutputs(rb);
+}
+function renderDetail(rb){
+  var blocks = (rb.blocks||[]).map(renderBlock).join('');
+  var sch = rb.schedule || '';
+  return '<p><a href="#" onclick="backToList();return false">← all runbooks</a></p>'
+    + '<header class="top"><h1>'+esc(rb.title)+'</h1>'
+    + '<button class="eos-btn" onclick="runAll(' + escAttr(JSON.stringify(rb.id)) + ')">▶ Run all</button>'
+    + '<button class="eos-btn eos-btn-sm" onclick="publishRunbook(' + escAttr(JSON.stringify(rb.id)) + ')">📤 Publish</button></header>'
+    + '<div class="row-in" style="margin-bottom:14px"><span class="muted">schedule (cron):</span>'
+    + '<input type="text" id="sched" value="'+escAttr(sch)+'" placeholder="0 8 * * 1" style="max-width:160px">'
+    + '<button class="eos-btn eos-btn-sm" onclick="saveSchedule(' + escAttr(JSON.stringify(rb.id)) + ')">Save</button></div>'
+    + blocks;
+}
+// runbook-no-rich-output: a table/artifact-ref value can't render as a
+// truncated string preview (output_preview is None for anything non-string —
+// see engine.py's run_block). Those two kinds get a placeholder here and are
+// hydrated asynchronously by hydrateRichOutputs() right after this HTML lands.
+var RICH_KINDS = {table:1, 'artifact-ref':1};
+function renderBlock(b){
+  var icon = ({vault_query:'🔎',calculate:'∑',think:'💭',call_app:'↗',chart:'📊',write_draft:'✍',notify:'🔔',invalid:'⚠'})[b.type]||'•';
+  var status = '<span class="st st-'+escAttr(b.status)+'">'+esc(b.status)+'</span>';
+  var se = b.side_effect ? '<span class="st" title="gated side-effect">⚠ gated</span>' : '';
+  var body = b.body ? '<pre>'+esc(b.body)+'</pre>' : '';
+  var out = '';
+  var hasValue = (b.status === 'ok' || b.status === 'stale');
+  if(b.parse_error) out = '<div class="out err">'+esc(b.parse_error)+'</div>';
+  else if(b.error) out = '<div class="out err">'+esc(b.error)+'</div>';
+  else if(hasValue && RICH_KINDS[b.value_kind]) out = '<div class="out rich" id="rich-'+escAttr(b.id)+'">Loading…</div>';
+  else if(b.output_preview) out = '<div class="out">→ '+esc(b.output_preview)+'</div>';
+  else if(b.verb && b.status==='needs-grant') out = '<div class="out">needs grant for <code>'+esc(b.verb)+'</code></div>';
+  return '<div class="blk"><div class="head"><span>'+icon+'</span><span class="ty">'+esc(b.type)+'</span>'
+    + '<span class="io">'+esc(b.id)+(b.output&&b.output!==b.id?' → '+esc(b.output):'')+'</span>'+se+status
+    + '<button class="eos-btn eos-btn-sm" onclick="runFrom(' + escAttr(JSON.stringify(STATE.current.id)) + ',' + escAttr(JSON.stringify(b.id)) + ')">▶ from here</button></div>'
+    + body + out + '</div>';
+}
+
+// Renders a bounded HTML <table> from a list of row dicts — column set is the
+// union of keys across the first ROW_CAP rows (a vault_query result is a list
+// of note-metadata dicts with varying keys), every cell escaped.
+var TABLE_ROW_CAP = 50;
+function renderValueTable(rows){
+  if(!Array.isArray(rows) || !rows.length) return '<div class="out muted">(empty)</div>';
+  var shown = rows.slice(0, TABLE_ROW_CAP);
+  var cols = [];
+  shown.forEach(function(r){
+    if(r && typeof r === 'object') Object.keys(r).forEach(function(k){ if(cols.indexOf(k) < 0) cols.push(k); });
+  });
+  if(!cols.length) return '<div class="out muted">(empty)</div>';
+  var head = '<tr>' + cols.map(function(c){ return '<th>'+esc(c)+'</th>'; }).join('') + '</tr>';
+  var body = shown.map(function(r){
+    return '<tr>' + cols.map(function(c){
+      var v = r && typeof r === 'object' ? r[c] : '';
+      if(v === null || v === undefined) v = '';
+      else if(typeof v === 'object') v = JSON.stringify(v);
+      return '<td>'+esc(String(v))+'</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  var more = rows.length > TABLE_ROW_CAP ? '<div class="muted" style="margin-top:4px">+'+(rows.length - TABLE_ROW_CAP)+' more row(s)</div>' : '';
+  return '<table class="rb-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table>' + more;
+}
+
+async function hydrateRichOutputs(rb){
+  var targets = (rb.blocks || []).filter(function(b){
+    return (b.status === 'ok' || b.status === 'stale') && RICH_KINDS[b.value_kind];
+  });
+  for(var i = 0; i < targets.length; i++){
+    var b = targets[i];
+    var el = document.getElementById('rich-' + b.id);
+    if(!el) continue;
+    try {
+      var res = await fetch('/runbook/api/runbooks/' + encodeURIComponent(rb.id) + '/block/' + encodeURIComponent(b.id) + '/output').then(function(r){ return r.json(); });
+      if(res.error){ el.innerHTML = esc(res.error); continue; }
+      if(b.value_kind === 'table') {
+        el.innerHTML = renderValueTable(res.value);
+      } else if(b.value_kind === 'artifact-ref' && res.value && res.value.id) {
+        el.innerHTML = '<iframe src="/viz/api/html/' + encodeURIComponent(res.value.id) + '" loading="lazy" style="width:100%;height:360px;border:1px solid var(--border);border-radius:8px;background:var(--bg)"></iframe>';
+      } else {
+        el.innerHTML = '<span class="muted">(no output)</span>';
+      }
+    } catch(e) { el.innerHTML = esc('Error: ' + e); }
+  }
+}
+function backToList(){ _route.clear(); }
+function hideDetail(){ document.getElementById('detail').style.display='none'; document.getElementById('list').style.display='block'; }
+
+async function runAll(id){
+  await fetch('/runbook/api/runbooks/'+encodeURIComponent(id)+'/run',{method:'POST'});
+  if(window.EOS_UI&&EOS_UI.toast) EOS_UI.toast('Run complete');
+  showDetail(id);
+}
+async function publishRunbook(id){
+  var res = await fetch('/runbook/api/runbooks/'+encodeURIComponent(id)+'/publish',{method:'POST'}).then(function(r){ return r.json(); });
+  if(window.EOS_UI&&EOS_UI.toast) EOS_UI.toast(res.error ? res.error : 'Published as draft — '+res.path);
+}
+async function runFrom(id, bid){
+  await fetch('/runbook/api/runbooks/'+encodeURIComponent(id)+'/run-block/'+encodeURIComponent(bid),{method:'POST'});
+  showDetail(id);
+}
+async function saveSchedule(id){
+  var cron = document.getElementById('sched').value.trim();
+  var res = await fetch('/runbook/api/runbooks/'+encodeURIComponent(id)+'/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cron:cron})}).then(r=>r.json());
+  if(window.EOS_UI&&EOS_UI.toast) EOS_UI.toast(cron? ('Scheduled · next '+(res.next_run||'?')) : 'Schedule cleared');
+}
+
+var STARTER = '```eos-block\nid = "items"\ntype = "vault_query"\noutput = "items"\n---\n# header fields above the --- ; body below\n```';
+var _nbTemplates = [{slug:'default', title:'Query the vault (default)', body: STARTER}];
+async function openNew(){
+  // Best-effort gallery of KB `pattern` starters (runbook-no-block-gallery).
+  // Falls back to the single hardcoded STARTER if /api/templates 404s, the
+  // kb app isn't installed, or returns nothing — openNew() must still work.
+  try {
+    var res = await fetch('/runbook/api/templates').then(function(r){ return r.json(); });
+    if (res && Array.isArray(res.templates) && res.templates.length) _nbTemplates = res.templates;
+  } catch (e) { /* keep the single-item fallback */ }
+  var opts = _nbTemplates.map(function(t, i){ return '<option value="'+i+'">'+esc(t.title)+'</option>'; }).join('');
+  EOS_UI.modal({ title:'New runbook', body:
+    '<div class="row-in" style="flex-direction:column;align-items:stretch;gap:8px">'
+    + '<input type="text" id="nb-id" placeholder="id (kebab-case)">'
+    + '<input type="text" id="nb-title" placeholder="Title">'
+    + (_nbTemplates.length > 1
+        ? '<label style="font-size:12px;color:var(--text-muted)">Start from<select id="nb-template" onchange="applyTemplate(this.value)" style="width:100%;margin-top:4px">'+opts+'</select></label>'
+        : '')
+    + '<textarea id="nb-md" rows="10" placeholder="eos-block fences…">'+esc(_nbTemplates[0].body)+'</textarea>'
+    + '<div class="err" id="nb-err"></div>'
+    + '<button class="eos-btn" onclick="createRunbook()">Create</button></div>' });
+}
+function applyTemplate(idx){
+  var t = _nbTemplates[parseInt(idx, 10)];
+  var ta = document.getElementById('nb-md');
+  if (t && ta) ta.value = t.body;
+}
+async function createRunbook(){
+  var id=document.getElementById('nb-id').value.trim(), title=document.getElementById('nb-title').value.trim(), md=document.getElementById('nb-md').value;
+  if(!id){ document.getElementById('nb-err').textContent='id required'; return; }
+  var res=await fetch('/runbook/api/runbooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,title:title,markdown:md})}).then(r=>r.json());
+  if(res.error){ document.getElementById('nb-err').textContent=res.error; return; }
+  if(window.EOS_UI&&EOS_UI.closeModal) EOS_UI.closeModal();
+  await loadList(); goDetail(res.id);
+}
+
+function openFromSession(){
+  EOS_UI.modal({ title:'Draft from exploration', body:
+    '<div class="row-in" style="flex-direction:column;align-items:stretch;gap:8px">'
+    + '<input type="text" id="fs-id" placeholder="new runbook id">'
+    + '<textarea id="fs-tx" rows="8" placeholder="Paste an exploration transcript…"></textarea>'
+    + '<button class="eos-btn" onclick="draftFromSession()">Draft (preview)</button>'
+    + '<div class="err" id="fs-err"></div>'
+    + '<div id="fs-preview"></div></div>' });
+}
+async function draftFromSession(){
+  var id=document.getElementById('fs-id').value.trim(), tx=document.getElementById('fs-tx').value.trim();
+  if(!id||!tx){ document.getElementById('fs-err').textContent='id + transcript required'; return; }
+  document.getElementById('fs-err').textContent='drafting…';
+  var res=await fetch('/runbook/api/from-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,transcript:tx})}).then(r=>r.json());
+  if(!res.ok){ document.getElementById('fs-err').textContent=res.error||'draft failed'; return; }
+  document.getElementById('fs-err').textContent='';
+  document.getElementById('fs-preview').innerHTML='<pre style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;max-height:240px;overflow:auto;font-size:12px;white-space:pre-wrap">'+esc(res.markdown)+'</pre><button class="eos-btn" onclick="confirmDraft(' + escAttr(JSON.stringify(res.token)) + ')">Confirm + create</button>';
+}
+async function confirmDraft(token){
+  var res=await fetch('/runbook/api/from-session/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})}).then(r=>r.json());
+  if(!res.ok){ document.getElementById('fs-err').textContent=res.error||'confirm failed'; return; }
+  if(window.EOS_UI&&EOS_UI.closeModal) EOS_UI.closeModal();
+  await loadList(); goDetail(res.id);
+}
+
+loadList().then(function(){ _route.init(); });
+</script>
+</body>
+</html>

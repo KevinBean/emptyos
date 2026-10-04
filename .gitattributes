@@ -1,0 +1,12 @@
+# Shell scripts must keep LF endings or they break on macOS/Linux with a
+# `bad interpreter: /usr/bin/env bash^M` error after a CRLF checkout on Windows.
+*.sh        text eol=lf
+*.command   text eol=lf
+
+# Windows batch files are the mirror case — keep CRLF.
+*.bat       text eol=crlf
+
+# Python source is stored LF so whole-file Edit-tool rewrites on Windows
+# (core.autocrlf=true) don't produce phantom CRLF/LF churn against a
+# mixed-ending blob. text=auto keeps genuine binaries untouched.
+*.py        text=auto eol=lf

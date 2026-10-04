@@ -1,0 +1,6 @@
+# Desktop-shell-only deps. The EmptyOS daemon's own deps come from
+# `pip install -e <repo>` (run by build_app.py).
+#
+# pywebview renders the native window. On macOS it uses the system WKWebView
+# and pulls pyobjc automatically — no extra GUI toolkit to install.
+pywebview>=5.0

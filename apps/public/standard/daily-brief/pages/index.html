@@ -1,0 +1,894 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily Brief</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<script>
+// Theme bootstrap — apply saved theme class before paint so tokens resolve.
+(function(){try{var t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(t))t='eos';document.documentElement.className='theme-'+t;}catch(e){}})();
+// Embed mode — trim chrome when rendered inside a Workspace iframe (?embed=1).
+(function(){try{if(new URLSearchParams(location.search).get('embed')==='1')document.documentElement.classList.add('eos-embed');}catch(e){}})();
+</script>
+<style>
+  .db-shell { max-width: 980px; margin: 0 auto; padding: 24px 16px 80px; }
+  html.eos-embed .db-shell { padding: 12px 16px 48px; max-width: none; }
+  html.eos-embed .db-header h1 { display: none; }
+  .db-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .db-header h1 { font-size: 22px; margin: 0; }
+  .db-header .right { display: flex; align-items: center; gap: 12px; }
+  .db-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .db-bar .meta { color: var(--text-muted); font-size: 13px; }
+  .db-brief { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 24px 24px; line-height: 1.65; }
+  .db-brief h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 16px 0 8px; }
+  .db-brief h3:first-child { margin-top: 0; }
+  .db-brief ul { margin: 0 0 4px; padding-left: 24px; }
+  .db-brief li { margin: 8px 0; }
+  .db-brief a { color: var(--accent); text-decoration: none; }
+  .db-brief a:hover { text-decoration: underline; }
+  .db-brief .tldr { font-size: 15px; margin: 0 0 16px; padding: 12px 16px; background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); border-left: 3px solid var(--accent); border-radius: 8px; }
+  .db-empty { color: var(--text-muted); font-size: 14px; line-height: 1.6; }
+  .db-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 16px; margin-bottom: 16px; }
+  .db-card.accent { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-card)); }
+  .db-card h3 { font-size: 14px; margin: 0 0 8px; }
+  .db-card .muted { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+  .db-card textarea { width: 100%; box-sizing: border-box; min-height: 52px; margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
+  .db-card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .db-card details { margin-top: 12px; font-size: 12px; }
+  .db-card details summary { cursor: pointer; color: var(--text-muted); }
+  .db-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+  .db-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+  .db-dims { margin: 4px 0 12px; display: flex; flex-direction: column; gap: 4px; }
+  .db-dim { font-size: 13px; line-height: 1.4; }
+  .db-dim-k { font-weight: 600; margin-right: 8px; }
+  .db-onboard { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .db-q-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .db-q { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 118px; }
+  .db-q-sym { font-size: 12px; color: var(--text-muted); }
+  .db-q-last { font-size: 15px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .db-q-ind { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .db-up { color: var(--success); }
+  .db-down { color: var(--danger); }
+  .db-acts { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: baseline; }
+  .db-act { font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 6px; border: 1px solid transparent; background: none; cursor: pointer; opacity: .45; transition: opacity .12s, background .12s; }
+  .db-brief li:hover .db-act, .db-act:focus { opacity: 1; }
+  .db-act:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .db-act.done { opacity: 1; cursor: default; }
+  .db-digest { margin-top: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 16px; }
+  .db-digest h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+  .db-digest-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .db-digest-row:last-child { border-bottom: none; }
+  .db-digest-row .body { flex: 1; min-width: 0; }
+  .db-digest-row a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .db-digest-row a:hover { text-decoration: underline; }
+  .db-digest-row .why { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin-top: 2px; }
+  .db-digest-row .src { color: var(--text-muted); font-size: 11px; }
+  .db-digest-rm { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+  .db-digest-rm:hover { color: var(--danger); }
+  .db-sources { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .db-src { font-size: 11px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+  .db-src.bad { border-color: var(--danger); color: var(--danger); }
+  .db-hist { margin-top: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 16px; }
+  .db-hist h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 0 0 12px; }
+  .db-hist-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; cursor: pointer; }
+  .db-hist-row:last-child { border-bottom: none; }
+  .db-hist-row:hover { color: var(--accent); }
+  .db-hist-row .when { font-variant-numeric: tabular-nums; }
+  .db-warn { color: var(--danger); }
+  /* Today command center — tiles are shared .eos-stat-card; this is just the grid */
+  .cc-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .cc-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .cc-panel { border: 1px solid var(--border); background: var(--bg-card); border-radius: 8px; padding: 16px 16px; min-width: 0; }
+  .cc-panel h2 { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 0 0 12px; }
+  .cc-panel h2 a { color: var(--text-muted); text-decoration: none; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  .cc-panel h2 a:hover { color: var(--accent); }
+  .cc-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .cc-row:last-child { border-bottom: none; }
+  .cc-row .main { min-width: 0; }
+  .cc-row .title { color: var(--text); font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+  .cc-row .title a { color: var(--text); text-decoration: none; }
+  .cc-row .title a:hover { color: var(--accent); }
+  .cc-row .sub { color: var(--text-muted); font-size: 12px; line-height: 1.35; margin-top: 2px; }
+  .cc-pill { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+  .cc-pill.warn { border-color: var(--danger); color: var(--danger); }
+  .cc-pill.ok { border-color: var(--success); color: var(--success); }
+  .cc-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .cc-mini { padding: 0; }
+  .cc-mini .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cc-mini .k { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  @media (max-width: 760px) {
+    .cc-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cc-grid { grid-template-columns: 1fr; }
+  }
+  /* Brief | Inbox tabs */
+  .db-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .db-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-weight: 600; padding: 8px 16px; margin-bottom: -2px; }
+  .db-tab:hover { color: var(--text); }
+  .db-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .db-tab .badge { font-size: 11px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 8px; margin-left: 4px; }
+  /* Inbox */
+  .ib-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+  .ib-filters input { flex: 1; min-width: 160px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font: inherit; }
+  .ib-chip { font-size: 12px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; }
+  .ib-chip.active { border-color: var(--accent); color: var(--accent); }
+  .ib-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .ib-row.read { opacity: .5; }
+  .ib-body { flex: 1; min-width: 0; }
+  .ib-body a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .ib-body a:hover { text-decoration: underline; }
+  .ib-meta { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .ib-summary { color: var(--text-secondary); font-size: 13px; line-height: 1.45; margin-top: 4px; }
+  .ib-read { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 8px; }
+  .ib-read:hover { color: var(--accent); border-color: var(--accent); }
+  /* ── Sources / subscriptions ── */
+  .src-add { margin-bottom: 18px; }
+  .src-add-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .src-add-row input { flex: 1 1 180px; min-width: 120px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; padding: 8px 10px; }
+  .src-add-row #src-url { flex: 3 1 320px; }
+  .src-msg { font-size: 13px; margin-top: 8px; min-height: 18px; color: var(--text-secondary); }
+  .src-msg.ok { color: var(--success); }
+  .src-msg.bad { color: var(--danger); }
+  .src-row { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; background: var(--bg-surface); }
+  .src-row.off { opacity: 0.55; }
+  .src-main { min-width: 0; }
+  .src-name { font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .src-cat, .src-kind { font-size: 11px; font-weight: 500; color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+  .src-url { display: block; font-size: 12px; color: var(--text-muted); text-decoration: none; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
+  .src-url:hover { color: var(--accent); }
+  .src-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .src-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 3px 10px; }
+  .src-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .src-rm:hover { color: var(--danger); border-color: var(--danger); }
+  .src-origin { font-size: 11px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="db-shell">
+  <div class="db-header">
+    <h1>🗞️ Daily Brief</h1>
+    <div class="right">
+      <span id="model-pill"></span>
+      <button class="btn-settings" onclick="openAppSettings()">&#9881; Settings</button>
+    </div>
+  </div>
+
+  <div class="db-bar">
+    <button class="eos-btn eos-btn-primary" id="run-now" onclick="runNow()">Run now</button>
+    <button class="eos-btn" onclick="personalize()" id="tailor-btn">✨ Tailor to my vault</button>
+    <button class="eos-btn" onclick="refresh()">Refresh</button>
+    <span class="meta" id="bar-meta"></span>
+  </div>
+
+  <div class="db-tabs">
+    <button class="db-tab active" data-view="today" onclick="switchView('today')">Today</button>
+    <button class="db-tab" data-view="brief" onclick="switchView('brief')">Brief</button>
+    <button class="db-tab" data-view="inbox" onclick="switchView('inbox')">Inbox<span id="inbox-badge"></span></button>
+    <button class="db-tab" data-view="sources" onclick="switchView('sources')">Sources</button>
+  </div>
+
+  <div id="view-today">
+    <div id="command-center"><div class="db-empty">Loading...</div></div>
+  </div>
+
+  <div id="view-brief" hidden>
+    <div id="db-onboard"></div>
+    <div id="db-personalize"></div>
+
+    <div id="brief" class="db-brief"><div class="db-empty">Loading…</div></div>
+    <div id="sources" class="db-sources"></div>
+    <div id="db-markets"></div>
+
+    <div id="db-digest" class="db-digest" style="display:none">
+      <h2><span>📚 Digest</span>
+        <span class="right" style="display:flex;align-items:center;gap:10px">
+          <span id="digest-count" class="db-empty"></span>
+          <button class="eos-btn eos-btn-sm" id="digest-compile" onclick="compileDigest()">📥 Compile</button>
+        </span>
+      </h2>
+      <div id="digest-output"></div>
+      <div id="digest-list"></div>
+    </div>
+
+    <div class="db-hist">
+      <h2>Recent briefs</h2>
+      <div id="hist"><div class="db-empty">—</div></div>
+    </div>
+  </div>
+
+  <div id="view-inbox" hidden>
+    <div class="ib-filters">
+      <input id="ib-search" type="text" placeholder="Search inbox…" oninput="ibDebouncedSearch()">
+      <button class="ib-read" onclick="markAllRead()">Mark all read</button>
+    </div>
+    <div id="ib-chips" class="ib-filters"></div>
+    <div id="ib-list"><div class="db-empty">Loading…</div></div>
+  </div>
+
+  <div id="view-sources" hidden>
+    <div class="src-add">
+      <div class="src-add-row">
+        <input id="src-url" type="url" placeholder="Feed URL — e.g. https://blog.example.com/feed/">
+        <input id="src-name" type="text" placeholder="Name (optional)">
+        <input id="src-cat" type="text" placeholder="Category (optional)">
+        <button class="eos-btn eos-btn-primary" id="src-add-btn" onclick="addSource()">Follow feed</button>
+      </div>
+      <div id="src-add-msg" class="src-msg"></div>
+    </div>
+    <div id="src-list"><div class="db-empty">Loading…</div></div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+EOS_UI.modelPill({ app: 'daily-brief', mount: '#model-pill', domain: 'reason' });
+
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'daily-brief-settings-panel',
+  title: 'Daily Brief Settings',
+  fields: [
+    {key: 'daily-brief.enabled', label: 'Run on a schedule', type: 'boolean', default: false, hint: 'Off by default — run manually first, then turn this on.'},
+    {key: 'daily-brief.schedule_cron', label: 'Schedule (cron, local time)', type: 'text', default: '0 7 * * *', hint: 'Default 07:00 daily.'},
+    {key: 'daily-brief.locale', label: 'Brief language', type: 'select', default: 'zh', options: ['zh', 'en']},
+    {key: 'daily-brief.max_items', label: 'Max stories', type: 'number', default: 8},
+    {key: 'daily-brief.per_source', label: 'Headlines per source', type: 'number', default: 6},
+    {key: 'daily-brief.focus', label: 'Personal lens', type: 'textarea', default: 'energy markets, grid / BESS, AI engineering', hint: 'What you care about across work, interests & growth — the AI ranks + frames items for you. Tip: “✨ Tailor to my vault” drafts this for you. Blank = neutral.'},
+    {key: 'daily-brief.markets_enabled', label: 'Include a market pulse', type: 'boolean', default: false, hint: 'SMA/RSI/MACD read on instruments. Public market data only — not financial advice.'},
+    {key: 'daily-brief.tickers_csv', label: 'Instruments (comma-separated)', type: 'text', default: '', hint: 'Yahoo symbols, e.g. FSLR, ENPH, NEE, CL=F. Blank = energy default set.'},
+  ],
+  onSave: async function(){ await fetch('/daily-brief/api/reschedule', {method:'POST'}); refresh(); },
+});
+function openAppSettings(){ _appSettings.open(); }
+
+// esc()/escAttr() are global from eos.js.
+// Dependency-free, XSS-safe markdown: escape EVERYTHING first (so any HTML in a
+// feed title is inert text), then re-introduce only the tags we explicitly allow.
+// Links are only created for http(s) URLs.
+function mdLite(md){
+  if (!md) return '';
+  var safe = esc(md);
+  var lines = safe.split('\n');
+  var out = [], inList = false;
+  function inline(s){
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // [label](https://url) — url already escaped; & became &amp; (valid in href)
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      function(_, label, url){ return '<a href="'+url+'" target="_blank" rel="noopener">'+label+'</a>'; });
+    return s;
+  }
+  for (var i=0; i<lines.length; i++){
+    var ln = lines[i].trim();
+    if (!ln){ if (inList){ out.push('</ul>'); inList=false; } continue; }
+    if (/^##\s/.test(ln)){
+      if (inList){ out.push('</ul>'); inList=false; }
+      out.push('<h3>'+inline(ln.replace(/^##\s+/, ''))+'</h3>'); continue;
+    }
+    if (/^[-*]\s/.test(ln)){
+      if (!inList){ out.push('<ul>'); inList=true; }
+      out.push('<li>'+inline(ln.replace(/^[-*]\s+/, ''))+'</li>'); continue;
+    }
+    if (inList){ out.push('</ul>'); inList=false; }
+    // a standalone **TL;DR:** … line gets the callout treatment
+    var cls = /TL;DR|TL；DR|要点|今日重点/i.test(ln) ? ' class="tldr"' : '';
+    out.push('<p'+cls+'>'+inline(ln)+'</p>');
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
+function renderBrief(d){
+  var el = document.getElementById('brief');
+  var src = document.getElementById('sources');
+  if (d.never_run){
+    el.innerHTML = '<div class="db-empty">No brief yet. Click <b>Run now</b> to pull your feeds and generate the first one.<br>Then turn on the schedule in Settings to get one every morning.</div>';
+    src.innerHTML = ''; renderMarkets({}); return;
+  }
+  if (!d.ok){
+    el.innerHTML = '<div class="db-empty db-warn">Last run failed: '+esc(d.error||'unknown')+'</div>';
+    src.innerHTML = ''; renderMarkets({}); return;
+  }
+  el.innerHTML = mdLite(d.brief_md || '');
+  decorateArticleActions();
+  src.innerHTML = (d.sources||[]).map(function(s){
+    return '<span class="db-src'+(s.ok?'':' bad')+'">'+esc(s.name)+(s.ok?(' · '+s.count):' ✕')+'</span>';
+  }).join('');
+  renderMarkets(d);
+}
+
+// ── Per-article actions ────────────────────────────────────────────────
+// 🔖 Save → bookmarks read-later (feature-detected). 🗂️ → in-app Digest.
+// Data rides on the span via setAttribute (DOM-escaped, no XSS), and one
+// delegated listener on #brief handles every button.
+window._dbTargets = { bookmarks: false, digest: true };
+function decorateArticleActions(){
+  var brief = document.getElementById('brief');
+  if (!brief) return;
+  var links = brief.querySelectorAll('a[href^="http"]');
+  links.forEach(function(a){
+    if (a.dataset.dbDecorated) return;
+    a.dataset.dbDecorated = '1';
+    var li = a.closest('li');
+    var title = (a.textContent || '').trim();
+    var why = '';
+    if (li){ why = (li.textContent || '').replace(title, '').replace(/^[\s—–·-]+/, '').trim(); }
+    var span = document.createElement('span');
+    span.className = 'db-acts';
+    span.setAttribute('data-url', a.href);
+    span.setAttribute('data-title', title);
+    span.setAttribute('data-summary', why.slice(0, 500));
+    span.innerHTML =
+      (window._dbTargets.bookmarks
+        ? '<button class="db-act" data-act="save" title="Save to read-later">🔖</button>' : '') +
+      '<button class="db-act" data-act="digest" title="Save to read-later + add to digest">🗂️</button>';
+    a.insertAdjacentElement('afterend', span);
+  });
+}
+
+function _markBtn(btn, glyph){ if (btn){ btn.textContent = glyph; btn.classList.add('done'); btn.disabled = true; } }
+
+async function saveArticle(span, btn){
+  try {
+    var r = await EOS.post('/daily-brief/api/article/save', {
+      url: span.getAttribute('data-url'), title: span.getAttribute('data-title'),
+      summary: span.getAttribute('data-summary') });
+    if (r && r.ok){ _markBtn(btn, '✓'); EOS_UI.toast('Saved to read-later'); }
+    else { EOS_UI.toast((r && r.error) || 'Could not save', 'error'); }
+  } catch(e){ EOS_UI.toast('Could not save', 'error'); }
+}
+
+async function digestAdd(span, btn){
+  try {
+    var r = await EOS.post('/daily-brief/api/digest/add', {
+      url: span.getAttribute('data-url'), title: span.getAttribute('data-title'),
+      summary: span.getAttribute('data-summary'), source: span.getAttribute('data-source') || '' });
+    if (r && r.ok){
+      _markBtn(btn, '✓');
+      EOS_UI.toast(r.dup ? 'Already in digest' : (r.saved ? 'Saved to read-later + digest' : 'Added to digest'));
+      loadDigest();
+    }
+    else { EOS_UI.toast((r && r.error) || 'Could not add', 'error'); }
+  } catch(e){ EOS_UI.toast('Could not add', 'error'); }
+}
+
+async function loadDigest(){
+  var wrap = document.getElementById('db-digest');
+  var list = document.getElementById('digest-list');
+  var count = document.getElementById('digest-count');
+  try {
+    var d = await fetch('/daily-brief/api/digest').then(function(r){return r.json();});
+    var items = d.items || [];
+    if (!items.length){ wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    count.textContent = items.length + (items.length === 1 ? ' item' : ' items');
+    list.innerHTML = items.map(function(it){
+      var t = esc(it.title || it.url || '');
+      var link = /^https?:\/\//.test(it.url || '') ? '<a href="'+escAttr(it.url)+'" target="_blank" rel="noopener">'+t+'</a>' : t;
+      var saved = it.saved ? ' <span class="src" title="Also saved to read-later">🔖</span>' : '';
+      return '<div class="db-digest-row"><div class="body">'+link+saved+
+        (it.summary ? '<div class="why">'+esc(it.summary)+'</div>' : '')+
+        (it.source ? '<div class="src">'+esc(it.source)+'</div>' : '')+
+        '</div><button class="db-digest-rm" title="Remove" data-url="'+escAttr(it.url||'')+'">✕</button></div>';
+    }).join('');
+  } catch(e){ wrap.style.display = 'none'; }
+}
+
+async function digestRemove(url){
+  try {
+    await EOS.post('/daily-brief/api/digest/remove', { url: url });
+    loadDigest();
+  } catch(e){ EOS_UI.toast('Could not remove', 'error'); }
+}
+
+async function compileDigest(){
+  var btn = document.getElementById('digest-compile');
+  var out = document.getElementById('digest-output');
+  if (btn){ btn.disabled = true; btn.textContent = 'Compiling…'; }
+  try {
+    var r = await EOS.post('/daily-brief/api/digest/compile', {});
+    if (r && r.ok){
+      var note = r.note_path ? '<div class="db-empty" style="margin-top:10px">'+EOS.noteActions(r.note_path)+'</div>' : '';
+      out.innerHTML = '<div class="db-brief" style="margin-bottom:14px">'+mdLite(r.digest_md||'')+note+'</div>';
+      EOS_UI.toast('Digest compiled — '+(r.item_count||0)+' articles');
+    } else { EOS_UI.toast((r && r.error) || 'Could not compile', 'error'); }
+  } catch(e){ EOS_UI.toast('Could not compile digest', 'error'); }
+  if (btn){ btn.disabled = false; btn.textContent = '📥 Compile'; }
+}
+
+// ── Inbox (the firehose: browse all fetched articles, read/unread) ──────
+var _ibFilter = { unread: false, category: '', source: '', q: '' };
+var _ibLoaded = false;
+var _ccLoaded = false;
+
+function switchView(v){
+  document.getElementById('view-today').hidden = (v !== 'today');
+  document.getElementById('view-brief').hidden = (v !== 'brief');
+  document.getElementById('view-inbox').hidden = (v !== 'inbox');
+  document.getElementById('view-sources').hidden = (v !== 'sources');
+  Array.prototype.forEach.call(document.querySelectorAll('.db-tab'), function(t){
+    t.classList.toggle('active', t.getAttribute('data-view') === v);
+  });
+  if (v === 'today' && !_ccLoaded) { _ccLoaded = true; loadCommandCenter(); }
+  if (v === 'inbox' && !_ibLoaded) { _ibLoaded = true; loadInbox(); }
+  if (v === 'sources') { loadSources(); }
+}
+
+// ── Sources / subscriptions ─────────────────────────────────────────────
+async function loadSources(){
+  var list = document.getElementById('src-list');
+  try {
+    var d = await fetch('/daily-brief/api/sources/manage').then(function(r){return r.json();});
+    renderSources(d.sources || []);
+  } catch(e){ list.innerHTML = '<div class="db-empty db-warn">Could not load sources.</div>'; }
+}
+
+function renderSources(sources){
+  var list = document.getElementById('src-list');
+  if (!sources.length){ list.innerHTML = '<div class="db-empty">No sources yet — follow a feed above.</div>'; return; }
+  list.innerHTML = sources.map(function(s){
+    var off = !s.enabled;
+    var rm = s.origin === 'custom'
+      ? '<button class="src-btn src-rm" title="Unfollow" onclick="removeSource(\''+escAttr(s.id)+'\')">✕ Unfollow</button>'
+      : '<span class="src-origin">built-in</span>';
+    return '<div class="src-row'+(off?' off':'')+'">'
+      + '<div class="src-main">'
+        + '<div class="src-name">'+esc(s.name)+' <span class="src-cat">'+esc(s.category||'general')+'</span> <span class="src-kind">'+esc(s.kind||'rss')+'</span></div>'
+        + '<a class="src-url" href="'+escAttr(s.url)+'" target="_blank" rel="noopener">'+esc(s.url)+'</a>'
+      + '</div>'
+      + '<div class="src-actions">'
+        + '<button class="src-btn src-toggle" onclick="toggleSource(\''+escAttr(s.id)+'\')">'+(off?'Enable':'Disable')+'</button>'
+        + rm
+      + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+async function addSource(){
+  var url = (document.getElementById('src-url').value || '').trim();
+  var msg = document.getElementById('src-add-msg');
+  var btn = document.getElementById('src-add-btn');
+  if (!url){ msg.className = 'src-msg bad'; msg.textContent = 'Enter a feed URL first.'; return; }
+  btn.disabled = true; msg.className = 'src-msg'; msg.textContent = 'Checking the feed…';
+  try {
+    var body = { url: url,
+      name: (document.getElementById('src-name').value || '').trim(),
+      category: (document.getElementById('src-cat').value || '').trim() };
+    var r = await fetch('/daily-brief/api/sources', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(function(r){return r.json();});
+    if (r.ok){
+      msg.className = 'src-msg ok';
+      msg.textContent = 'Following “'+(r.name||url)+'” — '+r.item_count+' items found ('+r.kind+').';
+      document.getElementById('src-url').value = '';
+      document.getElementById('src-name').value = '';
+      document.getElementById('src-cat').value = '';
+      loadSources(); refresh();
+    } else {
+      msg.className = 'src-msg bad'; msg.textContent = r.error || 'Could not add that feed.';
+    }
+  } catch(e){ msg.className = 'src-msg bad'; msg.textContent = 'Network error adding the feed.'; }
+  finally { btn.disabled = false; }
+}
+
+async function toggleSource(id){
+  try {
+    await fetch('/daily-brief/api/sources/'+encodeURIComponent(id)+'/toggle', {method:'POST'});
+    loadSources(); refresh();
+  } catch(e){}
+}
+
+function removeSource(id){
+  EOS_UI.confirm({message: 'Unfollow this feed?', action: 'Unfollow', danger: true,
+    onYes: async function(){
+      try {
+        await fetch('/daily-brief/api/sources/'+encodeURIComponent(id), {method:'DELETE'});
+        loadSources(); refresh();
+      } catch(e){}
+    }});
+}
+
+function ibQuery(){
+  var p = [];
+  if (_ibFilter.unread) p.push('unread=1');
+  if (_ibFilter.category) p.push('category=' + encodeURIComponent(_ibFilter.category));
+  if (_ibFilter.source) p.push('source=' + encodeURIComponent(_ibFilter.source));
+  if (_ibFilter.q) p.push('q=' + encodeURIComponent(_ibFilter.q));
+  return p.length ? ('?' + p.join('&')) : '';
+}
+
+async function loadInbox(){
+  var list = document.getElementById('ib-list');
+  try {
+    var d = await fetch('/daily-brief/api/articles' + ibQuery()).then(function(r){return r.json();});
+    renderInboxChips(d);
+    renderInboxRows(d.items || []);
+    setInboxBadge(d.unread);
+  } catch(e){ list.innerHTML = '<div class="db-empty db-warn">Could not load inbox.</div>'; }
+}
+
+function renderInboxChips(d){
+  var chips = [];
+  chips.push('<span class="ib-chip' + (!_ibFilter.unread ? ' active' : '') + '" onclick="ibSet(\'unread\',false)">All</span>');
+  chips.push('<span class="ib-chip' + (_ibFilter.unread ? ' active' : '') + '" onclick="ibSet(\'unread\',true)">Unread' + (d.unread ? ' ('+d.unread+')' : '') + '</span>');
+  (d.categories || []).forEach(function(c){
+    chips.push('<span class="ib-chip' + (_ibFilter.category===c ? ' active' : '') + '" onclick="ibToggle(\'category\',' + escAttr(JSON.stringify(c)) + ')">' + esc(c) + '</span>');
+  });
+  document.getElementById('ib-chips').innerHTML = chips.join('');
+}
+
+function ibSet(key, val){ _ibFilter[key] = val; loadInbox(); }
+function ibToggle(key, val){ _ibFilter[key] = (_ibFilter[key] === val) ? '' : val; loadInbox(); }
+var _ibT;
+function ibDebouncedSearch(){
+  clearTimeout(_ibT);
+  _ibT = setTimeout(function(){ _ibFilter.q = (document.getElementById('ib-search').value || '').trim(); loadInbox(); }, 300);
+}
+
+function renderInboxRows(items){
+  var list = document.getElementById('ib-list');
+  if (!items.length){ list.innerHTML = '<div class="db-empty">No articles. Run a brief to pull your feeds.</div>'; return; }
+  list.innerHTML = items.map(function(a){
+    var bm = window._dbTargets && window._dbTargets.bookmarks;
+    var acts = '<span class="db-acts" data-id="' + escAttr(a.id) + '" data-url="' + escAttr(a.url) + '" data-title="' + escAttr(a.title) + '" data-summary="' + escAttr(a.summary||'') + '" data-source="' + escAttr(a.source||'') + '">'
+      + (bm ? '<button class="db-act" data-act="save" title="Save to read-later">🔖</button>' : '')
+      + '<button class="db-act" data-act="digest" title="Save + add to digest">🗂️</button>'
+      + '<button class="db-act" data-act="summarize" title="AI summarize">📝</button>'
+      + '</span>';
+    return '<div class="ib-row' + (a.read ? ' read' : '') + '" data-id="' + escAttr(a.id) + '">'
+      + '<div class="ib-body">'
+        + '<a class="ib-link" href="' + escAttr(a.url) + '" target="_blank" rel="noopener">' + esc(a.title||a.url) + '</a>'
+        + '<div class="ib-meta">' + esc(a.source||'') + (a.category ? ' · ' + esc(a.category) : '') + '</div>'
+        + (a.summary ? '<div class="ib-summary">' + esc(a.summary) + '</div>' : '')
+      + '</div>'
+      + acts
+      + '<button class="ib-read" data-act="read" title="Mark read">✓</button>'
+      + '</div>';
+  }).join('');
+}
+
+async function summarizeArticle(id, btn){
+  if (btn){ btn.disabled = true; }
+  try {
+    var r = await EOS.post('/daily-brief/api/articles/' + encodeURIComponent(id) + '/summarize', {});
+    if (r && r.ok){
+      var row = document.querySelector('.ib-row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] .ib-body');
+      if (row && r.summary){
+        var ex = row.querySelector('.ib-summary'); if (ex) ex.remove();
+        var d = document.createElement('div'); d.className = 'ib-summary'; d.textContent = r.summary; row.appendChild(d);
+      }
+      _markBtn(btn, '✓');
+    } else { EOS_UI.toast((r && r.error) || 'Could not summarize', 'error'); if (btn) btn.disabled = false; }
+  } catch(e){ EOS_UI.toast('Could not summarize', 'error'); if (btn) btn.disabled = false; }
+}
+
+async function markRead(id){
+  try { await EOS.post('/daily-brief/api/articles/' + encodeURIComponent(id) + '/read', {}); } catch(e){}
+}
+async function markAllRead(){
+  try { await EOS.post('/daily-brief/api/articles/read-all', {}); loadInbox(); } catch(e){ EOS_UI.toast('Failed', 'error'); }
+}
+function setInboxBadge(n){
+  var b = document.getElementById('inbox-badge');
+  if (b) b.innerHTML = n ? ' <span class="badge">' + n + '</span>' : '';
+}
+
+function renderMarkets(d){
+  var m = document.getElementById('db-markets');
+  if (!m) return;
+  if (!d || !d.market_md){ m.innerHTML = ''; return; }
+  var table = '';
+  if (d.quotes && d.quotes.length){
+    table = '<div class="db-q-grid">' + d.quotes.map(function(q){
+      var up = (q.change_pct||0) >= 0;
+      var chg = (up?'+':'') + (q.change_pct==null?'—':q.change_pct) + '%';
+      return '<div class="db-q"><div class="db-q-sym">'+esc(q.name||q.symbol)+'</div>'+
+        '<div class="db-q-last">'+esc(q.last)+' <span class="'+(up?'db-up':'db-down')+'">'+esc(chg)+'</span></div>'+
+        '<div class="db-q-ind">RSI '+esc(q.rsi==null?'—':q.rsi)+' · '+esc(q.trend||'')+'</div></div>';
+    }).join('') + '</div>';
+  }
+  m.innerHTML = '<div class="db-card"><h3>📈 Market pulse</h3>'+
+    '<div class="db-brief" style="border:none;padding:0;background:none">'+mdLite(d.market_md)+'</div>'+
+    table + '</div>';
+}
+
+function ccUnavailable(name, error){
+  return '<div class="db-empty">'+esc(name)+' unavailable'+(error ? ': '+esc(error) : '')+'</div>';
+}
+function ccOpen(path, label){
+  return '<a href="'+escAttr(path)+'">'+esc(label || 'Open')+'</a>';
+}
+function ccTaskRows(tasks){
+  if (!tasks || !tasks.available) return ccUnavailable('Tasks', tasks && tasks.error);
+  var rows = tasks.focus || [];
+  if (!rows.length) return '<div class="db-empty">No open tasks found.</div>';
+  return rows.map(function(t){
+    var sub = [];
+    if (t.project) sub.push(t.project);
+    if (t.due) sub.push('due '+t.due);
+    if (t.file) sub.push(t.file + (t.line ? ':' + t.line : ''));
+    var pill = t.overdue ? '<span class="cc-pill warn">overdue</span>' :
+      (t.due_today ? '<span class="cc-pill warn">today</span>' : '<span class="cc-pill">open</span>');
+    return '<div class="cc-row"><div class="main"><div class="title">'+
+      ccOpen('/task/', t.text || '(untitled task)')+'</div>'+
+      '<div class="sub">'+esc(sub.join(' · '))+'</div></div>'+pill+'</div>';
+  }).join('');
+}
+function ccProjectRows(projects){
+  if (!projects || !projects.available) return ccUnavailable('Projects', projects && projects.error);
+  var rows = projects.attention || [];
+  if (!rows.length) return '<div class="db-empty">No active project needs attention.</div>';
+  return rows.map(function(p){
+    var sub = [];
+    if (p.next_action) sub.push(p.next_action);
+    else if (p.deadline) sub.push('deadline '+p.deadline);
+    if (p.open_tasks) sub.push(p.open_tasks + ' open tasks');
+    if (p.stale_days) sub.push(p.stale_days + 'd stale');
+    var tone = (p.status === 'blocked' || p.overdue) ? ' warn' : '';
+    var label = p.status === 'blocked' ? 'blocked' : (p.overdue ? 'overdue' : p.status || 'active');
+    return '<div class="cc-row"><div class="main"><div class="title">'+
+      ccOpen('/projects/workspace/' + encodeURIComponent(p.id || ''), p.name || p.id || 'Project')+'</div>'+
+      '<div class="sub">'+esc(sub.join(' · '))+'</div></div>'+
+      '<span class="cc-pill'+tone+'">'+esc(label)+'</span></div>';
+  }).join('');
+}
+function ccPeopleBlock(people){
+  if (!people || !people.available) return ccUnavailable('People', people && people.error);
+  var follow = people.followups || [];
+  var bdays = people.birthdays || [];
+  var parts = [];
+  if (follow.length){
+    parts.push(follow.slice(0,4).map(function(p){
+      return '<div class="cc-row"><div class="main"><div class="title">'+
+        ccOpen(p.href || '/people/', p.title || p.name || 'Person')+'</div>'+
+        '<div class="sub">'+esc(p.subtitle || p.reason || '')+'</div></div><span class="cc-pill">follow up</span></div>';
+    }).join(''));
+  }
+  if (bdays.length){
+    parts.push(bdays.slice(0,3).map(function(p){
+      var label = p.days_until === 0 ? 'today' : 'in '+p.days_until+'d';
+      return '<div class="cc-row"><div class="main"><div class="title">'+
+        ccOpen('/people/#' + encodeURIComponent(p.id || ''), p.name || 'Birthday')+'</div>'+
+        '<div class="sub">birthday '+label+'</div></div><span class="cc-pill">birthday</span></div>';
+    }).join(''));
+  }
+  return parts.join('') || '<div class="db-empty">No people follow-ups due.</div>';
+}
+function ccJournalBlock(journal){
+  if (!journal || !journal.available) return ccUnavailable('Journal', journal && journal.error);
+  return '<div class="cc-two">'+
+    '<div class="cc-mini"><div class="v">'+esc(String(journal.entries || 0))+'</div><div class="k">entries today</div></div>'+
+    '<div class="cc-mini"><div class="v">'+esc(String(journal.streak || 0))+'</div><div class="k">day streak</div></div>'+
+    '</div><div class="cc-row"><div class="main"><div class="title">'+
+    ccOpen('/journal/', journal.mood ? ('Mood: '+journal.mood) : 'Open journal')+
+    '</div><div class="sub">'+esc(journal.entries ? 'Daily note has activity.' : 'No journal entry yet today.')+'</div></div></div>';
+}
+function ccAuditBlock(audit){
+  if (!audit || !audit.available) return ccUnavailable('Audit', audit && audit.error);
+  var week = audit.week || {};
+  var state = audit.ok ? 'verified' : 'needs review';
+  var tone = audit.ok ? ' ok' : ' warn';
+  var sub = [
+    (audit.audit_lines || audit.lines_checked || 0) + ' audit lines',
+    (audit.grants_count || 0) + ' grants',
+    (audit.holds_count || 0) + ' holds',
+    (week.fired || 0) + ' fires in 7d'
+  ];
+  if ((audit.budgets_over || []).length) sub.push('budget over: '+audit.budgets_over.join(', '));
+  return '<div class="cc-row"><div class="main"><div class="title">'+
+    ccOpen('/agent/pages/foundry.html', 'Autopilot '+state)+'</div>'+
+    '<div class="sub">'+esc(sub.join(' · '))+'</div></div><span class="cc-pill'+tone+'">'+esc(state)+'</span></div>';
+}
+function renderCommandCenter(d){
+  var el = document.getElementById('command-center');
+  var tasks = d.tasks || {}, projects = d.projects || {}, journal = d.journal || {}, people = d.people || {}, audit = d.audit || {};
+  el.innerHTML =
+    '<div class="cc-metrics" id="cc-metrics"></div>'+
+    '<div class="cc-grid">'+
+      '<div class="cc-panel"><h2><span>Focus Tasks</span>'+ccOpen('/task/', 'Open task')+'</h2>'+ccTaskRows(tasks)+'</div>'+
+      '<div class="cc-panel"><h2><span>Journal</span>'+ccOpen('/journal/', 'Open journal')+'</h2>'+ccJournalBlock(journal)+'</div>'+
+      '<div class="cc-panel"><h2><span>Project Attention</span>'+ccOpen('/projects/', 'Open projects')+'</h2>'+ccProjectRows(projects)+'</div>'+
+      '<div class="cc-panel"><h2><span>People</span>'+ccOpen('/people/', 'Open people')+'</h2>'+ccPeopleBlock(people)+'</div>'+
+      '<div class="cc-panel"><h2><span>Autopilot Audit</span>'+ccOpen('/agent/pages/foundry.html', 'Review')+'</h2>'+ccAuditBlock(audit)+'</div>'+
+      '<div class="cc-panel"><h2><span>News Brief</span><a href="#" onclick="switchView(\'brief\');return false;">Show brief</a></h2>'+
+        '<div class="cc-row"><div class="main"><div class="title">'+esc((d.status && d.status.last_ok) ? ((d.status.item_count || 0)+' stories ready') : 'No current brief')+'</div>'+
+        '<div class="sub">'+esc((d.status && d.status.last_date) ? d.status.last_date : d.date)+'</div></div>'+
+        '<button class="eos-btn eos-btn-sm" onclick="switchView(\'brief\')">Open</button></div></div>'+
+    '</div>';
+  EOS_UI.statCards('cc-metrics', [
+    {label: 'Due now', value: tasks.available ? (tasks.due_count || 0) : '-'},
+    {label: 'Open tasks', value: tasks.available ? (tasks.open_count || 0) : '-'},
+    {label: 'Active projects', value: projects.available ? (projects.active_count || 0) : '-'},
+    {label: 'Journal', value: journal.available ? (journal.entries || 0) : '-'},
+    {label: 'Audit', value: audit.available ? (audit.ok ? 'OK' : 'Check') : '-',
+     variant: audit.available ? (audit.ok ? 'success' : 'danger') : 'muted'}
+  ]);
+}
+async function loadCommandCenter(){
+  var el = document.getElementById('command-center');
+  try {
+    var d = await fetch('/daily-brief/api/command-center').then(function(r){return r.json();});
+    renderCommandCenter(d);
+  } catch(e){
+    el.innerHTML = '<div class="db-empty db-warn">Could not load today.</div>';
+  }
+}
+
+async function refresh(){
+  var s = await fetch('/daily-brief/api/status').then(function(r){return r.json();});
+  window._dbStatus = s;
+  var meta = document.getElementById('bar-meta');
+  var bits = [];
+  bits.push(s.enabled ? ('scheduled · next ' + (s.next_run ? new Date(s.next_run).toLocaleString() : '—')) : 'schedule off');
+  bits.push(s.source_count + ' sources');
+  bits.push('lang ' + s.locale);
+  if (s.markets_enabled) bits.push('+ markets');
+  if (s.focus) bits.push('lens: ' + (s.focus.length > 48 ? s.focus.slice(0,48)+'…' : s.focus));
+  meta.textContent = bits.join('  ·  ');
+  renderOnboard(s);
+  setInboxBadge(s.unread_count);
+  var d = await fetch('/daily-brief/api/today').then(function(r){return r.json();});
+  renderBrief(d);
+  _ccLoaded = true;
+  loadCommandCenter();
+  loadHistory();
+  loadDigest();
+  if (_ibLoaded) loadInbox();
+}
+
+// First-run step: until the user has saved their own focus, invite them to
+// tailor the brief to their vault. Dismissible per-browser.
+function renderOnboard(s){
+  var el = document.getElementById('db-onboard');
+  var skipped = false;
+  try { skipped = localStorage.getItem('db-onboard-skip') === '1'; } catch(e){}
+  if (s.focus_custom || skipped || document.getElementById('db-personalize').innerHTML){
+    el.innerHTML = ''; return;
+  }
+  el.innerHTML = '<div class="db-card accent db-onboard">'+
+    '<div><b>Make this brief yours.</b><div class="muted">I can read the topics in your vault — project, area &amp; folder names plus your most-used tags — and tune the brief around your whole life: your work, your interests, and what you&rsquo;re growing into. Nothing is saved until you approve it.</div></div>'+
+    '<div class="row"><button class="eos-btn eos-btn-primary" onclick="personalize()">Tailor now</button>'+
+    '<button class="eos-btn" onclick="skipOnboard()">Not now</button></div></div>';
+}
+function skipOnboard(){
+  try { localStorage.setItem('db-onboard-skip','1'); } catch(e){}
+  document.getElementById('db-onboard').innerHTML = '';
+}
+
+async function personalize(){
+  var slot = document.getElementById('db-personalize');
+  document.getElementById('db-onboard').innerHTML = '';
+  slot.innerHTML = '<div class="db-card"><div class="muted">Reading your vault…</div></div>';
+  var btn = document.getElementById('tailor-btn'); if (btn) btn.disabled = true;
+  try {
+    var r = await fetch('/daily-brief/api/personalize', {method:'POST'}).then(function(r){return r.json();});
+    if (!r.ok){ slot.innerHTML = '<div class="db-card db-warn">Couldn’t personalize: '+esc(r.error||'unknown')+'</div>'; }
+    else { renderProposal(r); }
+  } catch(e){ slot.innerHTML = '<div class="db-card db-warn">Error reading vault.</div>'; }
+  if (btn) btn.disabled = false;
+}
+
+function renderProposal(r){
+  var sig = r.signals || {};
+  function chips(arr){ return (arr||[]).map(function(x){
+    var label = Array.isArray(x) ? (x[0]+' ('+x[1]+')') : x;
+    return '<span class="db-chip">'+esc(label)+'</span>'; }).join(''); }
+  var sigBlocks = '';
+  if ((sig.projects||[]).length) sigBlocks += '<div class="muted">Projects</div><div class="db-chips">'+chips(sig.projects)+'</div>';
+  if ((sig.areas||[]).length) sigBlocks += '<div class="muted">Areas</div><div class="db-chips">'+chips(sig.areas)+'</div>';
+  if ((sig.resources||[]).length) sigBlocks += '<div class="muted">Resources</div><div class="db-chips">'+chips(sig.resources)+'</div>';
+  if ((sig.tags||[]).length) sigBlocks += '<div class="muted">Top tags</div><div class="db-chips">'+chips(sig.tags)+'</div>';
+  if (!sigBlocks) sigBlocks = '<div class="muted">Your vault is still sparse — this is a general lens.</div>';
+  // Whole-person breakdown — shows the lens spans work + interests + growth.
+  var dims = r.dimensions || {};
+  var dimMeta = [['work','💼 Work'],['interests','🎨 Interests'],['growth','🌱 Growth']];
+  var dimBlocks = dimMeta.filter(function(d){ return dims[d[0]]; }).map(function(d){
+    return '<div class="db-dim"><span class="db-dim-k">'+d[1]+'</span>'+esc(dims[d[0]])+'</div>';
+  }).join('');
+  if (dimBlocks) dimBlocks = '<div class="db-dims">'+dimBlocks+'</div>';
+  document.getElementById('db-personalize').innerHTML =
+    '<div class="db-card accent">'+
+    '<h3>✨ Suggested focus from your vault</h3>'+
+    dimBlocks+
+    '<textarea id="focus-edit">'+esc(r.focus||'')+'</textarea>'+
+    (r.rationale ? '<div class="muted">'+esc(r.rationale)+'</div>' : '')+
+    '<details><summary>What I read to suggest this (sent to the model — topic names only, never your note contents)</summary>'+
+      '<div style="margin-top:8px">'+sigBlocks+'</div></details>'+
+    '<div class="row">'+
+      '<button class="eos-btn eos-btn-primary" onclick="applyFocus()">Use this focus</button>'+
+      '<button class="eos-btn" onclick="personalize()">Re-suggest</button>'+
+      '<button class="eos-btn" onclick="dismissProposal()">Cancel</button>'+
+    '</div></div>';
+}
+function dismissProposal(){ document.getElementById('db-personalize').innerHTML = ''; refresh(); }
+
+async function applyFocus(){
+  var ta = document.getElementById('focus-edit');
+  var v = (ta && ta.value || '').trim();
+  if (!v){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Focus is empty', 'error'); return; }
+  try {
+    await EOS.post('/settings/api/set', {key: 'daily-brief.focus', value: v});
+    EOS_UI && EOS_UI.toast && EOS_UI.toast('Focus saved — your next brief will use it');
+    document.getElementById('db-personalize').innerHTML = '';
+    refresh();
+  } catch(e){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Could not save focus', 'error'); }
+}
+
+async function loadHistory(){
+  var d = await fetch('/daily-brief/api/history').then(function(r){return r.json();});
+  var el = document.getElementById('hist');
+  var rows = (d.history||[]).filter(function(h){return h.ok;});
+  if (!rows.length){ el.innerHTML = '<div class="db-empty">—</div>'; return; }
+  el.innerHTML = rows.map(function(h, i){
+    return '<div class="db-hist-row" onclick="showHist('+i+')">'+
+      '<span class="when">'+esc(h.date||'?')+'</span>'+
+      '<span class="db-empty">'+esc(h.item_count||0)+' stories'+(h.trigger==='schedule'?'':' · '+esc(h.trigger))+'</span></div>';
+  }).join('');
+  window._hist = rows;
+}
+function showHist(i){
+  var h = (window._hist||[])[i];
+  if (!h) return;
+  renderBrief({ok:true, brief_md:h.brief_md, market_md:h.market_md, quotes:[], sources:[]});
+  document.getElementById('sources').innerHTML = '<span class="db-src">'+esc(h.date)+' · from history</span>';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+async function runNow(){
+  var btn = document.getElementById('run-now');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  var job = EOS_UI.jobProgress({id: 'db-run'});
+  job.update({stage: 'Generating brief', detail: 'fetching feeds + summarising'});
+  try {
+    var r = await fetch('/daily-brief/api/run-now', {method:'POST'}).then(function(r){return r.json();});
+    if (r.ok){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Brief ready — '+(r.item_count||0)+' stories'); job.done({stage:'Brief ready', detail:(r.item_count||0)+' stories'}); }
+    else { EOS_UI && EOS_UI.toast && EOS_UI.toast('Failed: '+(r.error||'error'), 'error'); job.hide(); }
+  } catch(e){ EOS_UI && EOS_UI.toast && EOS_UI.toast('Error generating brief', 'error'); job.hide(); }
+  btn.disabled = false; btn.textContent = 'Run now';
+  refresh();
+}
+
+// Delegated handlers — attached once, survive every re-render.
+document.getElementById('brief').addEventListener('click', function(e){
+  var btn = e.target.closest('.db-act'); if (!btn) return;
+  var span = btn.closest('.db-acts'); if (!span) return;
+  e.preventDefault();
+  if (btn.getAttribute('data-act') === 'save') saveArticle(span, btn);
+  else digestAdd(span, btn);
+});
+document.getElementById('digest-list').addEventListener('click', function(e){
+  var rm = e.target.closest('.db-digest-rm'); if (!rm) return;
+  digestRemove(rm.getAttribute('data-url'));
+});
+document.getElementById('ib-list').addEventListener('click', function(e){
+  var actBtn = e.target.closest('.db-act');
+  if (actBtn){
+    var span = actBtn.closest('.db-acts'); if (!span) return;
+    e.preventDefault();
+    var act = actBtn.getAttribute('data-act');
+    if (act === 'save') saveArticle(span, actBtn);
+    else if (act === 'digest') digestAdd(span, actBtn);
+    else if (act === 'summarize') summarizeArticle(span.getAttribute('data-id'), actBtn);
+    return;
+  }
+  var readBtn = e.target.closest('.ib-read[data-act="read"]');
+  if (readBtn){
+    var row = readBtn.closest('.ib-row'); if (row){ markRead(row.getAttribute('data-id')); row.classList.add('read'); }
+    return;
+  }
+  var link = e.target.closest('a.ib-link');   // open in new tab + mark read
+  if (link){
+    var r2 = link.closest('.ib-row'); if (r2){ markRead(r2.getAttribute('data-id')); r2.classList.add('read'); }
+  }
+});
+
+async function initActions(){
+  try {
+    var t = await fetch('/daily-brief/api/action-targets').then(function(r){return r.json();});
+    window._dbTargets = { bookmarks: !!t.bookmarks, digest: t.digest !== false };
+  } catch(e){ /* keep defaults */ }
+}
+initActions().then(refresh);
+</script>
+</body>
+</html>

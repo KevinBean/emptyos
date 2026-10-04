@@ -1,0 +1,71 @@
+{
+  "id": "transport",
+  "groups": [
+    {
+      "id": "road",
+      "label": "Road vehicles",
+      "members": [
+        "car",
+        "taxi",
+        "bus",
+        "truck",
+        "motorcycle",
+        "bicycle",
+        "ambulance",
+        "fire-engine",
+        "van",
+        "pickup-truck",
+        "tractor",
+        "scooter",
+        "police-car",
+        "garbage-truck",
+        "excavator",
+        "forklift"
+      ]
+    },
+    {
+      "id": "rail",
+      "label": "Rail vehicles",
+      "members": [
+        "tram",
+        "train",
+        "subway",
+        "locomotive",
+        "freight-train",
+        "monorail",
+        "cable-car",
+        "funicular"
+      ]
+    },
+    {
+      "id": "water",
+      "label": "On the water",
+      "members": [
+        "ferry",
+        "sailboat",
+        "speedboat",
+        "ship",
+        "canoe",
+        "kayak",
+        "yacht",
+        "tugboat",
+        "submarine",
+        "canal-boat"
+      ]
+    },
+    {
+      "id": "air",
+      "label": "Aircraft",
+      "members": [
+        "airplane",
+        "helicopter",
+        "hot-air-balloon",
+        "glider",
+        "seaplane",
+        "airship",
+        "drone",
+        "rocket"
+      ]
+    }
+  ]
+}

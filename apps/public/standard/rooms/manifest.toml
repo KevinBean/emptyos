@@ -1,0 +1,170 @@
+[app]
+id = "rooms"
+store_category = "ai"
+name = "Rooms"
+version = "2.0.0"
+description = "Conversation rooms — single-agent (1:1) and multi-participant. Each room has a system prompt, optional knowledge files, and persistent history. The shared substrate where the user, named agents, and (in v2) CLI participants meet. Renamed from `gpts` 2026-05-09; existing per-agent histories migrate losslessly to 1:1 rooms."
+dimensions = ["intellectual"]
+user_intent = [
+    "I want to chat with an AI",
+    "talk through a problem with multiple agents",
+    "和 AI 聊一下",
+    "set up a room where Claude and Codex can both review my code",
+    "continue a conversation I started yesterday",
+    "have a persistent dialogue with a named persona",
+]
+
+[app.entry]
+module = "app"
+class = "RoomsApp"
+
+[requires]
+optional_apps = ["skill"]
+capabilities = ["think", "read", "write"]
+services = ["agent-runtime"]
+# `projects` is used for task attach/query; routed through call_app inside
+# try/except so rooms still boots when projects is uninstalled (errors surface
+# as user-visible messages, not crashes). Declared so the dependency graph
+# reflects reality.
+apps = ["projects"]
+
+[provides.cli]
+commands = ["rooms"]
+
+[provides.web]
+prefix = "/rooms"
+
+[provides.events]
+emits = [
+    "rooms:chat", "rooms:undo", "rooms:created", "rooms:participant_added",
+    "rooms:action_applied", "rooms:action_auto_applied", "rooms:action_rejected",
+    "rooms:archived", "rooms:unarchived", "rooms:exported", "rooms:distilled",
+    "rooms:pinned", "rooms:unpinned",
+    "rooms:reminder_fired", "rooms:scheduled_fired",
+    "rooms:note_written", "rooms:panel",
+    "rooms:head_changed",
+    "rooms:team_task_added", "rooms:team_task_assigned", "rooms:team_task_status",
+    "rooms:team_run_started", "rooms:team_run_finished",
+    "rooms:kb_extraction_failed",
+    "rooms:action_proposed", "rooms:action_adjudicated",
+    "skill:invoked",
+]
+# Per-room state changes — chat history is the audit trail; these don't
+# need separate journal breadcrumbs.
+internal = [
+    # Gate/team-run machinery — UI-only, no cross-app listener by design.
+    "rooms:team_run_started", "rooms:team_run_finished",
+    "rooms:action_proposed", "rooms:action_adjudicated", "skill:invoked",
+    "rooms:note_written",
+    "rooms:reminder_fired",
+    "rooms:scheduled_fired",
+    "rooms:unarchived",
+    "rooms:undo",
+    "rooms:unpinned",
+    "rooms:action_auto_applied",   # autopilot grant fired — audit log only
+    "rooms:panel",                  # UI panel render signal
+    "rooms:head_changed",           # tree branch switch — same audit shape
+    "rooms:team_task_added",        # high-freq team-list churn — UI/reactor only
+    "rooms:team_task_assigned",
+    "rooms:team_task_status",
+    "rooms:kb_extraction_failed",   # best-effort extraction hiccup — not a breadcrumb
+]
+
+[provides.settings]
+schema = [
+    {key = "rooms.default_model", label = "Default LLM Model", type = "select", options = ["ollama", "openai", "claude-cli"], default = "ollama"},
+    {key = "rooms.history_limit", label = "Chat History Limit", type = "number", default = 20},
+]
+
+# ── Hub panels (Phase 7a) ───────────────────────────────────────
+# Surface room activity on /hub/ so the user sees pending reviews and
+# recently-active rooms without clicking into the rooms app.
+
+[[contributes.hub.panel]]
+id = "rooms-pending"
+method = "panel_pending_count"
+renderer = "stat-tile"
+title = "Pending"
+priority = 90
+group = "dashboard"
+
+[[contributes.hub.panel]]
+id = "rooms-recent"
+method = "panel_recent_rooms"
+renderer = "plain-list"
+title = "Recent rooms"
+priority = 240
+limit = 5
+
+# Autopilot audit/trust surface — actions auto-applied without a per-instance
+# Apply click (.claude/rules/autopilot-grants.md pivot). Drops silently until
+# something auto-applies, so it appears exactly when the user needs to watch.
+# Priority in the cognitive band (not ambient) — auto-applied actions are
+# something the user should glance at, not bury below the fold.
+[[contributes.hub.panel]]
+id = "rooms-autopilot"
+method = "panel_autopilot_recent"
+renderer = "plain-list"
+title = "Auto-applied"
+priority = 120
+limit = 6
+
+# ── Voice intents (Phase 7c) ────────────────────────────────────
+# Aura learns about rooms — list them aloud, jump into one by name.
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# rooms.list/open are voice-only (method IS the voice handler). The team-mode
+# coordination verbs are agent-surface (a room lead managing its own shared
+# task list) — sync methods in team.py, no voice intent. All autopilot-eligible.
+# Legacy voice intents above stay authoritative until Phase 3.
+[[provides.verbs]]
+verb = "rooms.list"
+method = "voice_list_rooms"
+summary = "List recently-active conversation rooms (top 5)"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "what rooms do I have", description = "List recently-active conversation rooms (top 5).", always = true, card = "plain-list" }
+
+[[provides.verbs]]
+verb = "rooms.open"
+method = "voice_open_room"
+summary = "Open a room by name fragment"
+args = { name = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "open the brainstorm room", description = "Open a room by name fragment (case-insensitive). Returns a card with a link to the room URL.", always = true, card = "entity-card" }
+
+[[provides.verbs]]
+verb = "rooms.team_add_task"
+method = "team_add_task"
+summary = "Add a task to a room's shared team-mode task list"
+args = { room_id = "string", content = "string", assignee = "string?" }
+eligibility = "stable"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "rooms.team_assign"
+method = "team_assign"
+summary = "Assign a team-mode task to a participant"
+args = { room_id = "string", task_id = "string", assignee = "string" }
+eligibility = "stable"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "rooms.team_set_status"
+method = "team_set_status"
+summary = "Set the status of a team-mode task"
+args = { room_id = "string", task_id = "string", status = "string", result = "string?" }
+eligibility = "stable"
+surfaces = ["agent"]
+
+# AI Fluency tour arc, step 1/4 (Delegation) — see .claude/rules/autopilot-grants.md
+[[contributes.tour.step]]
+id = "rooms.autopilot"
+group = "core"
+priority = 410
+route = "/rooms/"
+spotlight = "#btn-autopilot"
+title = "Delegation is specific, not a mode"
+body = "This chip lets a room's agents auto-run <strong>reversible, low-risk</strong> actions (adding a task, saving a capture) without an Apply click each time — scoped to this room, timed, still logged. Anything irreversible or outbound (publishing, sending, spending) can never be auto-granted, no matter what. Delegating well means naming exactly what you trust, not flipping one big switch."

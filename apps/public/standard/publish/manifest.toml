@@ -1,0 +1,51 @@
+[app]
+id = "publish"
+icon_id = "publish"
+store_category = "productivity"
+name = "Publish"
+version = "0.1.0"
+description = "Publish vault notes as a static website — blog, projects, digital garden"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "PublishApp"
+
+[provides.cli]
+commands = ["publish"]
+
+[provides.web]
+prefix = "/publish"
+
+# Prompt constants registered for per-machine overrides via declare_prompts()
+# in prompts.py — the /prompts app imports this module to browse defaults.
+[provides.prompts]
+module = "prompts"
+
+[provides.events]
+emits = ["publish:built", "publish:deployed", "publish:diagrams_rasterized", "publish:updated", "publish:asset_created"]
+
+# internal: build-step + content-edit churn; publish:built/deployed are the milestones
+# `asset_created` is per-asset bookkeeping for the publish UI — the
+# build/deploy pair already carries the cross-app signal.
+internal = ["publish:diagrams_rasterized", "publish:updated", "publish:asset_created"]
+[provides.settings]
+# Per-site settings are managed in sites.json via the in-app UI.
+# Only the active site selector is exposed as a global setting.
+schema = [
+    {key = "publish.active_site", label = "Active Site Profile", type = "text", default = "default"},
+    {key = "publish.feature.publish-scheduled-posts.enabled", label = "Build scheduled posts", type = "boolean", default = false, hint = "Dark by default. Every 15 minutes, due publish_at drafts are released and built locally; deployment always requires your click."},
+]
+
+[requires]
+capabilities = ["read", "write", "think", "search", "draw", "browse"]
+apps = ["link"]
+# kb is a soft dep: /api/themes lists design-system-* notes via call_app("kb",…),
+# but falls back to a direct vault scan (and build-time theme resolution reads the
+# note file directly) — so absence is tolerated.
+optional_apps = ["kb", "podcast", "staff"]
+services = []
+# Optionally integrates with these if installed (graceful fallback when absent):
+#   web-analytics — embeds tracking beacon when available
+#   podcast       — /api/generate-podcast endpoint when available
+#   staff         — uses staff agents for AI polish; falls back to self.think()

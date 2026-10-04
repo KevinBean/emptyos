@@ -1,0 +1,397 @@
+# EmptyOS Release Manifest
+# Defines distribution tiers and packaging rules.
+#
+# Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
+
+[release]
+version = "0.8.0"
+
+# ── Platforms ─────────────────────────────────────────────────
+# Named deployment profiles. Plugins declare compatibility in
+# their manifest [platforms].supports = [...] array. Tiers with
+# target_platform auto-filter incompatible plugins at package
+# time. CLI --platform=<name> overrides the tier's target.
+
+[platforms.laptop]
+description = "Local dev machine — GPU, camera, mic, desktop apps"
+caps = ["gpu", "camera", "mic", "desktop"]
+
+[platforms.vps-cpu]
+description = "Cloud VPS, CPU only (Hetzner CX23, DO $6 droplet)"
+caps = []
+
+[platforms.vps-gpu]
+description = "Cloud GPU droplet (DO GPU, RunPod, Lambda)"
+caps = ["gpu"]
+
+[platforms.docker]
+description = "Container, no hardware assumptions"
+caps = []
+
+# ── Product lines ─────────────────────────────────────────────
+# The trunk and its branches. Every tier names one of these in `product_line`,
+# and docs/TIERS.md renders its product-line table from here. A held line is
+# `private = true`: the public release drops it with its private tiers, and a
+# non-private tier may not belong to one. `scripts/check_tier_lines.py`.
+
+[product_lines.emptyos]
+display_name = "EmptyOS"
+audience = "Personal and community users"
+notes = "The trunk: the general-purpose OS every branch builds on."
+
+[product_lines.englishos]
+display_name = "EnglishOS"
+audience = "English learners"
+notes = "An open edition (dictionary + listening drills) in the public release; the full learning bundle and hosted learner daemons are held."
+
+# ── Tiers ─────────────────────────────────────────────────────
+
+# Vocabulary:
+# - core and standard are platform tiers.
+# - everything else is a packaged distribution/profile for a concrete audience
+#   or operating context. Distribution tiers may be private and branded without
+#   changing runtime semantics; all apps are still equal once loaded.
+# - every tier declares `product_line`: "emptyos" for the trunk, or the id of
+#   the branch line it belongs to. A tier extends a tier of its own line or a
+#   trunk tier, and a tier with no `extends` (core aside) is a direct
+#   (hosted) allowlist whose apps and plugins must be a subset of one
+#   extending tier in its own line — tiers cannot subtract, so this is what
+#   keeps a slim hosted image from drifting away from its line.
+#   `scripts/check_tier_lines.py`.
+
+[tiers.core]
+product_line = "emptyos"
+kind = "platform"
+# Deliberately does NOT enumerate the tiers that extend core: this file ships in
+# the public snapshot (see the engines note below), and naming held tiers here
+# would leak them exactly as the tier inventory leaked in v0.4.5-v0.5.0.
+delivery = "extended-by only (union base for the tiers that extend it)"
+display_name = "EmptyOS Core"
+audience = "Kernel-level EmptyOS install"
+description = "Minimum OS — vault basics, task management, search, generic home"
+apps = [
+    "hub",
+    "link",
+    "note",
+    "providers",
+    "quick-action",
+    "run",
+    "search",
+    "settings",
+    "store",
+    "system-log",
+    "task",
+    "vault-backup",
+    "weather",
+]
+plugins = [
+    "health",
+    "notifications",
+]
+skills = []
+# A packaged build (package-release.py) keeps only the engines its own code
+# reaches (editions M13), and a public tier's build fails if that set leaves
+# this list. It is the public-engine set: scripts/release-public.py drops every
+# engines/<X> NOT listed here. It is an allowlist precisely so a new engine leaks
+# nothing by default — a held engine simply never gets added.
+# Keep it to generic, non-engineering engines; the power/cable engineering engines
+# are held private and must NOT be added.
+# NOTE: this file SHIPS in the public snapshot, so do not enumerate the held
+# engines by name here. The allowlist below is the entire rule.
+engines = [
+    "sheet",        # public sheet app
+    "articulated",  # robot/3D modeller (cadquery plugin + texture scripts)
+]
+
+# Packaging/documentation tier only; the kernel never reads tiers at runtime.
+[tiers.demo]
+product_line = "emptyos"
+kind = "operational"
+delivery = "none - documentation only; the live demo ships via targets.public then demo.hide_apps"
+display_name = "Demo"
+audience = "Public VPS showcase"
+description = "VPS showcase — core + narrative apps, cloud LLM only"
+extends = "core"
+target_platform = "vps-cpu"
+apps = [
+    "assistant",
+    "boards",
+    "focus",
+    "journal",
+    "kb",
+    "music-library",
+    "people",
+    "ppt",
+    "projects",
+    "publish",
+    "quotes",
+    "reactor",
+    "rooms",
+    "tour",
+    "trust-loop",
+    "vault-graph",
+    "voice-assistant",
+]
+# tier-plugin-reach: ignore rooms agent-runtime — deliberate, and NOT because
+# the demo lacks coding CLIs: this tier packages nothing. Its `delivery` says so
+# — the live demo ships from `targets.public` (tier `standard`, which now DOES
+# carry agent-runtime) and then hides apps via `demo.hide_apps`. So no snapshot
+# is ever pruned against this list and the finding is unreachable. If this tier
+# ever gains a `[targets.*]` binding, delete this waiver and re-decide.
+plugins = [
+    "ollama",
+]
+skills = []
+
+[tiers.standard]
+product_line = "emptyos"
+kind = "platform"
+delivery = "targets.public, targets.desktop, products/desktop-windows, products/desktop-macos"
+display_name = "EmptyOS Standard"
+audience = "Default public/community install"
+description = "Full community OS — productivity, AI, creative (end-user value)"
+extends = "core"
+apps = [
+    "agent",
+    "app-analytics",
+    "assistant",
+    "billing",
+    "boards",
+    "bookme",
+    "braindump",
+    "calendar",
+    "codoc",
+    "commons",
+    "company",
+    "conversation-ingest",
+    "countdown",
+    "daily-brief",
+    "designer",
+    "dictation",
+    "expense",
+    "focus",
+    "forge",
+    "garden",
+    "geocode",
+    "git",
+    "github-connector",
+    "hands-free",
+    "journal",
+    "kb",
+    "learn",
+    "library",
+    "life",
+    "markitup",
+    "music-library",
+    "notebook",
+    "people",
+    "portal",
+    "ppt",
+    "proactive",
+    "projects",
+    "publish",
+    "quotes",
+    "reactor",
+    "reader",
+    "replay",
+    "reports",
+    "requirements",
+    "rooms",
+    "routing",
+    "runbook",
+    "scroll",
+    "sheet",
+    "tour",
+    "trust-loop",
+    "vault-graph",
+    "video-digest",
+    "viz",
+    "vlog",
+    "voice-assistant",
+    "worklog",
+    "worklog-capture",
+    "workspaces",
+    "writing-editor",
+]
+# A plugin NOT listed in a tier is deleted from that tier's snapshot
+# (`release_filter.prune_snapshot`), so this list is "what ships", not "what
+# runs" — the Store is what decides enablement per user. A fresh install seeds
+# every plugin here installed AND on, except those whose manifest says
+# `[plugin] default_enabled = false` (installed but off: voice-api,
+# dogfood-demo, global-hotkey, system-tray — each starts a process or hooks
+# the OS at boot). Nine were added 2026-09-20
+# after `check_tier_plugin_reach.py` found public-tier apps naming plugins the
+# public snapshot dropped: `rooms`/`forge` declare `agent-runtime` as a
+# REQUIRED service and `viz` declares `manim` in `[requires].plugins`, so those
+# features were dead in every public install while the manifests said otherwise.
+plugins = [
+    "agent-runtime",     # rooms + forge [requires].services; viz's iterate loop
+    "applio",
+    "blender",
+    "command-launcher",  # a consumer of `global-hotkey`, which already shipped
+                         # (operate is the other, and macro-studio carries it)
+    "comfyui",
+    "dogfood-demo",
+    "edge-tts",
+    "email-smtp",
+    "footage",           # the `footage` capability's stock-video providers; dark until a key is set (editions M8)
+    "global-hotkey",
+    "legacy-doc",        # read enhancer (DOC/RTF/WPS/PPT/ODF) — injected, so no app names it
+    "manim",             # viz [requires].plugins
+    "markitdown",        # reader's document import
+    "meeting-capture",   # braindump
+    "obsidian",
+    "ocr",               # reader + worklog-capture
+    "ollama",
+    "openai-image",
+    "playwright",
+    "system-tray",
+    "tailscale",         # hub's tailnet panel
+    "telegram",
+    "translate",         # voice-assistant [requires].capabilities; the local NLLB path
+    "voice-api",
+    "webcam",
+]
+skills = [
+    "eos-ai-conversation-ingest",
+    "vault-cleanup-studio",
+    "vault-journal-planner",
+    "vault-knowledge-synthesis",
+    "vault-link-index",
+    "vault-moc-manager",
+    "vault-note-factory",
+    "vault-obsidian-format",
+    "vault-semantic-search",
+    "vault-task-aggregator",
+    "dev-app-optimizer",
+    "eos-new-app",
+    "dev-project-builder",
+    "tool-pdf-reader",
+    "tool-chm-reader",
+    "tool-mdb-reader",
+    "tool-word-document",
+    "tool-google-maps",
+    "tool-comfyui-image",
+]
+
+[tiers.englishos]
+product_line = "englishos"
+kind = "distribution"
+delivery = "targets.public (the public snapshot carries every PUBLIC_TIERS tier)"
+display_name = "EnglishOS"
+audience = "English learners"
+description = "Open English-learning edition — dictionary lookup with local suggestions, and sound-by-sound listening drills. Extends standard."
+extends = "standard"
+apps = [
+    "dictionary",
+    "soundcheck",
+]
+# `pronounce` (per-phone scoring) ships as an OPTIONAL add-on (editions-build
+# A2). It is the only provider of the `pronounce` capability — the kernel
+# registers that chain deliberately empty (no human fallback: a human cannot
+# score per-phone accuracy by ear). Its manifest says `default_enabled = false`,
+# so a fresh install seeds it installed but off: no scoring service starts
+# until the learner turns it on in the Store (A1; demo mode loads every plugin
+# regardless). Switched on, it starts the local service at boot; scoring also
+# needs services/pronounce/requirements.txt (torch etc., not a core dep — the
+# capability reports unavailable and names them until installed), and the
+# first score then downloads the ~1.2 GB model unless `warmup_on_boot = true`
+# fetched it earlier. Off, the dictionary scores whole-word accuracy instead.
+plugins = ["pronounce"]
+skills = []
+
+# ── Release targets ───────────────────────────────────────────
+# Declarative bindings consumed by `scripts/release.py <target>`. Each target
+# pairs a tier with a destination repo + the gates/transform to apply. This is
+# the single source of truth for "where does each daemon deployment come from".
+#
+#   tier            — which release.toml tier defines the app/plugin set
+#   repo            — destination git repo (owner/name)
+#   visibility      — public | private  (informational + safety intent)
+#   strip_personal  — run check-personal.py, ABORT on any match (public only)
+#   strip_branding  — run check-branding.py, ABORT on any match
+#   include         — "code" | "code+portfolio" (bundle the portfolio/ dir)
+#   snapshot        — "head" (git archive HEAD, tracked only)
+#                   | "worktree" (copy working tree — captures untracked/WIP)
+#   deploy          — how the VPS goes live (documentation; see docs/PUBLISHING.md)
+
+[targets.public]
+# Documentation only: release.py hands `public` to release-public.py, which
+# ships every PUBLIC_TIERS tier (emptyos/sdk/release_tiers.py). `englishos`
+# extends standard extends core, so it names exactly that union.
+tier = "englishos"
+repo = "KevinBean/emptyos"
+visibility = "public"
+strip_personal = true
+strip_branding = true
+include = "code"
+snapshot = "head"
+deploy = "vps:git-reset+rebuild (demo.binbian.net)"
+
+# EmptyOS Desktop — the double-clickable Windows program (products/desktop-windows/).
+# Not a repo snapshot like the targets above: the tier tree is frozen by
+# PyInstaller into an exe and shipped as a zip on GitHub Releases.
+#
+# Releases must land on the PUBLIC repo. Assets on a private repo are not
+# anonymously downloadable, and a pilot user has no token — so the update feed
+# would 404 for exactly the people it exists for.
+[targets.desktop]
+tier = "standard"
+repo = "KevinBean/emptyos"
+visibility = "public"
+strip_personal = true
+strip_branding = true
+include = "code"
+snapshot = "head"
+deploy = "github-releases (zip + latest-emptyos-desktop.json)"
+
+# ── Always included (platform layer) ─────────────────────────
+
+[include]
+paths = [
+    "emptyos/",
+    "engines/",  # pure compute libs; copied whole, then pruned to what the build uses (M13, package-release.py prune_build; engines/personal/ excluded below)
+    "emptyos.example.toml",
+    "englishos-cloud/",
+    "pyproject.toml",
+    "release.toml",
+    "suites.toml",
+    ".eos-personal",
+    ".eos-branding",
+    ".gitignore",
+    ".github/",
+    "scripts/check-personal.py",
+    "scripts/check-branding.py",
+    "scripts/restart_health_check.py",
+    "restart.bat",
+    "service.bat",
+    "tests/",
+    "docs/DESIGN.md",
+    "docs/APPS.md",
+    "docs/TIERS.md",
+    "docs/DOC-SYSTEM.md",
+    "docs/README.md",
+    "docs/GETTING-STARTED.md",
+    "docs/APP-DEVELOPMENT.md",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+]
+
+# ── Never included ────────────────────────────────────────────
+
+[exclude]
+patterns = [
+    "apps/personal/",
+    "engines/personal/",
+    "data/",
+    "emptyos.toml",
+    ".claude/vault-connection.json",
+    ".claude/settings.local.json",
+    "boot.vbs",
+    "registry.json",
+    "emptyos_test.log",
+    "*.pyc",
+    "__pycache__/",
+    ".claude/skills/",
+]

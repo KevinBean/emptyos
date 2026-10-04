@@ -1,0 +1,30 @@
+[app]
+id = "link"
+store_category = "core"
+name = "Link Manager"
+version = "1.0.0"
+description = "Find and manage connections between notes"
+
+[app.entry]
+module = "app"
+class = "LinkApp"
+
+[provides.cli]
+commands = ["link"]
+
+[provides.web]
+prefix = "/link"
+
+[provides.events]
+emits = ["link:scan_completed"]
+# The link index is cached; this is how it stays correct. Declared so the
+# topology graph shows the edge — an undeclared listen is invisible to
+# /api/topology and to every audit that reads it.
+listens = ["vault:changed"]
+
+[requires]
+# `search` is no longer used: backlinks went through the fuzzy search capability
+# and now reads the index instead, which is the point of the rewrite.
+capabilities = ["read", "think"]
+services = []
+events = []

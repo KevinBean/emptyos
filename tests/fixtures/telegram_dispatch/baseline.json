@@ -1,0 +1,1795 @@
+{
+ "run_date": "2026-09-30",
+ "source": "http://127.0.0.1:9000",
+ "target": "http://127.0.0.1:9002",
+ "think": "claude-cli",
+ "agent_prompt_chars": 874,
+ "offered_verbs": [
+  "audio-course.voice_next",
+  "audio-course.voice_progress",
+  "braindump.voice_start_session",
+  "calendar.voice_today_agenda",
+  "countdown.voice_add",
+  "countdown.voice_list",
+  "dictionary.voice_picture_due",
+  "dictionary.voice_picture_lookup",
+  "expense.voice_add_expense",
+  "expense.voice_month_summary",
+  "focus.voice_complete_focus",
+  "focus.voice_start_focus",
+  "focus.voice_suggest_task",
+  "improv.voice_start_scene",
+  "journal.voice_add_entry",
+  "journal.voice_log_activity",
+  "journal.voice_today_summary",
+  "kb.voice_guideline_random",
+  "kb.voice_guideline_show",
+  "kb.voice_kb_search",
+  "library.voice_search",
+  "people.voice_delegate",
+  "people.voice_log_interaction",
+  "people.voice_lookup",
+  "phrase-bank.voice_start_drill",
+  "promote.voice_promote_status",
+  "quick-action.voice_capture",
+  "radio.voice_play",
+  "radio.voice_skip",
+  "reader.voice_open",
+  "reader.voice_read_aloud",
+  "reminders.voice_add_reminder",
+  "reminders.voice_upcoming",
+  "rooms.voice_list_rooms",
+  "rooms.voice_open_room",
+  "search.voice_search",
+  "soundcheck.voice_progress",
+  "soundcheck.voice_start",
+  "soundcheck.voice_weak",
+  "task.note",
+  "task.voice_add_task",
+  "task.voice_list_due",
+  "task.voice_list_recent",
+  "task.voice_list_today",
+  "video-digest.voice_queue_video",
+  "weather.voice_now",
+  "worklog-capture.voice_capture_now",
+  "worklog.voice_log_work",
+  "worklog.voice_set_plan",
+  "worklog.voice_set_status",
+  "worklog.voice_set_update"
+ ],
+ "notes": {
+  "t06": "Harness noise: the reply is an unrelated Claude Code message about a repo file (user-global hook inherited by the claude-cli child); the task token was lost. Two re-runs the same day both emitted task.voice_add_task due 2026-10-01 (correct).",
+  "t07": "Same harness noise in the recorded reply. Two re-runs emitted expense.voice_month_summary and said there is no invoice-organising verb, so the miss is real.",
+  "replies": "Replies in this first run were truncated to 400 chars; later runs store them whole."
+ },
+ "summary": {
+  "_all": {
+   "n": 58,
+   "verb_ok": 50,
+   "args_ok": 49,
+   "unparsed": 5,
+   "broken_extra": 1
+  },
+  "capture": {
+   "n": 4,
+   "verb_ok": 4,
+   "args_ok": 4,
+   "unparsed": 0,
+   "broken_extra": 0
+  },
+  "chat": {
+   "n": 6,
+   "verb_ok": 6,
+   "args_ok": 6,
+   "unparsed": 0,
+   "broken_extra": 0
+  },
+  "expense": {
+   "n": 8,
+   "verb_ok": 8,
+   "args_ok": 8,
+   "unparsed": 0,
+   "broken_extra": 0
+  },
+  "focus": {
+   "n": 4,
+   "verb_ok": 3,
+   "args_ok": 3,
+   "unparsed": 1,
+   "broken_extra": 0
+  },
+  "journal": {
+   "n": 6,
+   "verb_ok": 6,
+   "args_ok": 6,
+   "unparsed": 0,
+   "broken_extra": 0
+  },
+  "query": {
+   "n": 8,
+   "verb_ok": 6,
+   "args_ok": 6,
+   "unparsed": 2,
+   "broken_extra": 1
+  },
+  "reminder": {
+   "n": 7,
+   "verb_ok": 7,
+   "args_ok": 6,
+   "unparsed": 0,
+   "broken_extra": 0
+  },
+  "task": {
+   "n": 8,
+   "verb_ok": 6,
+   "args_ok": 6,
+   "unparsed": 0,
+   "broken_extra": 0
+  },
+  "weather": {
+   "n": 2,
+   "verb_ok": 0,
+   "args_ok": 0,
+   "unparsed": 2,
+   "broken_extra": 0
+  },
+  "word": {
+   "n": 5,
+   "verb_ok": 4,
+   "args_ok": 4,
+   "unparsed": 0,
+   "broken_extra": 0
+  }
+ },
+ "cases": [
+  {
+   "id": "e01",
+   "category": "expense",
+   "lang": "zh",
+   "text": "午饭 45",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 45,
+      "description": "午饭",
+      "category": "food"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "记一笔午饭 45 元，点 Apply 后才会保存。",
+   "error": "",
+   "seconds": 7.5,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e02",
+   "category": "expense",
+   "lang": "zh",
+   "text": "打车回家 23.5",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 23.5,
+      "description": "打车回家",
+      "category": "transport"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "记下打车回家 23.5 的支出，分类为交通。点 Apply 后才会保存。",
+   "error": "",
+   "seconds": 7.3,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e03",
+   "category": "expense",
+   "lang": "en",
+   "text": "coffee 5.80",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 5.8,
+      "description": "coffee",
+      "category": "food"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "I'll log $5.80 for coffee.",
+   "error": "",
+   "seconds": 7.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e04",
+   "category": "expense",
+   "lang": "en",
+   "text": "spent 120 on groceries",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 120,
+      "description": "Groceries",
+      "category": "groceries"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Logging $120 on groceries, pending your Apply.",
+   "error": "",
+   "seconds": 13.4,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e05",
+   "category": "expense",
+   "lang": "zh",
+   "text": "超市买菜花了86块",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 86,
+      "description": "超市买菜",
+      "category": "groceries"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "记一笔超市买菜 86 元，点“应用”保存。",
+   "error": "",
+   "seconds": 8.0,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e06",
+   "category": "expense",
+   "lang": "en",
+   "text": "Uber home $32",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 32,
+      "description": "Uber home",
+      "category": "transport"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Logged your $32 Uber ride home as a transport expense. It won't save until you tap Apply on the card.",
+   "error": "",
+   "seconds": 8.2,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e07",
+   "category": "expense",
+   "lang": "zh",
+   "text": "交了房租 650",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 650,
+      "description": "房租",
+      "category": "housing"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "记下了：房租 650，要确认的话点 Apply。",
+   "error": "",
+   "seconds": 9.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "e08",
+   "category": "expense",
+   "lang": "en",
+   "text": "paid 49.99 for the phone plan",
+   "actions": [
+    {
+     "verb": "expense.voice_add_expense",
+     "args": {
+      "amount": 49.99,
+      "description": "Phone plan",
+      "category": "utilities"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Logging $49.99 for the phone plan.  Tap Apply to save it.",
+   "error": "",
+   "seconds": 9.0,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_add_expense",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_add_expense"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t01",
+   "category": "task",
+   "lang": "zh",
+   "text": "明天下午三点交报告",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "交报告",
+      "due": "2026-10-01",
+      "time": "15:00"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，明天（10月1日）下午3点提醒你交报告。点 Apply 后生效。",
+   "error": "",
+   "seconds": 12.3,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t02",
+   "category": "task",
+   "lang": "en",
+   "text": "add a task to renew the car rego by Friday",
+   "actions": [
+    {
+     "verb": "task.voice_add_task",
+     "args": {
+      "text": "Renew the car rego",
+      "due": "2026-10-02"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Here's a task to renew the car rego, due Friday 2 Oct. It'll be added once you tap Apply.",
+   "error": "",
+   "seconds": 9.5,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_add_task",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_add_task"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t03",
+   "category": "task",
+   "lang": "zh",
+   "text": "记得给客户发报价",
+   "actions": [
+    {
+     "verb": "task.voice_add_task",
+     "args": {
+      "text": "给客户发报价"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好，我加了一个待办提醒你给客户发报价。我这里没法直接替你发报价，得你自己发。\n\n\n\n要设截止时间或者写上客户名字的话，告诉我就行。",
+   "error": "",
+   "seconds": 19.5,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_add_task",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_add_task"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t04",
+   "category": "task",
+   "lang": "en",
+   "text": "todo book a dentist appointment",
+   "actions": [
+    {
+     "verb": "task.voice_add_task",
+     "args": {
+      "text": "Book a dentist appointment"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Added \"Book a dentist appointment\" to your tasks.",
+   "error": "",
+   "seconds": 9.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_add_task",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_add_task"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t05",
+   "category": "task",
+   "lang": "zh",
+   "text": "下周一之前把电缆计算复核完",
+   "actions": [
+    {
+     "verb": "task.voice_add_task",
+     "args": {
+      "text": "复核电缆计算",
+      "due": "2026-10-05"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，已加一条任务，截止下周一（10月5日），点 Apply 生效。",
+   "error": "",
+   "seconds": 10.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_add_task",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_add_task"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t06",
+   "category": "task",
+   "lang": "en",
+   "text": "call the landlord about the leak tomorrow",
+   "actions": [],
+   "reply": "The security flag is about a code file that already had unsaved changes before this chat started. Nothing I did here touched it, so I've left it alone. It deserves a look in a dev session: those changes remove the check that limits non-operator users to the \"chat\" profile.\n\nThe landlord task card from before is still waiting for you to tap Apply.",
+   "error": "",
+   "seconds": 25.0,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t07",
+   "category": "task",
+   "lang": "zh",
+   "text": "整理一下这个月的发票",
+   "actions": [],
+   "reply": "That security warning is about `apps/public/standard/rooms/participants.py`, and I didn't touch that file in this conversation. It was already modified before we started, most likely by another session or by you, so I've left it alone. The warning says the change removes a check that blocks CLI participants in the user-facing edition, so please look at it before committing.\n\nYour invoice request i",
+   "error": "",
+   "seconds": 28.5,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "t08",
+   "category": "task",
+   "lang": "en",
+   "text": "need to finish the quarterly report by next Wednesday",
+   "actions": [
+    {
+     "verb": "task.voice_add_task",
+     "args": {
+      "text": "Finish the quarterly report",
+      "due": "2026-10-07"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "I've added it as a task due next Wednesday, 7 October. Tap Apply to save it.",
+   "error": "",
+   "seconds": 10.2,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_add_task",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_add_task"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r01",
+   "category": "reminder",
+   "lang": "zh",
+   "text": "提醒我晚上八点吃药",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "吃药",
+      "due": "2026-09-30",
+      "time": "20:00"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，今晚八点提醒你吃药，点 Apply 就会设置好。",
+   "error": "",
+   "seconds": 9.4,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r02",
+   "category": "reminder",
+   "lang": "en",
+   "text": "remind me at 9am tomorrow to pay the gas bill",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "Pay the gas bill",
+      "due": "2026-10-01",
+      "time": "09:00"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "I've set a reminder to pay the gas bill at 9am tomorrow (1 Oct). It will be saved once you tap Apply.",
+   "error": "",
+   "seconds": 9.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r03",
+   "category": "reminder",
+   "lang": "zh",
+   "text": "明早七点提醒我带伞",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "带伞",
+      "due": "2026-10-01",
+      "time": "07:00"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，明早七点提醒你带伞，点 Apply 就会生效。",
+   "error": "",
+   "seconds": 9.6,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r04",
+   "category": "reminder",
+   "lang": "en",
+   "text": "remind me on Friday to water the plants",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "Water the plants",
+      "due": "2026-10-02"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "I've set a reminder for Friday, 2 October, to water the plants. It will only be added once you tap Apply on the card.",
+   "error": "",
+   "seconds": 9.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r05",
+   "category": "reminder",
+   "lang": "zh",
+   "text": "提醒我下周三交水费",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "交水费",
+      "due": "2026-10-07"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，下周三（10月7日）提醒你交水费，点 Apply 确认。",
+   "error": "",
+   "seconds": 10.0,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r06",
+   "category": "reminder",
+   "lang": "en",
+   "text": "remind me tonight to take the bins out",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "Take the bins out",
+      "due": "2026-09-30",
+      "time": "20:00"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Here's a reminder for tonight at 8pm. You can change the time before you tap Apply.",
+   "error": "",
+   "seconds": 10.3,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "r07",
+   "category": "reminder",
+   "lang": "zh",
+   "text": "半小时后提醒我关火",
+   "actions": [
+    {
+     "verb": "reminders.voice_add_reminder",
+     "args": {
+      "text": "关火",
+      "due": "in 30 minutes"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，30分钟后提醒你关火，点 Apply 后生效。",
+   "error": "",
+   "seconds": 11.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": false,
+    "bad_args": [
+     "due"
+    ],
+    "matched": "reminders.voice_add_reminder",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "reminders.voice_add_reminder"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "j01",
+   "category": "journal",
+   "lang": "zh",
+   "text": "今天心情不错 跑了五公里",
+   "actions": [
+    {
+     "verb": "journal.voice_add_entry",
+     "args": {
+      "text": "今天心情不错，跑了五公里",
+      "mood": "good"
+     },
+     "status": "pending"
+    },
+    {
+     "verb": "journal.voice_log_activity",
+     "args": {
+      "activity": "跑步5公里",
+      "dimension": "physical"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "跑了五公里，真不错！我帮你记下来了：",
+   "error": "",
+   "seconds": 11.4,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "journal.voice_add_entry",
+    "extra": 1,
+    "broken_extra": 0,
+    "emitted": [
+     "journal.voice_add_entry",
+     "journal.voice_log_activity"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "j02",
+   "category": "journal",
+   "lang": "en",
+   "text": "feeling tired today slept badly",
+   "actions": [
+    {
+     "verb": "journal.voice_add_entry",
+     "args": {
+      "text": "Feeling tired today, slept badly.",
+      "mood": "low"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Sorry you slept badly. Go easy today: stick to one or two must-dos, get some daylight, and keep caffeine to the morning so tonight goes better. I've drafted a journal note, so tap Apply if you want it logged.",
+   "error": "",
+   "seconds": 12.4,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "journal.voice_add_entry",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "journal.voice_add_entry"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "j03",
+   "category": "journal",
+   "lang": "zh",
+   "text": "记一下 今天和老板谈了加薪",
+   "actions": [
+    {
+     "verb": "journal.voice_add_entry",
+     "args": {
+      "text": "今天和老板谈了加薪。"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，已记到今天的日记里，点 Apply 就会保存。",
+   "error": "",
+   "seconds": 9.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "journal.voice_add_entry",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "journal.voice_add_entry"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "j04",
+   "category": "journal",
+   "lang": "en",
+   "text": "journal finally fixed the bug that haunted me all week",
+   "actions": [
+    {
+     "verb": "journal.voice_add_entry",
+     "args": {
+      "text": "Finally fixed the bug that haunted me all week.",
+      "mood": "good"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Nice, a week-long bug finally giving way is a real relief. I've put it in your journal; tap Apply to save it.",
+   "error": "",
+   "seconds": 10.5,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "journal.voice_add_entry",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "journal.voice_add_entry"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "j05",
+   "category": "journal",
+   "lang": "zh",
+   "text": "今天读了半小时书",
+   "actions": [
+    {
+     "verb": "journal.voice_log_activity",
+     "args": {
+      "activity": "读书半小时",
+      "dimension": "intellectual"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "不错，读了半小时书。点下面的卡片就能记进今天的日志：",
+   "error": "",
+   "seconds": 8.6,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "journal.voice_log_activity",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "journal.voice_log_activity"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "j06",
+   "category": "journal",
+   "lang": "en",
+   "text": "had dinner with friends tonight really nice",
+   "actions": [
+    {
+     "verb": "journal.voice_add_entry",
+     "args": {
+      "text": "Had dinner with friends tonight, really nice.",
+      "mood": "good"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "That sounds lovely, I'm glad you had a good night with your friends. I've drafted a journal entry for you to approve.",
+   "error": "",
+   "seconds": 10.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "journal.voice_add_entry",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "journal.voice_add_entry"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "w01",
+   "category": "word",
+   "lang": "en",
+   "text": "what does ubiquitous mean",
+   "actions": [],
+   "reply": "Ubiquitous means present or found everywhere, or seeming to be. For example: \"Smartphones have become ubiquitous in modern life.\"\n\nIt comes from the Latin \"ubique,\" meaning \"everywhere.\" The noun is ubiquity.",
+   "error": "",
+   "seconds": 9.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "w02",
+   "category": "word",
+   "lang": "zh",
+   "text": "ephemeral 是什么意思",
+   "actions": [],
+   "reply": "ephemeral 的意思是“短暂的、转瞬即逝的”，指只存在很短时间的东西，比如 ephemeral beauty（稍纵即逝的美）。\n\n在技术语境里，它指“临时的、用完即弃的”，比如 ephemeral port（系统临时分配的端口）或 ephemeral container（用完就销毁、不保留数据的容器）。\n\n读音 /ɪˈfem(ə)rəl/。",
+   "error": "",
+   "seconds": 10.3,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "w03",
+   "category": "word",
+   "lang": "zh",
+   "text": "查一下 serendipity",
+   "actions": [
+    {
+     "verb": "search.voice_search",
+     "args": {
+      "query": "serendipity"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "serendipity 意思是“意外发现美好事物的运气”，指不经意间碰到的好运或惊喜。我也帮你在笔记里搜一下：",
+   "error": "",
+   "seconds": 11.3,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 1,
+    "broken_extra": 0,
+    "emitted": [
+     "search.voice_search"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "w04",
+   "category": "word",
+   "lang": "en",
+   "text": "define mitigate",
+   "actions": [],
+   "reply": "Mitigate means to make something bad less severe, serious, or painful. For example, \"Engineers added surge arresters to mitigate lightning damage.\" Common related words are \"reduce\", \"lessen\", and \"alleviate\", and the noun form is \"mitigation\".",
+   "error": "",
+   "seconds": 10.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "w05",
+   "category": "word",
+   "lang": "en",
+   "text": "how do you pronounce quay",
+   "actions": [],
+   "reply": "\"Quay\" is pronounced \"key\" (/kiː/), so it sounds the same as the key you open a door with. Circular Quay in Sydney is said \"Circular Key\", and the same goes for Darling Harbour's King Street Wharf area and other quays.",
+   "error": "",
+   "seconds": 10.5,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "q01",
+   "category": "query",
+   "lang": "zh",
+   "text": "今天有什么安排",
+   "actions": [
+    {
+     "verb": "calendar.voice_today_agenda",
+     "args": {
+      "day": "today"
+     },
+     "status": "pending"
+    },
+    {
+     "verb": "task.voice_list_today",
+     "args": {},
+     "status": "pending"
+    }
+   ],
+   "reply": "我去查一下今天的日程和待办。",
+   "error": "",
+   "seconds": 9.6,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_list_today",
+    "extra": 1,
+    "broken_extra": 1,
+    "emitted": [
+     "calendar.voice_today_agenda",
+     "task.voice_list_today"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "q02",
+   "category": "query",
+   "lang": "en",
+   "text": "what's due this week",
+   "actions": [
+    {
+     "verb": "task.voice_list_due",
+     "args": {
+      "when": "week",
+      "limit": 10
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "I'll pull up everything due this week.  Tap Apply to see the list.",
+   "error": "",
+   "seconds": 9.4,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_list_due",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_list_due"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "q03",
+   "category": "query",
+   "lang": "zh",
+   "text": "明天有什么事",
+   "actions": [
+    {
+     "verb": "calendar.voice_today_agenda",
+     "args": {
+      "day": "2026-10-01"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "这是明天的日程：\n\n需要的话，我也可以帮你查明天的待办和提醒。",
+   "error": "",
+   "seconds": 17.2,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "calendar.voice_today_agenda",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "calendar.voice_today_agenda"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "q04",
+   "category": "query",
+   "lang": "en",
+   "text": "any deadlines coming up",
+   "actions": [
+    {
+     "verb": "task.voice_list_due",
+     "args": {
+      "when": "week",
+      "limit": 5
+     },
+     "status": "pending"
+    },
+    {
+     "verb": "reminders.voice_upcoming",
+     "args": {},
+     "status": "pending"
+    },
+    {
+     "verb": "countdown.voice_list",
+     "args": {},
+     "status": "pending"
+    }
+   ],
+   "reply": "I'll pull your upcoming deadlines from tasks, reminders and countdowns. Tap Apply on each card to see the results.",
+   "error": "",
+   "seconds": 14.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_list_due",
+    "extra": 2,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_list_due",
+     "reminders.voice_upcoming",
+     "countdown.voice_list"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "q05",
+   "category": "query",
+   "lang": "en",
+   "text": "what reminders do I have",
+   "actions": [],
+   "reply": "Checking your upcoming reminders now. [DO:reminders.voice_upcoming()]",
+   "error": "",
+   "seconds": 9.2,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": [
+    "reminders.voice_upcoming"
+   ]
+  },
+  {
+   "id": "q06",
+   "category": "query",
+   "lang": "zh",
+   "text": "这个月花了多少钱",
+   "actions": [
+    {
+     "verb": "expense.voice_month_summary",
+     "args": {
+      "month": "2026-09"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "我来查一下这个月的支出汇总，点 Apply 后显示结果。",
+   "error": "",
+   "seconds": 9.8,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "expense.voice_month_summary",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "expense.voice_month_summary"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "q07",
+   "category": "query",
+   "lang": "en",
+   "text": "what did I do today",
+   "actions": [],
+   "reply": "I'll pull today's journal summary for you. [DO:journal.voice_today_summary()]",
+   "error": "",
+   "seconds": 8.4,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": [
+    "journal.voice_today_summary"
+   ]
+  },
+  {
+   "id": "q08",
+   "category": "query",
+   "lang": "zh",
+   "text": "有什么过期没做的",
+   "actions": [
+    {
+     "verb": "task.voice_list_due",
+     "args": {
+      "when": "overdue",
+      "limit": 5
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "我来查一下你过期还没完成的任务：\n\n点 Apply 后会列出最多 5 条。",
+   "error": "",
+   "seconds": 10.2,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "task.voice_list_due",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "task.voice_list_due"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "f01",
+   "category": "focus",
+   "lang": "zh",
+   "text": "开始专注25分钟",
+   "actions": [
+    {
+     "verb": "focus.voice_start_focus",
+     "args": {
+      "minutes": 25
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好的，已准备开始25分钟专注，点 Apply 就开始计时。",
+   "error": "",
+   "seconds": 9.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "focus.voice_start_focus",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "focus.voice_start_focus"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "f02",
+   "category": "focus",
+   "lang": "en",
+   "text": "start a 50 minute focus session",
+   "actions": [
+    {
+     "verb": "focus.voice_start_focus",
+     "args": {
+      "minutes": 50
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Your 50-minute focus session will start once you tap Apply.",
+   "error": "",
+   "seconds": 9.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "focus.voice_start_focus",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "focus.voice_start_focus"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "f03",
+   "category": "focus",
+   "lang": "en",
+   "text": "what should I work on next",
+   "actions": [],
+   "reply": "I'll pull a suggestion from your focus list. Tap Apply to see it. [DO:focus.voice_suggest_task()]",
+   "error": "",
+   "seconds": 10.3,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": [
+    "focus.voice_suggest_task"
+   ]
+  },
+  {
+   "id": "f04",
+   "category": "focus",
+   "lang": "zh",
+   "text": "专注结束了 写完了幻灯片",
+   "actions": [
+    {
+     "verb": "focus.voice_complete_focus",
+     "args": {
+      "task": "写幻灯片"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "辛苦了，幻灯片写完了！我帮你把这次专注记为完成：\n\n点 Apply 就会记下来。",
+   "error": "",
+   "seconds": 10.0,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "focus.voice_complete_focus",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "focus.voice_complete_focus"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "c01",
+   "category": "chat",
+   "lang": "en",
+   "text": "how are you doing",
+   "actions": [],
+   "reply": "Doing well, thanks for asking! How about you? I can help with tasks, reminders, journaling or anything else.",
+   "error": "",
+   "seconds": 9.8,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "c02",
+   "category": "chat",
+   "lang": "zh",
+   "text": "帮我想想周末可以去哪玩",
+   "actions": [],
+   "reply": "悉尼这个时候是春天，周末有几个不错的选择：可以走 Bondi 到 Coogee 的海岸步道，去 Blue Mountains 徒步看山景，或者坐渡轮去 Manly 吃个午饭再逛逛海滩。想悠闲一点，Royal Botanic Garden 这时候花开得正好，也可以去 Hunter Valley 住一晚品酒。你想要户外运动、轻松散心，还是出城过夜？告诉我，我帮你再缩小一下范围。",
+   "error": "",
+   "seconds": 18.7,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "c03",
+   "category": "chat",
+   "lang": "en",
+   "text": "what's the capital of Peru",
+   "actions": [],
+   "reply": "The capital of Peru is Lima.",
+   "error": "",
+   "seconds": 15.6,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "c04",
+   "category": "chat",
+   "lang": "zh",
+   "text": "谢谢",
+   "actions": [],
+   "reply": "不客气！还需要什么随时说。",
+   "error": "",
+   "seconds": 9.4,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "c05",
+   "category": "chat",
+   "lang": "en",
+   "text": "hmm never mind",
+   "actions": [],
+   "reply": "No problem, nothing was changed. Just message me if you need anything.",
+   "error": "",
+   "seconds": 8.5,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "c06",
+   "category": "chat",
+   "lang": "zh",
+   "text": "怎么写一封请假邮件比较礼貌",
+   "actions": [],
+   "reply": "礼貌的请假邮件要简短清楚：写明请假日期和原因，说明工作怎么交接，最后致谢。\n\n模板：\n主题：请假申请 – 姓名 – 10月8日至10月9日\nX经理您好，因个人事务，我想申请10月8日至9日请假两天。手头的工作我会在请假前处理好，紧急事项请联系同事XX，我也会留意手机。恳请批准，谢谢！\n姓名\n\n需要的话，我可以按你的具体情况改一版。",
+   "error": "",
+   "seconds": 11.1,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "k01",
+   "category": "capture",
+   "lang": "en",
+   "text": "idea a KB note collecting EMF case studies",
+   "actions": [
+    {
+     "verb": "quick-action.voice_capture",
+     "args": {
+      "text": "Idea: a KB note collecting EMF case studies"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Saving that idea to your inbox so you can build the note later.",
+   "error": "",
+   "seconds": 10.0,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "quick-action.voice_capture",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "quick-action.voice_capture"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "k02",
+   "category": "capture",
+   "lang": "zh",
+   "text": "突然想到可以做一期播客讲电缆",
+   "actions": [
+    {
+     "verb": "quick-action.voice_capture",
+     "args": {
+      "text": "播客选题：做一期讲电缆的节目"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "好主意，讲电缆正好是你的本行。我先把这个想法存进收件箱，之后再慢慢展开。",
+   "error": "",
+   "seconds": 9.8,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "quick-action.voice_capture",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "quick-action.voice_capture"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "k03",
+   "category": "capture",
+   "lang": "en",
+   "text": "note to self double check the cable report numbers",
+   "actions": [
+    {
+     "verb": "quick-action.voice_capture",
+     "args": {
+      "text": "Double check the cable report numbers"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "Captured as a note to self:",
+   "error": "",
+   "seconds": 25.6,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "quick-action.voice_capture",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "quick-action.voice_capture"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "k04",
+   "category": "capture",
+   "lang": "zh",
+   "text": "灵感 用Telegram做每日回顾",
+   "actions": [
+    {
+     "verb": "quick-action.voice_capture",
+     "args": {
+      "text": "灵感：用Telegram做每日回顾"
+     },
+     "status": "pending"
+    }
+   ],
+   "reply": "我先把这个想法存进收件箱，你点 Apply 后才会真正保存。",
+   "error": "",
+   "seconds": 27.6,
+   "score": {
+    "verb_ok": true,
+    "args_ok": true,
+    "bad_args": [],
+    "matched": "quick-action.voice_capture",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": [
+     "quick-action.voice_capture"
+    ]
+   },
+   "unparsed_do": []
+  },
+  {
+   "id": "x01",
+   "category": "weather",
+   "lang": "zh",
+   "text": "今天会下雨吗",
+   "actions": [],
+   "reply": "我来查一下当前天气，在手机上点\"应用\"就能看到结果。[DO:weather.voice_now()]",
+   "error": "",
+   "seconds": 9.3,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": [
+    "weather.voice_now"
+   ]
+  },
+  {
+   "id": "x02",
+   "category": "weather",
+   "lang": "en",
+   "text": "what's the weather like",
+   "actions": [],
+   "reply": "Checking the current weather now. [DO:weather.voice_now()]",
+   "error": "",
+   "seconds": 9.4,
+   "score": {
+    "verb_ok": false,
+    "args_ok": false,
+    "bad_args": [],
+    "matched": "",
+    "extra": 0,
+    "broken_extra": 0,
+    "emitted": []
+   },
+   "unparsed_do": [
+    "weather.voice_now"
+   ]
+  }
+ ]
+}

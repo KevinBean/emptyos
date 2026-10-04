@@ -1,0 +1,140 @@
+[app]
+id = "worklog"
+icon_id = "worklog"
+store_category = "productivity"
+name = "Work Log"
+version = "1.0.0"
+description = "Professional work-activity log — project-grouped, status-tagged daily entries"
+icon = "🗂️"
+dimensions = ["occupational"]
+user_intent = [
+    "log what I did at work today",
+    "what have I worked on this month",
+    "track my work by project",
+    "record a work update for the standup",
+]
+
+[app.entry]
+module = "app"
+class = "WorklogApp"
+
+[requires]
+capabilities = ["read", "write", "think"]
+apps = []
+optional_apps = ["projects", "worklog-capture"]
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["worklog"]
+
+[provides.web]
+prefix = "/worklog"
+
+[provides.export]
+enabled = true
+mode = "standalone"
+hook = "export"
+targets = ["single-html"]
+assets = ["minimal"]
+fallbacks = [
+    "vault:indexeddb",
+    "events:local-bus",
+    "call_app:stub",
+    "viewer:none",
+]
+
+[provides.events]
+emits = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported", "worklog:competency-tagged"]
+# Worklog IS the professional activity log (60_Worklogs) — a journal ripple
+# would duplicate its own record. UI-only, no cross-app listener by design.
+internal = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported", "worklog:competency-tagged"]
+
+[provides.settings]
+schema = [
+    {key = "worklog.default_employer", label = "Default employer", type = "text", default = "", hint = "Stamped on new day notes (e.g. your current employer)."},
+    {key = "worklog.default_status", label = "Default status", type = "select", options = ["in-progress", "todo", "next", "waiting", "review", "complete", "blocked"], default = "in-progress"},
+]
+
+[[contributes.hub.panel]]
+id = "worklog-active"
+method = "panel_active"
+renderer = "plain-list"
+title = "In progress at work"
+priority = 140
+
+[[contributes.hub.panel]]
+id = "worklog-blocked"
+method = "panel_blocked"
+renderer = "plain-list"
+title = "Blocked at work"
+priority = 145
+lazy = true
+
+# CPEng competency elements that can fail the Chartered application and still
+# carry no tagged evidence. Returns None once nothing is outstanding, so this
+# vanishes rather than becoming a permanent badge.
+[[contributes.hub.panel]]
+id = "worklog-competency"
+method = "panel_competency"
+renderer = "plain-list"
+title = "CPEng evidence still missing"
+priority = 148
+lazy = true
+
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "worklog-timeline"
+method = "timeline_items"
+
+# Kanban-by-status board over recent work items (.claude/rules/boards-as-view-layer.md)
+[[contributes.boards.preset]]
+id = "worklog-boards"
+method = "board_presets"
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+[[provides.verbs]]
+verb = "worklog.log_work"
+method = "voice_log_work"
+summary = "Log a work item under a project to today's worklog"
+args = { project = "string", text = "string", status = "string?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant"]
+voice = { example = "log work on CablePro: finished the OAuth login flow", description = "Record a work item under a project in today's work log", always = true }
+assistant = { slash = "/log", method = "log_work", arg = "text" }
+
+[[provides.verbs]]
+verb = "worklog.set_status"
+method = "voice_set_status"
+summary = "Mark a work item complete, blocked, in-progress, etc. (matches by item text)"
+args = { project = "string?", item_text = "string", status = "string?" }
+eligibility = "stable"
+surfaces = ["voice", "agent"]
+voice = { example = "mark the incomer review as complete", description = "Update a work item's status by matching its text (complete, blocked, in-progress, review, waiting, todo, next)", always = false }
+
+[[provides.verbs]]
+verb = "worklog.set_plan"
+method = "voice_set_plan"
+summary = "Write or replace today's Plan section"
+args = { text = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "set my plan to finish the cable spec today", description = "Write or replace today's Plan prose", always = false }
+
+[[provides.verbs]]
+verb = "worklog.set_update"
+method = "voice_set_update"
+summary = "Write or replace today's Update section (end-of-day note)"
+args = { text = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "record an update that the incomer review is done", description = "Write or replace today's Update prose", always = false }
+
+[[contributes.tour.step]]
+id = "worklog.log"
+group = "core"
+priority = 320
+route = "/worklog/"
+spotlight = "#wl-add-text"
+title = "Log your work, by project"
+body = "Capture what you did at work — grouped by project, tagged with a status (🔄 in progress, ✅ done, ⛔ blocked). Each day is a plain markdown file in <code>60_Worklogs/</code>, hand-editable and yours."

@@ -1,0 +1,81 @@
+[app]
+id = "daily-brief"
+name = "Daily Brief"
+version = "0.1.0"
+description = "A ruthlessly short morning brief — pulls a curated set of RSS/JSON feeds, distills them with AI, and files one note a day"
+store_category = "ai"
+dimensions = ["intellectual", "occupational"]
+user_intent = [
+    "give me my daily brief",
+    "what happened overnight",
+    "morning news digest",
+    "今天的简报",
+    "帮我整理今天的资讯",
+    "what's new in energy and tech today",
+]
+
+[app.entry]
+module = "app"
+class = "DailyBriefApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+apps = []
+# Soft integration — per-article "🔖 Save to read-later" hands off to bookmarks
+# via call_app("bookmarks", "save_link", ...). bookmarks is a personal app, so
+# absence is tolerated: the Save button feature-detects and hides when it's
+# not installed. The Digest action is owned in-app and always available.
+optional_apps = ["bookmarks", "task", "projects", "journal", "people"]
+services = []
+
+[provides.cli]
+commands = ["daily-brief"]
+
+[provides.web]
+prefix = "/daily-brief"
+
+[provides.events]
+emits = [
+    "daily-brief:generated",
+    "daily-brief:failed",
+    "daily-brief:digest_added",
+    "daily-brief:digest_compiled",
+    "daily-brief:source_added",
+]
+# daily-brief:generated has a real cross-app listener (opportunity-radar's
+# default trigger), so only failed stays internal.
+internal = [
+    "daily-brief:failed",
+    # Digest lifecycle observability — no cross-app listener by design (marked 2026-07-02).
+    "daily-brief:digest_added",
+    "daily-brief:digest_compiled",
+    # Source subscription events — no cross-app listener today.
+    "daily-brief:source_added",
+]
+
+[provides.settings]
+schema = [
+    {key = "daily-brief.enabled", label = "Run on a schedule", type = "boolean", default = false, hint = "Off by default — run manually from the UI first to see what it produces, then turn the schedule on."},
+    {key = "daily-brief.schedule_cron", label = "Schedule (cron, local time)", type = "text", default = "0 7 * * *", hint = "Default 07:00 daily. Uses the machine's local timezone."},
+    {key = "daily-brief.locale", label = "Brief language", type = "select", default = "zh", options = ["zh", "en"], hint = "Language the AI writes the brief in. Source feeds can be in any language."},
+    {key = "daily-brief.max_items", label = "Max stories in the brief", type = "number", default = 8, hint = "Keep it small — a brief you finish reading beats a feed you doom-scroll."},
+    {key = "daily-brief.per_source", label = "Headlines fetched per source", type = "number", default = 6, hint = "How many recent items to pull from each feed before the AI picks the best."},
+    {key = "daily-brief.focus", label = "Personal lens (optional)", type = "textarea", default = "energy markets, grid / BESS, AI engineering", hint = "One line telling the AI what you care about, so it ranks and frames items for you. Blank = neutral."},
+    {key = "daily-brief.markets_enabled", label = "Include a market pulse", type = "boolean", default = false, hint = "Adds a technical-indicator (SMA/RSI/MACD) read on a set of instruments. Public market data only. Not financial advice."},
+    {key = "daily-brief.tickers_csv", label = "Instruments (comma-separated)", type = "text", default = "", hint = "Yahoo symbols, e.g. FSLR, ENPH, NEE, CL=F. Blank = energy default set."},
+]
+
+[[contributes.hub.panel]]
+id = "daily-brief-today"
+method = "panel_today"
+renderer = "stat-tile"
+title = "Daily brief"
+priority = 160
+group = "dashboard"
+
+[[contributes.voice-assistant.intent]]
+verb = "daily-brief.today"
+method = "voice_today"
+example = "what's my daily brief"
+args = { }
+description = "Read back today's brief headline count and link to it."

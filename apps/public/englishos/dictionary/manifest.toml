@@ -1,0 +1,178 @@
+[app]
+id = "dictionary"
+icon_id = "dictionary"
+store_category = "productivity"
+name = "Dictionary"
+version = "2.1.0"
+description = "Adaptive reading help, word lookup, vault storage, SRS flashcards, quizzes"
+dimensions = ["intellectual"]
+# `picture-dict` namespaces the surfaces absorbed from the retired picture-dict
+# app (2026-08-19). It also 307s /picture-dict/* here and keeps
+# call_app("picture-dict", ...) resolving. See .claude/rules/verb-registry.md.
+aliases = ["picture-dict"]
+
+[app.entry]
+module = "app"
+class = "DictionaryApp"
+
+[requires]
+capabilities = ["think", "read", "write", "search", "speak", "listen", "pronounce"]
+connectors = []
+services = []
+optional_apps = [
+    "video-digest",  # vocab loop harvests words from digested reading (soft)
+    "kb",            # crosswalk publishes vowel-spelling notes via kb.upsert_note (soft)
+]
+
+[provides.cli]
+commands = ["dict", "picture-dict"]
+
+[provides.web]
+prefix = "/dictionary"
+
+[provides.prompts]
+module = "prompts"
+
+[provides.events]
+emits = ["dictionary:word_saved", "dictionary:word_reviewed", "dictionary:weak_phone_logged", "dictionary:pronounce_logged", "dictionary:vocab_harvested", "dictionary:vocab_feed_built", "dictionary:vocab_test_logged", "dictionary:word_deleted", "dictionary:difficulty_set", "dictionary:reading_settings_changed", "dictionary:crosswalk_published", "dictionary:picture_word_saved", "dictionary:picture_quiz_completed", "dictionary:picture_images_ready", "dictionary:pack_proposed", "dictionary:pack_created", "dictionary:pack_proposal_rejected"]
+subscribes = ["video-digest:digested"]
+
+# Pronunciation logging — fine-grained signal, no journal needed.
+internal = [
+    "dictionary:pronounce_logged",
+    # Vocab pipeline machinery — UI-only; word_saved/word_reviewed carry the
+    # cross-app life-signal already.
+    "dictionary:vocab_harvested", "dictionary:vocab_feed_built",
+    "dictionary:vocab_test_logged", "dictionary:word_deleted",
+    # A reading-preference flip is UI machinery — nothing to journal.
+    "dictionary:reading_settings_changed",
+    # Rating a word's difficulty is the reader adjusting their own view of the
+    # deck — the vocabulary page shows it, and nothing downstream reacts.
+    "dictionary:difficulty_set",
+    # Composer bookkeeping. `pack_created` is deliberately NOT here — authoring a
+    # pack is a real act, like saving a word — but a proposal appearing or being
+    # thrown away is machinery the composer panel already shows.
+    "dictionary:pack_proposed", "dictionary:pack_proposal_rejected",
+    # Per-phone weakness telemetry. `english` dropped its (handler-less) listen
+    # on 2026-08-08 and reads the store directly via panel_weak_phones, so this
+    # has no cross-app listener by design.
+    "dictionary:weak_phone_logged",
+    # Materialising the vowel↔spelling KB notes is an on-demand export. The
+    # notes are the artifact; nothing downstream reacts to the write.
+    "dictionary:crosswalk_published",
+    # Picture-pack machinery — UI-only. A finished quiz round and a completed
+    # photo prefetch are both progress chrome; `picture_word_saved` is the one
+    # that carries a real life-signal, so it stays out of this list.
+    "dictionary:picture_quiz_completed", "dictionary:picture_images_ready",
+]
+
+[provides.settings]
+schema = [
+    {key = "dictionary.srs_new_per_day", label = "New SRS Words/Day", type = "number", default = 5, hint = "Max new flashcards introduced per review day."},
+    {key = "dictionary.quiz_count", label = "Quiz Questions", type = "number", default = 5, hint = "Questions per quiz round."},
+    # The bar a word must clear to be worth interrupting you for — read by the reading
+    # layer AND the vocabulary harvest, which each used to hardcode a band of their own.
+    # "auto" infers it from the words you have marked known and hard.
+    {key = "dictionary.cefr_level", label = "Your English level", type = "select", default = "auto", options = ["auto", "A1", "A2", "B1", "B2", "C1", "C2"]},
+
+    # Picture packs, absorbed from picture-dict 2026-08-19. The keys keep their
+    # `picture-dict.` prefix on purpose: the settings store is global and keyed
+    # verbatim, there is no settings-migration helper in the codebase, and the
+    # prefix is already a unique namespace — renaming would silently orphan the
+    # values a user has already set.
+    {key = "picture-dict.prefetch_on_open", label = "Fetch photos automatically", type = "boolean", default = true, hint = "Downloads the pack's photos in the background the first time you open the pictures page. Off means the gallery stays on emoji tiles until you press Fetch photos."},
+    {key = "picture-dict.image_width", label = "Photo size", type = "select", default = "500", options = ["330", "500", "960"], hint = "These are the only sizes the photo service actually serves. Measured for a 130-animal pack: 330 is about 5 MB on disk, 500 about 10 MB, 960 about 31 MB."},
+    {key = "picture-dict.quiz_length", label = "Questions per picture quiz", type = "select", default = "10", options = ["5", "10", "15", "20"]},
+    {key = "picture-dict.quiz_mode", label = "Picture quiz direction", type = "select", default = "photo-to-name", options = ["photo-to-name", "name-to-photo", "mixed"]},
+    {key = "dictionary.feature.pack-composer.enabled", label = "Compose packs from a description", type = "boolean", default = false, hint = "Adds a + New pack affordance to the pack row. Describe a theme; a model proposes the words, every article title is checked against the photo service before anything is written, and you approve the list before a single image is fetched."},
+    {key = "picture-dict.compose_max_items", label = "Most items a composed pack may have", type = "select", default = "40", options = ["20", "40", "80", "120"]},
+    {key = "picture-dict.show_chinese", label = "Show 中文 on picture cards", type = "boolean", default = false, hint = "A global English edition defaults to English-only. The picture-card view offers to turn this on the first time a learner opens it; it can also be toggled here any time."},
+    {key = "dictionary.picture_on_word_card", label = "Show a pack photo on the word card", type = "boolean", default = true, hint = "When a saved word is also in a picture pack, show that photograph on its card. Exact matches only — but a homonym can still hit (a `crane` note about the machine will show the bird), which is why the photo is captioned with the pack it came from."},
+    {key = "picture-dict.pass_score", label = "Speaking pass mark", type = "select", default = "0.85", options = ["0.70", "0.80", "0.85", "0.90"], hint = "A spoken attempt at or above this counts the review card as remembered. Below it the attempt is recorded but never grades the card down — a bad microphone should not wreck a schedule."},
+    {key = "picture-dict.fast_seconds", label = "Speed round time limit (seconds)", type = "select", default = "2.0", options = ["1.5", "2.0", "2.5", "3.0"], hint = "In a speed round, a right answer that starts within this many seconds of the picture appearing counts as a review of a due card. A slower or wrong one is added to Review if it is not there yet; nothing is graded down."},
+]
+
+# Verb registry. `/dict` MUST live here rather than in a legacy
+# [provides.assistant] block: migration is all-or-nothing per (app, surface),
+# and assistant/slash.py skips an app's legacy block the moment the app declares
+# any registry entry for the assistant surface. Adding the picture verbs below
+# without moving /dict would have dropped /dict silently.
+# See .claude/rules/verb-registry.md.
+[[provides.verbs]]
+verb = "dictionary.lookup"
+method = "lookup"
+summary = "Look up a word"
+args = { word = "string" }
+eligibility = "stable"
+surfaces = ["voice", "assistant"]
+voice = { method = "voice_lookup", example = "what does ubiquitous mean", description = "Define one English word — meaning, part of speech, an example, the Chinese gloss. word = the single word asked about (a word question, not a vault search).", always = false, card = "entity-card" }
+assistant = { slash = "/dict", method = "lookup", arg = "word" }
+
+[[provides.verbs]]
+verb = "picture-dict.lookup"
+method = "lookup_picture"
+summary = "Show the picture and name for an animal"
+args = { name = "string" }
+eligibility = "stable"
+surfaces = ["voice", "assistant", "mcp", "agent"]
+voice = { method = "voice_picture_lookup", example = "show me a picture of a heron", description = "Find one item in the picture dictionary and describe it.", always = false, card = "entity-card" }
+assistant = { slash = "/pic", method = "lookup_picture", arg = "name" }
+
+[[provides.verbs]]
+verb = "picture-dict.due"
+method = "picture_due"
+summary = "How many picture cards are due for review"
+args = { limit = "number?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant", "mcp", "agent"]
+voice = { method = "voice_picture_due", example = "how many pictures are due", description = "Report the picture-card review backlog.", always = false }
+
+[[provides.verbs]]
+verb = "picture-dict.save"
+method = "save_picture_word"
+summary = "Save a picture-dictionary word to your vocabulary"
+args = { slug = "string" }
+eligibility = "gated"
+surfaces = ["mcp", "agent"]
+
+# Scene vocabulary for Improv: each pack, plus the cards due today.
+# Improv lists these, asks for the words of the one picked, and reports back
+# which were said — so it holds no dictionary-specific code.
+[[contributes.improv.wordsource]]
+id = "picture-packs"
+method = "improv_sources"
+words = "improv_words"
+report = "improv_result"
+
+# Vocab-expansion loop — daily breadth feed + reading-harvest + review nudge.
+# Dark until [apps.dictionary] feature.vocab-loop.enabled = true (lazy: feed gen hits the LLM).
+[[contributes.hub.panel]]
+id = "vocab-today"
+method = "panel_vocab_today"
+renderer = "plain-list"
+title = "Vocabulary"
+priority = 145
+lazy = true
+
+# Vowel crosswalk — the sounds you actually mispronounce, and how many ways
+# English writes each one. Returns None until the pronounce pipeline has logged
+# something, so a fresh install never sees an empty box.
+[[contributes.hub.panel]]
+id = "vowel-crosswalk"
+method = "panel_vowel_crosswalk"
+renderer = "plain-list"
+title = "Vowels to work on"
+priority = 146
+limit = 5
+
+# Picture packs — how many photo cards are due. Returns None (and so renders
+# nothing) until the learner has actually enrolled one, so an untouched install
+# shows no clutter. Absorbed from picture-dict 2026-08-19.
+[[contributes.hub.panel]]
+id = "dictionary-pictures-due"
+title = "🖼 Pictures"
+method = "panel_picture_due"
+renderer = "stat-tile"
+priority = 138
+group = "dashboard"
+lazy = true

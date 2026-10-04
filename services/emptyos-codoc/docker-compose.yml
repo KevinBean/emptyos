@@ -1,0 +1,37 @@
+# EmptyOS co-doc — internal Lane-1 service (live real-time collaboration).
+#
+#   cp .env.example .env        # (optional — sane defaults below)
+#   docker compose up -d --build
+#
+# This service is reached BEHIND the control-plane proxy (auth-by-trusted-hop:
+# the proxy injects X-EOS-Principal). It is NOT publicly exposed and has no
+# Caddy/TLS of its own — bind to loopback and let the control plane route to it.
+# Add its address to the control-plane routing table.
+
+services:
+  codoc:
+    build: .
+    container_name: emptyos-codoc
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    environment:
+      CODOC_DB: /app/data/codoc.db
+    volumes:
+      - codoc-data:/app/data        # sqlite (live-doc metadata + last snapshot)
+    ports:
+      - "127.0.0.1:9400:9400"       # loopback only — the proxy reaches it here
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9400/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  codoc-data:

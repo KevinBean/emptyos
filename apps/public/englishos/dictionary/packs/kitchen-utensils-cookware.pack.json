@@ -1,0 +1,37 @@
+{
+  "id": "kitchen-utensils-cookware",
+  "groups": [
+    {
+      "id": "cooking",
+      "label": "Cooking",
+      "members": [
+        "frying-pan",
+        "saucepan",
+        "stockpot",
+        "baking-tray",
+        "cutting-board",
+        "chef-knife",
+        "wooden-spoon",
+        "whisk",
+        "tongs",
+        "grater",
+        "kettle",
+        "toaster",
+        "microwave",
+        "measuring-cup",
+        "measuring-spoon"
+      ]
+    },
+    {
+      "id": "washing-up",
+      "label": "Washing up",
+      "members": [
+        "colander",
+        "kitchen-sponge",
+        "dish-soap",
+        "dishwasher",
+        "dishcloth"
+      ]
+    }
+  ]
+}

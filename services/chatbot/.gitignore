@@ -1,0 +1,9 @@
+sites.toml
+.env.chat
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+__pycache__/
+*.pyc
+data/

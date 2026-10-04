@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workspaces - EmptyOS</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/eos-components.css">
+  <link rel="stylesheet" href="/static/eos-keys.css">
+  <style>
+    body { min-height: 100dvh; }
+    .ws-wrap { max-width: 1120px; margin: 0 auto; padding: 36px 24px 72px; }
+    .ws-kicker { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase; }
+    .ws-head { margin-bottom: 26px; }
+    .ws-head h1 { margin: 8px 0 4px; font-size: clamp(28px, 4vw, 44px); }
+    .ws-head p { max-width: 640px; margin: 0; color: var(--text-secondary); line-height: 1.6; }
+    .ws-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); }
+    .ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .space-card { display: block; padding: 24px; color: inherit; text-decoration: none; cursor: pointer; transition: border-color 0.16s, transform 0.16s; }
+    .space-card:hover { border-color: var(--accent); color: inherit; transform: translateY(-2px); }
+    .space-icon { font-size: 30px; line-height: 1; }
+    .space-card h2 { margin: 13px 0 8px; font-size: 22px; }
+    .space-card p { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.55; }
+    .space-meta { margin-top: 16px; color: var(--text-muted); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    /* detail */
+    .back-btn { border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; padding: 8px 16px; font: inherit; margin-bottom: 24px; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .detail-head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+    .detail-head .space-icon { font-size: 40px; }
+    .detail-head h1 { margin: 0; font-size: clamp(26px, 3.6vw, 40px); }
+    .detail-tagline { margin: 0 0 26px; color: var(--text-secondary); line-height: 1.6; max-width: 640px; }
+    .hero-cta { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; padding: 24px 27px; margin-bottom: 24px; background: linear-gradient(135deg, var(--accent-bg), var(--bg-card)); }
+    .hero-eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+    .hero-cta h3 { margin: 8px 0 4px; font-size: 22px; }
+    .hero-cta p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
+    .primary-action { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-pill); background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 12px 16px; font: inherit; font-weight: 700; text-decoration: none; white-space: nowrap; }
+    .primary-action:hover { opacity: 0.9; color: var(--accent-ink); }
+    .hero-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 26px; }
+    .hero-stat { padding: 16px 16px; }
+    .hero-stat .v { color: var(--text-heading); font-size: 26px; font-weight: 700; }
+    .hero-stat .l { margin-top: 4px; color: var(--text-secondary); font-size: 13px; }
+    .section-title { margin: 0 0 13px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+    .member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .member { display: block; min-height: 120px; padding: 16px; color: inherit; text-decoration: none; transition: border-color 0.16s, transform 0.16s; }
+    .member:hover { border-color: var(--accent); color: inherit; transform: translateY(-2px); }
+    .member-off { opacity: 0.5; cursor: default; }
+    .member-off:hover { border-color: var(--border); transform: none; }
+    .member-icon { font-size: 24px; line-height: 1; margin-bottom: 4px; }
+    .member h3 { margin: 0 0 8px; font-size: 16px; }
+    .member p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+    .member-state { display: inline-block; margin-top: 12px; color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    /* live widgets (dynamic Space surfaces) */
+    .ws-widgets { display: grid; gap: 16px; margin-bottom: 26px; }
+    .ws-widget { padding: 0; overflow: hidden; }
+    .ws-widget-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .ws-widget-head h3 { margin: 0; font-size: 15px; }
+    .ws-widget-head a { color: var(--accent); text-decoration: none; font-size: 12px; font-weight: 600; }
+    .ws-embed { display: block; width: 100%; border: 0; background: var(--bg); }
+    .ws-widget-body { padding: 16px 16px; }
+    .ws-panel-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+    .ws-tile { padding: 16px 16px; }
+    .ws-tile .v { font-size: 24px; font-weight: 700; color: var(--text-heading); }
+    .ws-tile .l { margin-top: 4px; color: var(--text-secondary); font-size: 13px; }
+    .ws-plist { list-style: none; margin: 0; padding: 0; }
+    .ws-plist li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .ws-plist li:last-child { border-bottom: none; }
+    .ws-plist a { color: var(--accent); text-decoration: none; }
+    .ws-plist .sub { color: var(--text-muted); font-size: 12px; }
+    .ws-widget-off { opacity: .55; padding: 16px 16px; color: var(--text-muted); font-size: 13px; }
+    .ask-panel { padding: 24px 24px; margin-bottom: 26px; }
+    .ask-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .ask-head h3 { margin: 0; font-size: 17px; }
+    .ask-form { display: flex; gap: 12px; }
+    .ask-form input { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); padding: 12px 12px; font: inherit; }
+    .ask-form input:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus-ring); }
+    .ask-answer { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
+    .ask-answer.unscoped { color: var(--text-muted); }
+    .ask-sources { margin-top: 12px; font-size: 13px; color: var(--text-muted); white-space: normal; }
+    .ask-sources a { color: var(--accent); text-decoration: none; }
+    .ask-busy { color: var(--text-muted); }
+    [hidden] { display: none !important; }
+    .ws-mini-btn { border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; padding: 8px 12px; font: inherit; font-size: 13px; }
+    .ws-mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .ws-edit-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 13px; flex-wrap: wrap; }
+    .ws-edit-bar .section-title { margin: 0; }
+    .ws-new-btn { margin-top: 16px; }
+    .member { position: relative; }
+    .member-rm { position: absolute; top: 8px; right: 10px; width: 24px; height: 24px; line-height: 20px; text-align: center; padding: 0; font-size: 15px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-card); color: var(--text-muted); cursor: pointer; }
+    .member-rm:hover { border-color: var(--danger); color: var(--danger); }
+    /* A member card can carry up to 3 edit-mode controls (move up/down + remove).
+       .member-ctrl is the one absolutely-positioned group; its .member-rm
+       children lay out side by side via flex instead of each self-positioning. */
+    .member-ctrl { position: absolute; top: 8px; right: 10px; display: flex; gap: 4px; }
+    .member-ctrl .member-rm { position: static; top: auto; right: auto; }
+    .member-mv { font-size: 12px; }
+    .member-mv:hover { border-color: var(--accent); color: var(--accent); }
+    .member-mv[disabled] { opacity: 0.35; cursor: default; }
+    .member-mv[disabled]:hover { border-color: var(--border); color: var(--text-muted); }
+    .add-app-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+    @media (max-width: 600px) {
+      .ws-wrap { padding: 24px 16px 56px; }
+      .hero-cta { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ws-wrap">
+    <!-- INDEX VIEW -->
+    <section id="index-view">
+      <div class="ws-head">
+        <div class="ws-kicker">Workspaces</div>
+        <h1>Your Spaces</h1>
+        <p>Each Space gathers the apps for one goal into a single place. Open one to find everything you need without hunting through the app list.</p>
+        <div class="ws-new-btn"><button class="ws-mini-btn" onclick="openNewSpace()">＋ New Space</button></div>
+      </div>
+      <div class="ws-search-wrap" style="margin:12px 0">
+        <input id="ws-search-input" type="text" placeholder="Search Spaces and apps…" autocomplete="off"
+               style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"
+               oninput="onSearchInput()">
+        <div id="ws-search-results"></div>
+      </div>
+      <div id="spaces-grid" class="ws-grid"></div>
+      <div id="index-empty"></div>
+    </section>
+
+    <!-- DETAIL VIEW -->
+    <section id="detail-view" hidden>
+      <button class="back-btn" onclick="goBack()">&larr; All Spaces</button>
+      <div class="detail-head">
+        <div id="detail-icon" class="space-icon"></div>
+        <h1 id="detail-title"></h1>
+      </div>
+      <p id="detail-tagline" class="detail-tagline"></p>
+      <div id="hero-mount"></div>
+      <div id="widget-mount" class="ws-widgets"></div>
+
+      <div id="ask-panel" class="ws-card ask-panel" hidden>
+        <div class="ask-head">
+          <h3 id="ask-title">Ask</h3>
+          <span id="ask-model"></span>
+        </div>
+        <form id="ask-form" class="ask-form">
+          <input id="ask-input" type="text" autocomplete="off"
+                 placeholder="Ask a question — answered from this Space's notes…">
+          <button class="primary-action" type="submit">Ask</button>
+        </form>
+        <div id="ask-answer" class="ask-answer" hidden></div>
+      </div>
+
+      <div class="ws-edit-bar">
+        <div id="members-title" class="section-title">In this Space</div>
+        <div id="edit-tools" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+      </div>
+      <div id="member-grid" class="member-grid"></div>
+    </section>
+  </div>
+
+  <script src="/static/eos.js"></script>
+  <script src="/static/eos-components.js"></script>
+  <script src="/static/eos-keys.js"></script>
+  <script>
+    var STATE = { spaces: [] };
+    var _route;
+    var EDIT = false;       // detail-view edit mode
+    var _detail = null;     // current space payload
+    var _lastBundle = '';
+
+    function spaceCard(s) {
+      var icon = s.icon ? '<div class="space-icon">' + esc(s.icon) + '</div>' : '';
+      var count = s.available_count + (s.available_count === 1 ? ' app' : ' apps');
+      return '<div class="ws-card space-card" onclick="openSpace(' + escAttr(JSON.stringify(s.slug)) + ')">'
+        + icon
+        + '<h2>' + esc(s.title) + '</h2>'
+        + '<p>' + esc(s.tagline || '') + '</p>'
+        + '<div class="space-meta">' + esc(count) + '</div>'
+        + '</div>';
+    }
+
+    function renderIndex() {
+      var grid = document.getElementById('spaces-grid');
+      var empty = document.getElementById('index-empty');
+      if (!STATE.spaces.length) {
+        grid.innerHTML = '';
+        empty.innerHTML = EOS_UI.emptyState
+          ? EOS_UI.emptyState({ title: 'No Spaces yet', body: 'Install a group of apps (like English Academy) and they will appear here.' })
+          : '<p style="color:var(--text-secondary)">No Spaces yet.</p>';
+        return;
+      }
+      empty.innerHTML = '';
+      grid.innerHTML = STATE.spaces.map(spaceCard).join('');
+    }
+
+    // Search across Spaces (workspaces-no-search-across-spaces) — debounced,
+    // cleared results hide the panel so the normal grid shows through.
+    var _searchTimer = null;
+    function onSearchInput() {
+      clearTimeout(_searchTimer);
+      var q = document.getElementById('ws-search-input').value.trim();
+      if (!q) { document.getElementById('ws-search-results').innerHTML = ''; return; }
+      _searchTimer = setTimeout(function() { runSearch(q); }, 250);
+    }
+
+    async function runSearch(q) {
+      var res = await fetch('/workspaces/api/search?q=' + encodeURIComponent(q)).then(function(r) { return r.json(); });
+      var box = document.getElementById('ws-search-results');
+      if (!res.results || !res.results.length) {
+        box.innerHTML = '<div class="ws-search-empty" style="padding:10px;color:var(--text-secondary)">No matches for "' + esc(q) + '"</div>';
+        return;
+      }
+      box.innerHTML = res.results.map(function(r) {
+        if (r.type === 'space') {
+          return '<div class="ws-search-row" style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer" '
+            + 'onclick="openSpace(' + escAttr(JSON.stringify(r.slug)) + ')">'
+            + '<b>' + esc(r.icon || '📁') + ' ' + esc(r.title) + '</b> <span style="color:var(--text-secondary);font-size:12px">Space</span>'
+            + (r.tagline ? '<div style="font-size:12px;color:var(--text-secondary)">' + esc(r.tagline) + '</div>' : '')
+            + '</div>';
+        }
+        return '<div class="ws-search-row" style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer" '
+          + 'onclick="openSpace(' + escAttr(JSON.stringify(r.space_slug)) + ')">'
+          + esc(r.icon || '') + ' <b>' + esc(r.title) + '</b> '
+          + '<span style="color:var(--text-secondary);font-size:12px">in ' + esc(r.space_title) + '</span>'
+          + (r.available ? '' : ' <span style="color:var(--text-secondary);font-size:12px">(not installed)</span>')
+          + '</div>';
+      }).join('');
+    }
+
+    function memberCard(m, edit, slug, idx, total) {
+      var ico = m.icon ? '<div class="member-icon">' + esc(m.icon) + '</div>' : '';
+      var rm = edit
+        ? '<span class="member-ctrl">'
+          + '<button class="member-rm member-mv" ' + (idx === 0 ? 'disabled' : '') + ' title="Move up" '
+            + 'onclick="moveMember(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'up\')">&uarr;</button>'
+          + '<button class="member-rm member-mv" ' + (idx === total - 1 ? 'disabled' : '') + ' title="Move down" '
+            + 'onclick="moveMember(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'down\')">&darr;</button>'
+          + '<button class="member-rm" title="Remove from Space" onclick="removeMember(event,'
+              + escAttr(JSON.stringify(slug)) + ',' + escAttr(JSON.stringify(m.id)) + ')">&times;</button>'
+          + '</span>'
+        : '';
+      if (!m.available) {
+        return '<div class="ws-card member member-off">' + rm + ico
+          + '<h3>' + esc(m.title) + '</h3>'
+          + '<p>' + esc(m.description || '') + '</p>'
+          + '<span class="member-state">Not installed</span>'
+          + '</div>';
+      }
+      if (edit) {
+        // No navigation in edit mode — the card is a target for removal, not a link.
+        return '<div class="ws-card member">' + rm + ico
+          + '<h3>' + esc(m.title) + '</h3>'
+          + '<p>' + esc(m.description || '') + '</p>'
+          + '<span class="member-state" style="color:var(--text-muted)">In this Space</span>'
+          + '</div>';
+      }
+      return '<a class="ws-card member" href="' + escAttr(m.href) + '">'
+        + ico
+        + '<h3>' + esc(m.title) + '</h3>'
+        + '<p>' + esc(m.description || '') + '</p>'
+        + '<span class="member-state" style="color:var(--accent)">Open &rarr;</span>'
+        + '</a>';
+    }
+
+    // External link/bookmark tiles (workspaces-no-external-links) — a Space
+    // member with no app id, so it renders alongside the app tiles but is
+    // never resolved against the manifest registry. Always "available":
+    // there's nothing here for us to enable/disable, it's just a URL.
+    function linkCard(l, edit, slug, idx, total) {
+      var ico = '<div class="member-icon">' + esc(l.icon || '🔗') + '</div>';
+      var rm = edit
+        ? '<span class="member-ctrl">'
+          + '<button class="member-rm member-mv" ' + (idx === 0 ? 'disabled' : '') + ' title="Move up" '
+            + 'onclick="moveLink(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'up\')">&uarr;</button>'
+          + '<button class="member-rm member-mv" ' + (idx === total - 1 ? 'disabled' : '') + ' title="Move down" '
+            + 'onclick="moveLink(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'down\')">&darr;</button>'
+          + '<button class="member-rm" title="Remove from Space" onclick="removeLink(event,'
+              + escAttr(JSON.stringify(slug)) + ',' + idx + ')">&times;</button>'
+          + '</span>'
+        : '';
+      if (edit) {
+        return '<div class="ws-card member">' + rm + ico
+          + '<h3>' + esc(l.title) + '</h3>'
+          + '<p>' + esc(l.href || '') + '</p>'
+          + '<span class="member-state" style="color:var(--text-muted)">External link</span>'
+          + '</div>';
+      }
+      return '<a class="ws-card member" href="' + escAttr(l.href) + '" target="_blank" rel="noopener">'
+        + ico
+        + '<h3>' + esc(l.title) + '</h3>'
+        + '<p>' + esc(l.href || '') + '</p>'
+        + '<span class="member-state" style="color:var(--accent)">Open &#8599;</span>'
+        + '</a>';
+    }
+
+    function renderMembersGrid(s) {
+      var arr = s.members || [];
+      var links = s.links || [];
+      document.getElementById('member-grid').innerHTML =
+        arr.map(function (m, i) { return memberCard(m, EDIT, s.slug, i, arr.length); }).join('')
+        + links.map(function (l, i) { return linkCard(l, EDIT, s.slug, i, links.length); }).join('');
+    }
+
+    function renderEditTools(s) {
+      var el = document.getElementById('edit-tools');
+      if (!el) return;
+      if (!EDIT) {
+        el.innerHTML = '<button class="ws-mini-btn" onclick="toggleEdit()">&#9998; Edit apps</button>';
+        return;
+      }
+      var rm = '';
+      if (s.user_created) rm = '<button class="ws-mini-btn" onclick="deleteSpace()">&#128465; Delete Space</button>';
+      else if (s.edited) rm = '<button class="ws-mini-btn" onclick="deleteSpace()">&#8634; Reset to default</button>';
+      el.innerHTML =
+        '<button class="ws-mini-btn" onclick="openAddApp()">&#65291; Add app</button>'
+        + '<button class="ws-mini-btn" onclick="openAddLink()">&#65291; Add link</button>'
+        + '<button class="ws-mini-btn" onclick="openAddWidget()">&#65291; Add widget</button>'
+        + '<button class="ws-mini-btn" onclick="exportBundle()">&#11015; Export bundle</button>'
+        + rm
+        + '<button class="ws-mini-btn" onclick="toggleEdit()">Done</button>';
+    }
+
+    // Link CRUD — mirrors the widget CRUD shape above.
+    function openAddLink() {
+      if (!_detail) return;
+      var body =
+        '<label style="display:block;margin-bottom:8px">URL<br>'
+        + '<input id="lk-url" placeholder="https://example.com" style="width:100%;padding:8px;'
+        + 'border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<label style="display:block;margin-bottom:8px">Title (optional)<br>'
+        + '<input id="lk-title" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<label style="display:block;margin-bottom:8px">Icon (optional emoji)<br>'
+        + '<input id="lk-icon" placeholder="🔗" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<button class="ws-mini-btn" onclick="submitAddLink()">Add link</button>';
+      EOS_UI.modal({ title: 'Add link to ' + (_detail.title || _detail.slug), body: body });
+    }
+
+    async function submitAddLink() {
+      if (!_detail) return;
+      var url = document.getElementById('lk-url').value || '';
+      if (!url.trim()) { EOS_UI.toast('URL is required', false); return; }
+      var payload = {
+        url: url,
+        title: document.getElementById('lk-title').value || '',
+        icon: document.getElementById('lk-icon').value || '',
+      };
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(_detail.slug) + '/links', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      EOS_UI.closeModal();
+      await refreshDetail(_detail.slug);
+      EOS_UI.toast('Link added', true);
+    }
+
+    async function removeLink(event, slug, index) {
+      if (event) event.stopPropagation();
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/links/' + index, {
+          method: 'DELETE'
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+      EOS_UI.toast('Link removed', true);
+    }
+
+    async function moveLink(event, slug, index, direction) {
+      if (event) event.stopPropagation();
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/links/' + index + '/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: direction })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
+    // Widget CRUD — mirrors openAddApp/addApp's shape. Flagged in gap
+    // analysis (workspaces-no-widget-ui): widgets were config/registry-only.
+    async function openAddWidget() {
+      if (!_detail) return;
+      var apps = [];
+      try {
+        var d = await EOS.api('/workspaces/api/apps-available');
+        apps = d.apps || [];
+      } catch (e) { apps = []; }
+      var appOptions = apps.map(function (a) {
+        return '<option value="' + escAttr(a.id) + '">' + esc(a.name) + '</option>';
+      }).join('');
+      var body =
+        '<label style="display:block;margin-bottom:8px">Type<br>'
+        + '<select id="wg-type" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)">'
+        + '<option value="embed">Embed (iframe the app)</option>'
+        + '<option value="panel">Panel (a hub-style stat/list)</option>'
+        + '</select></label>'
+        + '<label style="display:block;margin-bottom:8px">App<br>'
+        + '<select id="wg-app" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)">' + appOptions + '</select></label>'
+        + '<label style="display:block;margin-bottom:8px">Title (optional)<br>'
+        + '<input id="wg-title" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<div id="wg-embed-fields"><label style="display:block;margin-bottom:8px">Height (px)<br>'
+        + '<input id="wg-height" type="number" value="520" style="width:100%;padding:8px;'
+        + 'border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label></div>'
+        + '<div id="wg-panel-fields" style="display:none">'
+        + '<label style="display:block;margin-bottom:8px">Panel method (the app\'s own hub-panel method name)<br>'
+        + '<input id="wg-method" placeholder="e.g. panel_summary" style="width:100%;padding:8px;'
+        + 'border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<label style="display:block;margin-bottom:8px">Renderer<br>'
+        + '<select id="wg-renderer" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)">'
+        + '<option value="stat-tile">stat-tile</option><option value="plain-list">plain-list</option>'
+        + '<option value="task-list">task-list</option></select></label></div>'
+        + '<button class="ws-mini-btn" onclick="submitAddWidget()">Add widget</button>';
+      EOS_UI.modal({ title: 'Add widget to ' + (_detail.title || _detail.slug), body: body });
+      var typeSel = document.getElementById('wg-type');
+      if (typeSel) {
+        typeSel.addEventListener('change', function () {
+          var isEmbed = typeSel.value === 'embed';
+          document.getElementById('wg-embed-fields').style.display = isEmbed ? '' : 'none';
+          document.getElementById('wg-panel-fields').style.display = isEmbed ? 'none' : '';
+        });
+      }
+    }
+
+    async function submitAddWidget() {
+      if (!_detail) return;
+      var type = document.getElementById('wg-type').value;
+      var app = document.getElementById('wg-app').value;
+      if (!app) { EOS_UI.toast('Choose an app', false); return; }
+      var payload = { type: type, app: app, title: document.getElementById('wg-title').value || '' };
+      if (type === 'embed') {
+        payload.height = parseInt(document.getElementById('wg-height').value, 10) || 520;
+      } else {
+        payload.method = document.getElementById('wg-method').value || '';
+        payload.renderer = document.getElementById('wg-renderer').value || 'stat-tile';
+      }
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(_detail.slug) + '/widgets', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      EOS_UI.closeModal();
+      await refreshDetail(_detail.slug);
+      EOS_UI.toast('Widget added', true);
+    }
+
+    async function removeWidget(slug, index) {
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/widgets/' + index, {
+          method: 'DELETE'
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+      EOS_UI.toast('Widget removed', true);
+    }
+
+    // Reorder — gap workspaces-no-drag-reorder. A simple up/down swap
+    // rather than drag-and-drop: no new JS dependency, works via
+    // keyboard/tap too.
+    async function moveWidget(slug, index, direction) {
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/widgets/' + index + '/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: direction })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
+    async function moveMember(event, slug, index, direction) {
+      if (event) event.stopPropagation();
+      var arr = (_detail && _detail.members) || [];
+      var target = index + (direction === 'up' ? -1 : 1);
+      if (target < 0 || target >= arr.length) return;
+      var ids = arr.map(function (m) { return m.id; });
+      var tmp = ids[index]; ids[index] = ids[target]; ids[target] = tmp;
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/members', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ members: ids })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
+    function toggleEdit() {
+      EDIT = !EDIT;
+      if (_detail) {
+        renderEditTools(_detail);
+        renderMembersGrid(_detail);
+        renderWidgets(_detail.widgets, EDIT, _detail.slug);
+      }
+    }
+
+    // Generic hero renderer. Today only the academy hero shape is produced
+    // (next_action + reviews); render defensively so any hero_app works.
+    function renderHero(hero) {
+      var mount = document.getElementById('hero-mount');
+      if (!hero || typeof hero !== 'object') { mount.innerHTML = ''; return; }
+      var html = '';
+      var na = hero.next_action;
+      if (na && na.title) {
+        html += '<div class="ws-card hero-cta">'
+          + '<div>'
+          + (na.eyebrow ? '<div class="hero-eyebrow">' + esc(na.eyebrow) + '</div>' : '')
+          + '<h3>' + esc(na.title) + '</h3>'
+          + (na.description ? '<p>' + esc(na.description) + '</p>' : '')
+          + '</div>';
+        if (na.href && na.label && na.href.indexOf('#') !== 0) {
+          html += '<a class="primary-action" href="' + escAttr(na.href) + '">' + esc(na.label) + '</a>';
+        }
+        html += '</div>';
+      }
+      var stats = [];
+      var r = hero.reviews || {};
+      var c = hero.courses || {};
+      if (typeof r.course_due === 'number') stats.push({ v: r.course_due, l: 'Course reviews due' });
+      if (typeof r.vocabulary_due === 'number') stats.push({ v: r.vocabulary_due, l: 'Vocabulary due' });
+      if (typeof r.saved_words === 'number') stats.push({ v: r.saved_words, l: 'Saved words' });
+      if (typeof c.in_progress === 'number') stats.push({ v: c.in_progress, l: 'Courses in progress' });
+      if (stats.length) {
+        html += '<div class="hero-stats">' + stats.map(function (s) {
+          return '<div class="ws-card hero-stat"><div class="v">' + esc(String(s.v)) + '</div><div class="l">' + esc(s.l) + '</div></div>';
+        }).join('') + '</div>';
+      }
+      mount.innerHTML = html;
+    }
+
+    // Live widgets — embed (iframe a member app) + panel (stat-tile / plain-list).
+    function renderWidgets(widgets, edit, slug) {
+      var mount = document.getElementById('widget-mount');
+      if (!Array.isArray(widgets) || !widgets.length) { mount.innerHTML = ''; return; }
+      mount.innerHTML = widgets.map(function (w, i) {
+        var rm = edit ? (
+          '<button class="ws-mini-btn" style="float:right" '
+            + 'onclick="removeWidget(' + escAttr(JSON.stringify(slug)) + ',' + i + ')" '
+            + 'title="Remove widget">&times;</button>'
+          + '<button class="ws-mini-btn" style="float:right" ' + (i === widgets.length - 1 ? 'disabled' : '')
+            + ' onclick="moveWidget(' + escAttr(JSON.stringify(slug)) + ',' + i + ',\'down\')" title="Move down">&darr;</button>'
+          + '<button class="ws-mini-btn" style="float:right" ' + (i === 0 ? 'disabled' : '')
+            + ' onclick="moveWidget(' + escAttr(JSON.stringify(slug)) + ',' + i + ',\'up\')" title="Move up">&uarr;</button>'
+        ) : '';
+        var head = '<div class="ws-widget-head">' + rm + '<h3>' + esc(w.title || '') + '</h3>'
+          + (w.type === 'embed' && w.available && w.src
+              ? '<a href="' + escAttr(w.src.replace(/[?&]embed=1/, '')) + '">Open &rarr;</a>' : '')
+          + '</div>';
+        if (!w.available) {
+          return '<div class="ws-card ws-widget">' + head
+            + '<div class="ws-widget-off">' + esc(w.app) + ' is not installed.</div></div>';
+        }
+        if (w.type === 'embed') {
+          var h = Math.max(160, parseInt(w.height, 10) || 520);
+          return '<div class="ws-card ws-widget">' + head
+            + '<iframe class="ws-embed" loading="lazy" src="' + escAttr(w.src)
+            + '" style="height:' + h + 'px"></iframe></div>';
+        }
+        if (w.type === 'panel') {
+          return '<div class="ws-card ws-widget">' + head
+            + '<div class="ws-widget-body">' + renderPanel(w.renderer, w.data) + '</div></div>';
+        }
+        return '';
+      }).join('');
+    }
+
+    // Minimal panel renderer — v1 supports stat-tile + plain-list (the shapes
+    // daily-brief / bookmarks expose). Canonical row keys per hub-panels rule.
+    function renderPanel(renderer, data) {
+      if (data == null) return '<div class="ws-widget-off">No data right now.</div>';
+      var rows = Array.isArray(data) ? data : [data];
+      if (renderer === 'plain-list' || renderer === 'task-list') {
+        if (!rows.length) return '<div class="ws-widget-off">Nothing here.</div>';
+        return '<ul class="ws-plist">' + rows.map(function (r) {
+          var title = esc(r.title || r.label || r.name || r.text || '');
+          var sub = r.subtitle || r.sub || r.date || '';
+          var inner = r.href ? '<a href="' + escAttr(r.href) + '">' + title + '</a>' : title;
+          return '<li>' + inner + (sub ? ' <span class="sub">' + esc(sub) + '</span>' : '') + '</li>';
+        }).join('') + '</ul>';
+      }
+      // stat-tile (default)
+      return '<div class="ws-panel-tiles">' + rows.map(function (r) {
+        return '<div class="ws-card ws-tile"><div class="v">' + esc(String(r.value != null ? r.value : '—'))
+          + '</div><div class="l">' + esc(r.label || r.title || '') + '</div></div>';
+      }).join('') + '</div>';
+    }
+
+    async function openSpace(slug) {
+      _route.set(slug);
+    }
+
+    async function showDetail(slug) {
+      var s;
+      try {
+        s = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug));
+      } catch (e) { s = null; }
+      if (!s || s.error) {
+        if (EOS_UI.toast) EOS_UI.toast('Space not found', 'error');
+        _route.clear();
+        return;
+      }
+      document.getElementById('index-view').hidden = true;
+      document.getElementById('detail-view').hidden = false;
+      document.getElementById('detail-icon').textContent = s.icon || '';
+      document.getElementById('detail-title').textContent = s.title || slug;
+      document.getElementById('detail-tagline').textContent = s.tagline || '';
+      renderHero(s.hero);
+      renderWidgets(s.widgets, EDIT, slug);
+      document.getElementById('members-title').textContent =
+        (Array.isArray(s.widgets) && s.widgets.length) ? 'More in this Space' : 'In this Space';
+      EDIT = false;
+      _detail = s;
+      renderMembersGrid(s);
+      renderEditTools(s);
+      setupAsk(s);
+    }
+
+    var _askSlug = null;
+    var _pillMounted = false;
+    function setupAsk(s) {
+      var panel = document.getElementById('ask-panel');
+      if (!s.has_ask) { panel.hidden = true; _askSlug = null; return; }
+      _askSlug = s.slug;
+      panel.hidden = false;
+      document.getElementById('ask-title').textContent = 'Ask ' + (s.title || 'this Space');
+      document.getElementById('ask-input').value = '';
+      document.getElementById('ask-answer').hidden = true;
+      // Model pill — Space ask is user-initiated think, so show who's paying.
+      if (!_pillMounted && window.EOS_UI && EOS_UI.modelPill) {
+        EOS_UI.modelPill({ app: 'workspaces', mount: '#ask-model', domain: 'text' });
+        _pillMounted = true;
+      }
+    }
+
+    async function submitAsk(ev) {
+      ev.preventDefault();
+      if (!_askSlug) return;
+      var input = document.getElementById('ask-input');
+      var ansEl = document.getElementById('ask-answer');
+      var q = (input.value || '').trim();
+      if (!q) return;
+      ansEl.hidden = false;
+      ansEl.className = 'ask-answer ask-busy';
+      ansEl.textContent = 'Thinking…';
+      var res;
+      try {
+        res = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(_askSlug) + '/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q })
+        });
+      } catch (e) { res = { error: 'Request failed' }; }
+      if (!res || res.error) {
+        ansEl.className = 'ask-answer';
+        ansEl.textContent = (res && res.error) || 'Something went wrong.';
+        return;
+      }
+      ansEl.className = 'ask-answer' + (res.scoped ? '' : ' unscoped');
+      ansEl.textContent = res.answer || '(no answer)';
+      var srcs = res.sources || [];
+      if (srcs.length) {
+        var div = document.createElement('div');
+        div.className = 'ask-sources';
+        div.innerHTML = 'Sources: ' + srcs.map(function (s) {
+          return (window.EOS && EOS.noteActions)
+            ? EOS.noteActions(s.path)
+            : '<span>' + esc(s.title || s.path) + '</span>';
+        }).join(' · ');
+        ansEl.appendChild(div);
+      }
+    }
+
+    function hideDetail() {
+      document.getElementById('detail-view').hidden = true;
+      document.getElementById('index-view').hidden = false;
+    }
+
+    function goBack() { _route.clear(); }
+
+    // ── Membership editor ────────────────────────────────────────────
+    async function refreshDetail(slug) {
+      var s;
+      try { s = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug)); }
+      catch (e) { return; }
+      if (!s || s.error) return;
+      _detail = s;
+      renderMembersGrid(s);
+      renderEditTools(s);
+      renderWidgets(s.widgets, EDIT, s.slug);
+    }
+
+    async function removeMember(ev, slug, appId) {
+      ev.preventDefault(); ev.stopPropagation();
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug)
+          + '/members/' + encodeURIComponent(appId), { method: 'DELETE' });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
+    function addAppRow(a) {
+      return '<div class="add-app-row">'
+        + '<span>' + esc(a.name) + ' <span style="color:var(--text-muted);font-size:12px;">'
+        + esc(a.id) + (a.enabled ? '' : ' &middot; not installed') + '</span></span>'
+        + '<button class="ws-mini-btn" onclick="addApp(' + escAttr(JSON.stringify(a.id)) + ')">Add</button>'
+        + '</div>';
+    }
+
+    async function openAddApp() {
+      if (!_detail) return;
+      var have = {};
+      (_detail.members || []).forEach(function (m) { have[m.id] = 1; });
+      var apps = [];
+      try {
+        var d = await EOS.api('/workspaces/api/apps-available');
+        apps = (d.apps || []).filter(function (a) { return !have[a.id]; });
+      } catch (e) { apps = []; }
+      var body = '<input id="add-app-q" placeholder="Filter apps&hellip;" '
+        + 'style="width:100%;padding:9px 11px;margin-bottom:10px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font:inherit;">'
+        + '<div id="add-app-list" style="max-height:340px;overflow:auto;">'
+        + apps.map(addAppRow).join('') + '</div>';
+      EOS_UI.modal({ title: 'Add app to ' + (_detail.title || _detail.slug), body: body });
+      var q = document.getElementById('add-app-q');
+      if (q) {
+        q.focus();
+        q.addEventListener('input', function () {
+          var t = q.value.toLowerCase();
+          document.getElementById('add-app-list').innerHTML = apps.filter(function (a) {
+            return (a.name + ' ' + a.id).toLowerCase().indexOf(t) >= 0;
+          }).map(addAppRow).join('');
+        });
+      }
+    }
+
+    async function addApp(appId) {
+      if (!_detail) return;
+      var slug = _detail.slug;
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/members', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app: appId })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      EOS_UI.closeModal();
+      await refreshDetail(slug);
+      EOS_UI.toast('Added ' + appId, true);
+    }
+
+    async function exportBundle() {
+      if (!_detail) return;
+      var d;
+      try { d = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(_detail.slug) + '/bundle'); }
+      catch (e) { d = null; }
+      if (!d || d.error) { EOS_UI.toast((d && d.error) || 'No bundle', false); return; }
+      _lastBundle = d.tier_snippet || '';
+      var body = '<p style="color:var(--text-secondary);margin:0 0 10px;">'
+        + d.apps.length + ' app(s). Paste into <code>release.toml</code> to ship this archetype '
+        + 'as a tier, or use as a package manifest.</p>'
+        + '<pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);'
+        + 'padding:12px;overflow:auto;white-space:pre;font-size:12px;">' + esc(d.tier_snippet) + '</pre>'
+        + '<button class="ws-mini-btn" onclick="copyBundle()">Copy snippet</button>';
+      EOS_UI.modal({ title: 'Release bundle &mdash; ' + (d.title || d.slug), body: body });
+    }
+
+    function copyBundle() {
+      if (_lastBundle && navigator.clipboard) {
+        navigator.clipboard.writeText(_lastBundle);
+        EOS_UI.toast('Copied', true);
+      }
+    }
+
+    function openNewSpace() {
+      EOS_UI.formModal({
+        title: 'New Space',
+        fields: [
+          { key: 'slug', label: 'Slug (lowercase, e.g. fde-engineering)', placeholder: 'fde-engineering' },
+          { key: 'title', label: 'Title', placeholder: 'FDE Engineering' },
+          { key: 'icon', label: 'Icon (emoji)', placeholder: '🛠️' },
+          { key: 'tagline', label: 'Tagline', placeholder: 'What this archetype is for' }
+        ],
+        onSubmit: async function (v) {
+          var r;
+          try {
+            r = await EOS.api('/workspaces/api/spaces', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(v)
+            });
+          } catch (e) { r = { error: 'Request failed' }; }
+          if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+          await load();
+          openSpace(r.slug);
+          EOS_UI.toast('Space created', true);
+        }
+      });
+    }
+
+    function deleteSpace() {
+      if (!_detail) return;
+      var s = _detail;
+      var msg = s.user_created
+        ? ('Delete the "' + (s.title || s.slug) + '" Space? Its app set is removed (the apps themselves stay installed).')
+        : ('Reset "' + (s.title || s.slug) + '" to its default app set? Your edits to this Space are dropped.');
+      EOS_UI.confirm(msg, async function () {
+        var r;
+        try { r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(s.slug), { method: 'DELETE' }); }
+        catch (e) { r = { error: 'Request failed' }; }
+        if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+        if (r.deleted) { _route.clear(); await load(); EOS_UI.toast('Space deleted', true); }
+        else { await refreshDetail(s.slug); EOS_UI.toast('Reset to default', true); }
+      });
+    }
+
+    async function load() {
+      try {
+        var data = await EOS.api('/workspaces/api/spaces');
+        STATE.spaces = (data && data.spaces) || [];
+      } catch (e) { STATE.spaces = []; }
+      renderIndex();
+      _route = EOS_UI.hashRoute({ onShow: showDetail, onHide: hideDetail });
+      _route.init();
+    }
+
+    document.getElementById('ask-form').addEventListener('submit', submitAsk);
+    load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+
+Loaders scan the whole `apps/` track tree (any depth) via `emptyos/sdk/app_layout.py` (`iter_app_dirs`) — all apps equal at runtime; **app ids are independent of folder location**. A fresh public `git clone` gives `public/core` + `public/standard` + `public/englishos` (`PUBLIC_TIERS`, `emptyos/sdk/release_tiers.py`; the release filter drops `labs/`, `extension/` + `personal/`). Marketplace installs land in a category folder via the Store. See `docs/DESIGN.md` "Core vs Personal" + `.claude/rules/store.md`.

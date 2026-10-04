@@ -1,0 +1,131 @@
+[app]
+id = "reactor"
+store_category = "meta"
+name = "Reactor"
+version = "1.0.0"
+description = "Event chain reactions — the system's metabolism"
+
+[app.entry]
+module = "app"
+class = "ReactorApp"
+
+[requires]
+capabilities = ["think"]
+apps = ["journal", "expense", "app-builder"]
+# briefing is a listened-for emitter only. Reactor is purely event-driven —
+# when emitters aren't installed, their events simply don't fire and the
+# matching reactors stay quiet. expense is a call_app target for budget
+# rollups, so it IS declared here (try/except guards keep reactor running
+# when expense is absent). app-builder is called by on_project_status_changed
+# when a project flips to spec-ready — same try/except shape.
+
+[provides.cli]
+commands = ["reactor"]
+
+[provides.web]
+prefix = "/reactor"
+
+[provides.events]
+emits = []
+listens = [
+    "vault:changed", "expense:added", "task:completed", "task:added", "task:reopened", "journal:entry", "journal:created",
+    "healing:mood-logged",
+    "speaking:session_ended", "speaking:session_started", "shadowing:perfect", "shadowing:attempt",
+    "media:highlight_added", "media:review_completed", "nutrition:logged", "focus:completed",
+    "meditation:completed", "capture:saved", "contacts:logged",
+    "music:composed", "podcast:generated", "studio:generated",
+    "note:created", "note:updated", "items:added", "items:updated",
+    "dictionary:word_saved", "dictionary:word_reviewed",
+    "dictionary:pack_created", "dictionary:picture_word_saved",
+    "speak-sharper:analyzed", "speak-sharper:pattern_detected", "voice-review:analyzed",
+    "lesson:generated",
+    "projects:task_toggled", "projects:status_changed", "projects:created", "projects:task_added",
+    "english:level_up", "briefing:generated",
+    "review:completed", "search:query",
+    "git:saved", "git:pushed", "git:pulled",
+    "music:lyrics_created", "music:mv_generated",
+    "healing:dream-logged", "healing:grounding-logged",
+    "media:updated", "contacts:created", "contacts:edited",
+    "timeline:event_added", "system-log:feed_viewed", "link:scan_completed",
+    "cable-pulling:calculated", "quotes:shown",
+    "power-study:report_published", "design-package:assembled",
+    "promote:posted", "jobs:call_log_added", "jobs:debrief_saved",
+    "learn:lesson_completed", "proactive:delivered",
+    "places:created", "places:updated", "places:deleted", "places:visited",
+    "tts:generated", "tmpl:used", "music:updated", "divination:cast",
+    "settings:changed", "quotes:generated", "nutrition:weight-logged",
+    "capture:archived", "journal:reflection", "journal:milestone",
+    "media:session_logged", "task:snoozed",
+    "journal:three-things", "app-gen:created",
+    "comfyui:workflow_completed", "ai-queue:completed",
+    "model-bench:completed",
+    "projects:doc_created", "quickref:added", "quickref:updated",
+    "staff:shift_completed", "run:completed", "plugin-gen:created",
+    "fiction:drafted", "fiction:story_created",
+    "digest:generated",
+    "integrity:audit_completed",
+    "daily-brief:generated",
+    "sheath-voltage:calculated", "staff:shift_started",
+    "dashboard:generated", "hub:refreshed",
+    "rooms:chat", "rooms:created", "rooms:archived",
+    "rooms:exported", "rooms:distilled", "rooms:action_applied",
+    "projects:refreshed", "ai-queue:classified", "ai-queue:queued",
+    "jobs:application_added", "jobs:status_changed", "jobs:briefing_generated",
+    "jobs:session_started", "jobs:session_ended", "jobs:scrape_complete",
+    "jobs:learnings_harvested",
+    "cable:rating_calculated", "retirement:calculated", "net-worth:snapshot-saved",
+    "expense:income-added", "github:synced", "github:pr_status",
+    "billing:budget_alert", "billing:report_generated",
+    "publish:built", "publish:deployed",
+    "3d-studio:render_complete", "3d-studio:render_failed",
+    "nature-math-simulation:fitted", "nature-math-simulation:rendered",
+    "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled",
+    "projects:sprint_created", "projects:sprint_closed",
+    "projects:milestone_created", "projects:release_created",
+    "bookmarks:saved", "bookmarks:archived",
+    "habits:checked", "habits:created",
+    "hdd-estimator:calculated",
+    "recipes:created", "recipes:cooked",
+    "reflect:insight", "reflect:agent_modified", "system:reflected",
+    "release:packaged",
+    "reminders:created", "reminders:fired", "reminders:completed",
+    "sleep:logged", "weather:updated",
+    "workout:logged", "workout:body-logged",
+    "tests:run_started", "tests:run_completed",
+    "assistant:message",
+    "earthing:soil_fit", "earthing:verdict", "earthing:rg_computed",
+    "earthing:voltages_computed", "earthing:eg0_risk",
+    "soil:fit_completed", "soil:project_created", "soil:project_updated",
+    "soil:project_deleted", "soil:soundings_saved",
+    "cable-network:project_updated", "cable-network:project_deleted",
+    "improv:scene_started", "improv:scene_ended", "improv:warmup_run",
+    "kb:viewed",
+    "app-builder:run_started", "app-builder:run_finished", "app-builder:scaffold_merged",
+    "app-builder:draft_ready", "dogfood:verify_completed",
+    # Wired 2026-07-30 — previously declared-but-unheard (architecture review).
+    "expense:recurring_posted", "expense:report-saved", "finance:report-saved",
+    "mail:routine_completed", "music:release_uploaded", "vlog:montage_ready",
+    "reader:book_imported", "requirements:verified",
+    # Wired 2026-08-11 — previously declared-but-unheard (architecture review).
+    "countdown:created", "countdown:updated", "countdown:deleted",
+    "read-the-room:incident_logged", "read-the-room:reviewed",
+    # Wired 2026-08-16 — previously declared-but-unheard (architecture review).
+    "soundcheck:session_started", "soundcheck:session_completed",
+    "soundcheck:contrast_cleared",
+    "audio-course:course_added", "audio-course:exercise_cleared",
+    "kb:figure_attached", "viz:figure_exported",
+    "library:paper_added", "library:paper_updated", "library:paper_deleted",
+    "library:highlight_added", "library:highlight_reviewed", "library:sent_to_kb",
+    "model-bench:harness_compiled",
+    # Wired 2026-09-03 — previously declared-but-unheard (architecture review).
+    "app-gen:refined", "app-gen:refine_undone",
+    "github:issue_imported",
+    "reflect:agent_policy_proposed",
+    "projects:task_assigned",
+    "reports:signed-off", "markitup:exported",
+    "routing:trip_saved", "routing:trip_deleted",
+    # Wired 2026-09-05 — previously declared-but-unheard (architecture review).
+    "design-package:verified", "design-package:verification_withdrawn",
+    # Wired 2026-10-02 — previously declared-but-unheard (architecture review).
+    "kb:source_ingested",
+]

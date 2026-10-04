@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Plekto — concept C: P-knot monogram</title>
+  <desc>Stylised letter P where the bowl is replaced with an interlocking knot loop. Letter-mark logo — reads as both "P" and "knot" depending on size. Strongest brand-recognition at favicon size; less abstract than A or B.</desc>
+
+  <g fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <!-- P vertical stem -->
+    <path d="M 38 28 L 38 100"/>
+    <!-- P bowl, drawn as a loop that passes UNDER itself at the join — the "knot" -->
+    <!-- Top half of bowl: starts at stem-top, arcs right and down -->
+    <path d="M 38 28 Q 88 28 88 56 Q 88 72 60 72"/>
+    <!-- Bottom half of bowl that crosses UNDER the top — gap simulates over/under weave -->
+    <path d="M 38 68 L 56 68"/>
+    <path d="M 64 68 Q 80 68 80 56"/>
+  </g>
+</svg>

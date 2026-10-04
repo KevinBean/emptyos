@@ -1,0 +1,67 @@
+/* eos-parallel.css — shared left/right corresponding-text reader.
+   Pairs with eos-parallel.js (EOS_UI.parallelText). Uses theme tokens so it
+   matches every theme. Class prefix: .eos-pt-  */
+
+.eos-pt { --eos-pt-fs: 20px; }
+
+.eos-pt-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 8px 14px; background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.eos-pt-bar .eos-pt-title {
+  font-size: 14px; font-weight: 600; letter-spacing: .03em;
+  margin: 0 6px 0 0; color: var(--text-heading); white-space: nowrap;
+}
+.eos-pt-bar select, .eos-pt-btn {
+  background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; font-size: 13px; cursor: pointer;
+  font-family: system-ui, sans-serif;
+}
+.eos-pt-btn:hover, .eos-pt-bar select:hover { border-color: var(--accent); }
+.eos-pt-btn.on { border-color: var(--accent); color: var(--accent); }
+.eos-pt-spacer { flex: 1; }
+.eos-pt-jump { max-width: 46vw; }
+
+.eos-pt-wrap { max-width: 920px; margin: 0 auto; padding: 8px 14px 40vh; }
+.eos-pt-sec { margin: 24px 0 8px; }
+.eos-pt-sec-title {
+  font-size: 12px; letter-spacing: .12em; color: var(--accent);
+  border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 0 0 10px;
+  font-family: system-ui, sans-serif;
+}
+.eos-pt-sec-title .eos-pt-tag { color: var(--text-muted); font-size: 11px; margin-left: 8px; }
+
+.eos-pt-line {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: baseline;
+  padding: 7px 10px; border-radius: 8px; cursor: pointer; transition: background .12s;
+}
+.eos-pt-line:hover { background: var(--bg-card); }
+.eos-pt-line.active {
+  background: var(--accent-tint-mid, var(--accent-bg));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.eos-pt-left  { font-size: var(--eos-pt-fs); line-height: 1.85; color: var(--text); }
+.eos-pt-right { font-size: calc(var(--eos-pt-fs) * .72); line-height: 1.85;
+                color: var(--text-secondary); font-family: "DejaVu Sans", system-ui, sans-serif; }
+
+/* toggle right column off → single column */
+.eos-pt.hide-right .eos-pt-line { grid-template-columns: 1fr; }
+.eos-pt.hide-right .eos-pt-right { display: none; }
+
+.eos-pt-block {
+  white-space: pre-wrap; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; margin: 8px 0;
+  font-size: calc(var(--eos-pt-fs) * .82); line-height: 1.7;
+  font-family: "DejaVu Sans", system-ui, sans-serif; color: var(--text);
+}
+.eos-pt-empty { color: var(--text-muted); padding: 40px 16px; text-align: center; }
+
+@media (max-width: 640px) {
+  .eos-pt-line { grid-template-columns: 1fr; gap: 2px; padding: 8px; }
+  .eos-pt-right { padding-left: 2px; }
+  .eos-pt-jump { max-width: 60vw; }
+  .eos-pt-bar .eos-pt-title { width: 100%; }
+}

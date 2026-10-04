@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Presenter View</title>
+<!-- eos-ui: exempt — presenter console, no app chrome -->
+<!-- eos-nav: skip — presenter console, deck-scoped -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+  .pv-shell { display: flex; flex-direction: column; height: 100%; padding: 14px; box-sizing: border-box; gap: 12px; }
+  .pv-top { display: flex; gap: 12px; flex: 1; min-height: 0; }
+  .pv-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .pv-pane h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .pv-frame { flex: 1; border: 1px solid var(--border); border-radius: var(--radius, 8px); overflow: hidden; background: #000; position: relative; }
+  .pv-frame iframe { width: 100%; height: 100%; border: 0; }
+  .pv-notes { flex: 0 0 120px; border: 1px solid var(--border); border-radius: var(--radius, 8px); padding: 10px 14px; overflow-y: auto; font-size: 14px; line-height: 1.5; }
+  .pv-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; }
+  .pv-timer { font: 600 20px/1 var(--mono, monospace); }
+  .pv-pos { color: var(--text-muted); font-size: 13px; }
+  .pv-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  .pv-btn:hover { border-color: var(--accent); }
+  .pv-spacer { flex: 1; }
+  .pv-err { padding: 20px; color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="pv-shell">
+  <div class="pv-err" id="pv-err" hidden></div>
+  <div class="pv-top" id="pv-top" hidden>
+    <div class="pv-pane">
+      <h3>Now showing</h3>
+      <div class="pv-frame"><iframe id="pv-cur" title="Current slide"></iframe></div>
+    </div>
+    <div class="pv-pane">
+      <h3>Next</h3>
+      <div class="pv-frame"><iframe id="pv-next" title="Next slide"></iframe></div>
+    </div>
+  </div>
+  <div class="pv-notes" id="pv-notes" hidden></div>
+  <div class="pv-bar" id="pv-bar" hidden>
+    <button class="pv-btn" onclick="pvPrev()">&larr; Prev</button>
+    <button class="pv-btn" onclick="pvNext()">Next &rarr;</button>
+    <span class="pv-pos" id="pv-pos"></span>
+    <span class="pv-spacer"></span>
+    <span class="pv-timer" id="pv-timer">00:00</span>
+    <button class="pv-btn" onclick="pvResetTimer()">Reset timer</button>
+  </div>
+</div>
+<script>
+(function () {
+    // Presenter console for a deck already open in a present.html audience
+    // window. Syncs slide position bidirectionally via BroadcastChannel (no
+    // server round-trip, same-origin only) — navigating from EITHER window
+    // drives both. Renders the current + next slide as sandboxed srcdoc
+    // iframes (a static thumbnail, not a second interactive EOS_DECK
+    // instance) plus that slide's speaker notes and an elapsed-time timer.
+    var params = new URLSearchParams(location.search);
+    var id = params.get('id');
+    if (!id) { showErr('No deck id (?id=...)'); return; }
+
+    var chan = new BroadcastChannel('ppt-presenter-' + id);
+    var deck = null;
+    var idx = parseInt(params.get('start') || '0', 10) || 0;
+    var timerStart = Date.now();
+
+    function showErr(msg) {
+        document.getElementById('pv-err').hidden = false;
+        document.getElementById('pv-err').textContent = msg;
+    }
+
+    function slideDoc(html) {
+        return '<!doctype html><html><head><link rel="stylesheet" href="/static/theme.css">' +
+            '<style>html,body{margin:0;height:100%;background:var(--bg);color:var(--text);' +
+            'font-family:var(--font);overflow:hidden}' +
+            '.s{padding:24px;transform:scale(0.94);transform-origin:top left;' +
+            'width:106%;height:106%;box-sizing:border-box}</style></head>' +
+            '<body class="theme-void-dark"><div class="s">' + html + '</div></body></html>';
+    }
+
+    function render() {
+        if (!deck) return;
+        var slides = deck.slides || [];
+        idx = Math.max(0, Math.min(slides.length - 1, idx));
+        var cur = slides[idx] || {};
+        var nxt = slides[idx + 1];
+        document.getElementById('pv-cur').srcdoc = slideDoc(cur.html || '');
+        document.getElementById('pv-next').srcdoc = nxt
+            ? slideDoc(nxt.html || '')
+            : slideDoc('<p style="opacity:.5;padding:48px">&mdash; End of deck &mdash;</p>');
+        document.getElementById('pv-notes').textContent = cur.notes || '(no speaker notes for this slide)';
+        document.getElementById('pv-pos').textContent = (idx + 1) + ' / ' + slides.length;
+    }
+
+    function pvGoto(i) {
+        idx = i;
+        render();
+        chan.postMessage({ type: 'goto', index: idx });
+    }
+    window.pvNext = function () { if (deck && idx < deck.slides.length - 1) pvGoto(idx + 1); };
+    window.pvPrev = function () { if (idx > 0) pvGoto(idx - 1); };
+    window.pvResetTimer = function () { timerStart = Date.now(); };
+
+    chan.onmessage = function (ev) {
+        var msg = ev.data || {};
+        if (msg.type === 'slide' && typeof msg.index === 'number') { idx = msg.index; render(); }
+    };
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); pvNext(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); pvPrev(); }
+    });
+
+    function tick() {
+        var s = Math.floor((Date.now() - timerStart) / 1000);
+        var mm = String(Math.floor(s / 60)).padStart(2, '0');
+        var ss = String(s % 60).padStart(2, '0');
+        document.getElementById('pv-timer').textContent = mm + ':' + ss;
+    }
+    setInterval(tick, 1000);
+    tick();
+
+    fetch('/ppt/api/decks/' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) { showErr(d.error); return; }
+        deck = d;
+        document.getElementById('pv-top').hidden = false;
+        document.getElementById('pv-notes').hidden = false;
+        document.getElementById('pv-bar').hidden = false;
+        render();
+    }).catch(function () { showErr('Could not load deck'); });
+})();
+</script>
+</body>
+</html>

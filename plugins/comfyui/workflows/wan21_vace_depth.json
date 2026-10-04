@@ -1,0 +1,111 @@
+{
+  "_comment": "Wan 2.1 VACE depth-guided video via the WanVideoWrapper stack. Geometry comes from a rendered depth SEQUENCE (Blender blockout), appearance from the text prompt — the split validated 2026-07-28 (docs/GUIDED-GENERATION.md §10). Substitute {prompt} {negative_prompt} {seed} {frames} {width} {height} through the runner's standard tokens and {depth_dir} through generate_from_workflow(substitutions={'depth_dir': ...}).",
+
+  "_requires": "ComfyUI-WanVideoWrapper + ComfyUI-VideoHelperSuite. Models: wanvideo/wan2.1_t2v_1.3B_bf16.safetensors, Wan2_1-VACE_module_1_3B_bf16.safetensors, wanvideo/Wan2_1_VAE_bf16.safetensors, text_encoders/umt5-xxl-enc-fp8_e4m3fn.safetensors.",
+
+  "_constraints": "CORE NODES CANNOT RUN THIS. Both core paths were falsified 2026-07-28: ControlNetLoader rejects the Wan depth controlnet ('not a valid controlnet model') and UNETLoader rejects the VACE module ('could not detect model type') — the weights are wrapper-format and the wrapper's own VACEPATH / WANVIDEOCONTROLNET types exist for exactly that reason. Do not 'simplify' this back onto KSampler. Resolution: 832x480 is the 1.3B model's native band; 1024x576 (sequence length 29952) hard-crashed ComfyUI with no Python traceback on a 16GB card. Frames on the 4n+1 grid. The T5 must NOT be an fp8-*scaled* checkpoint — LoadWanVideoT5TextEncoder rejects those explicitly.",
+
+  "_depth_contract": "{depth_dir} is an absolute path to a directory of LOSSLESS PNGs, one per frame, matching {frames}/{width}/{height}. Render it with scripts/blockout_depth_probe.py, which uses a FIXED near/far — never a per-frame normalize, or the control signal breathes and the restyle flickers. Do not route the sequence through an h264 intermediate; chroma subsampling bands the depth ramp.",
+
+  "1": {
+    "class_type": "WanVideoVACEModelSelect",
+    "inputs": { "vace_model": "Wan2_1-VACE_module_1_3B_bf16.safetensors" }
+  },
+  "2": {
+    "class_type": "WanVideoModelLoader",
+    "inputs": {
+      "model": "wanvideo\\wan2.1_t2v_1.3B_bf16.safetensors",
+      "base_precision": "bf16",
+      "quantization": "disabled",
+      "load_device": "main_device",
+      "attention_mode": "sdpa",
+      "extra_model": ["1", 0]
+    }
+  },
+  "3": {
+    "class_type": "WanVideoVAELoader",
+    "inputs": {
+      "model_name": "wanvideo\\Wan2_1_VAE_bf16.safetensors",
+      "precision": "bf16"
+    }
+  },
+  "4": {
+    "class_type": "LoadWanVideoT5TextEncoder",
+    "inputs": {
+      "model_name": "umt5-xxl-enc-fp8_e4m3fn.safetensors",
+      "precision": "bf16",
+      "load_device": "offload_device",
+      "quantization": "disabled"
+    }
+  },
+  "5": {
+    "class_type": "WanVideoTextEncode",
+    "inputs": {
+      "positive_prompt": "{prompt}",
+      "negative_prompt": "{negative_prompt}, blurry, low quality, distorted, watermark, text, static image, deformed",
+      "t5": ["4", 0],
+      "force_offload": true
+    }
+  },
+
+  "6": {
+    "class_type": "VHS_LoadImagesPath",
+    "inputs": { "directory": "{depth_dir}" }
+  },
+
+  "7": {
+    "class_type": "WanVideoVACEEncode",
+    "inputs": {
+      "vae": ["3", 0],
+      "width": "{width}",
+      "height": "{height}",
+      "num_frames": "{frames}",
+      "strength": 1.0,
+      "vace_start_percent": 0.0,
+      "vace_end_percent": 1.0,
+      "input_frames": ["6", 0]
+    }
+  },
+
+  "8": {
+    "class_type": "WanVideoSampler",
+    "inputs": {
+      "model": ["2", 0],
+      "image_embeds": ["7", 0],
+      "text_embeds": ["5", 0],
+      "steps": 25,
+      "cfg": 5.0,
+      "shift": 8.0,
+      "seed": "{seed}",
+      "force_offload": true,
+      "scheduler": "unipc",
+      "riflex_freq_index": 0
+    }
+  },
+
+  "9": {
+    "class_type": "WanVideoDecode",
+    "inputs": {
+      "vae": ["3", 0],
+      "samples": ["8", 0],
+      "enable_vae_tiling": false,
+      "tile_x": 272,
+      "tile_y": 272,
+      "tile_stride_x": 144,
+      "tile_stride_y": 128
+    }
+  },
+
+  "10": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["9", 0],
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "eos-mv-vace",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

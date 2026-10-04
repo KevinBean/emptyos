@@ -1,0 +1,82 @@
+{
+  "_comment": "ACE-Step extend API workflow: grow an EXISTING take at its head and/or tail (intro / outro) and keep the original untouched. Sibling of acestep_repaint.json - the graph is IDENTICAL apart from node 6, verified 2026-08-16 against the pack's own AEC-extend.json example and ace_step_nodes.py::ACEStepExtend. Same model caveat as repaint: this is the MW pack's ACE-Step 1.0 3.5B, NOT the 1.5 turbo that Compose uses, so grown material is voiced by a different model than the track it extends. HOW IT DIFFERS FROM REPAINT, none of which is cosmetic: (1) there is NO variance input - ACEStepExtend does not expose one, and the pipeline falls back to its own retake_variance default; do not add a `{repaint_variance}` placeholder here expecting it to bind. (2) left/right_extend_length are SECONDS added OUTSIDE the source, which the node converts to repaint_start=-left and repaint_end=duration+right before running task='extend'; the mask therefore covers only NEW territory, so the original audio is not at risk the way a repaint window is. (3) IT CHANGES DURATION - the output is longer than the input, so any verification that assumes equal length (scripts/measure_repaint.py does) must compare only the overlapping original span. (4) Because the new material still draws from the WHOLE song's lyrics, an extension can repeat a verse rather than continue it; that is measured per-run, not assumed. WHAT IS DELIBERATELY NOT TEMPLATED, identical to the repaint sibling: node 5 audio_duration is inert (overwritten from the source file), node 5 seed must stay NONZERO via {param_seed} or the run dies TypeError after loading 7.6GB, and node 6 overlapped_decode stays false.",
+  "_requires": [
+    "models/TTS/ACE-Step-v1-3.5B/ace_step_transformer",
+    "models/TTS/ACE-Step-v1-3.5B/music_dcae_f8c8",
+    "models/TTS/ACE-Step-v1-3.5B/music_vocoder",
+    "models/TTS/ACE-Step-v1-3.5B/umt5-base",
+    "custom_nodes/ComfyUI_ACE-Step"
+  ],
+  "1": {
+    "class_type": "ACEModelLoader",
+    "inputs": {
+      "dcae_checkpoint": "music_dcae_f8c8",
+      "vocoder_checkpoint": "music_vocoder",
+      "ace_step_checkpoint": "ace_step_transformer",
+      "text_encoder_checkpoint": "umt5-base",
+      "cpu_offload": "{cpu_offload}",
+      "torch_compile": false
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {
+      "audio": "{src_audio}"
+    }
+  },
+  "3": {
+    "class_type": "MultiLinePromptACES",
+    "inputs": {
+      "multi_line_prompt": "{prompt}"
+    }
+  },
+  "4": {
+    "class_type": "MultiLineLyrics",
+    "inputs": {
+      "multi_line_prompt": "{lyrics}"
+    }
+  },
+  "5": {
+    "class_type": "GenerationParameters",
+    "inputs": {
+      "audio_duration": 60.0,
+      "infer_step": "{steps}",
+      "guidance_scale": "{guidance_scale}",
+      "scheduler_type": "euler",
+      "cfg_type": "apg",
+      "omega_scale": 10.0,
+      "seed": "{param_seed}",
+      "guidance_interval": 0.5,
+      "guidance_interval_decay": 0.0,
+      "min_guidance_scale": 3,
+      "use_erg_tag": true,
+      "use_erg_lyric": true,
+      "use_erg_diffusion": true,
+      "oss_steps": "",
+      "guidance_scale_text": 0.0,
+      "guidance_scale_lyric": 0.0
+    }
+  },
+  "6": {
+    "class_type": "ACEStepExtend",
+    "inputs": {
+      "models": ["1", 0],
+      "src_audio": ["2", 0],
+      "prompt": ["3", 0],
+      "lyrics": ["4", 0],
+      "parameters": ["5", 0],
+      "negative_prompt": "{negative_prompt}",
+      "left_extend_length": "{left_extend_length}",
+      "right_extend_length": "{right_extend_length}",
+      "seed": "{seed}",
+      "overlapped_decode": false
+    }
+  },
+  "7": {
+    "class_type": "SaveAudio",
+    "inputs": {
+      "audio": ["6", 0],
+      "filename_prefix": "eos-extend/%year%-%month%/extend"
+    }
+  }
+}

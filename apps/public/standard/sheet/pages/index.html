@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sheet - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+  .sh-wrap { display: flex; height: 100dvh; max-height: 100dvh; }
+  .sh-side { width: 240px; flex: 0 0 240px; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg-card); }
+  .sh-side-head { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .sh-side-title { font-size: 15px; font-weight: 700; }
+  .sh-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .sh-list-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text); }
+  .sh-list-item:hover { background: var(--bg-card-hover); }
+  .sh-list-item.active { background: var(--accent); color: var(--accent-ink); }
+  .sh-list-item .sh-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .sh-list-item.active .sh-sub { color: var(--accent-ink); opacity: 0.85; }
+  .sh-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .sh-topbar { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .sh-doc-title { font-size: 17px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sh-formula-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+  .sh-cellref { font-family: var(--mono, monospace); font-weight: 700; min-width: 48px; text-align: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+  .sh-fx { color: var(--text-muted); font-style: italic; }
+  .sh-formula-input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: var(--mono, monospace); font-size: 14px; }
+  .sh-grid-scroll { flex: 1; overflow: auto; padding: 0; }
+  table.sh-grid { border-collapse: collapse; font-size: 13px; }
+  table.sh-grid th, table.sh-grid td { border: 1px solid var(--border); padding: 0; }
+  table.sh-grid th { background: var(--bg-card); color: var(--text-muted); font-weight: 600; text-align: center; min-width: 84px; height: 26px; position: sticky; top: 0; z-index: 1; }
+  table.sh-grid th.sh-rowhdr { left: 0; z-index: 2; min-width: 36px; width: 36px; }
+  table.sh-grid td.sh-rowhdr { background: var(--bg-card); color: var(--text-muted); text-align: center; font-weight: 600; position: sticky; left: 0; min-width: 36px; width: 36px; }
+  table.sh-grid td.sh-cell { min-width: 84px; }
+  table.sh-grid td.sh-cell input { width: 100%; box-sizing: border-box; border: none; outline: none; background: transparent; color: var(--text); padding: 4px 7px; font: inherit; height: 26px; }
+  table.sh-grid td.sh-cell.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+  table.sh-grid td.sh-cell input.sh-err { color: var(--danger); font-style: italic; }
+  table.sh-grid td.sh-cell input.sh-num { text-align: right; }
+  .sh-empty { padding: 48px; text-align: center; color: var(--text-muted); }
+  .sh-toolbtn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); cursor: pointer; font-size: 13px; }
+  .sh-toolbtn:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="sh-wrap">
+  <aside class="sh-side">
+    <div class="sh-side-head">
+      <span class="sh-side-title">Sheets</span>
+      <button class="sh-toolbtn" onclick="newSheet()">+ New</button>
+    </div>
+    <div class="sh-list" id="sheet-list"></div>
+  </aside>
+  <main class="sh-main">
+    <div class="sh-topbar">
+      <span class="sh-doc-title" id="doc-title">Select a sheet</span>
+      <button class="sh-toolbtn" id="btn-addrow" onclick="resize('rows', 1)" style="display:none">+ Row</button>
+      <button class="sh-toolbtn" id="btn-addcol" onclick="resize('cols', 1)" style="display:none">+ Col</button>
+      <a class="sh-toolbtn" id="btn-csv" style="display:none">Export CSV</a>
+      <button class="sh-toolbtn" id="btn-import" style="display:none" onclick="openImportCsv()">Import CSV</button>
+      <button class="sh-toolbtn" onclick="openAppSettings()" aria-label="Settings">&#9881;</button>
+    </div>
+    <div class="sh-formula-bar" id="formula-bar" style="display:none">
+      <span class="sh-cellref" id="cellref">—</span>
+      <span class="sh-fx">fx</span>
+      <input class="sh-formula-input" id="formula-input" placeholder="Value or =formula (e.g. =SUM(A1:A5))" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="sh-grid-scroll" id="grid-scroll">
+      <div class="sh-empty" id="empty-state">No sheet open. Create one to start.</div>
+    </div>
+  </main>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var SHEET = null;       // {id, title, rows, cols, raw_grid, computed_grid}
+var SEL = null;         // selected cell A1
+var COLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function colLabel(i) {
+  var s = "";
+  i += 1;
+  while (i > 0) { var r = (i - 1) % 26; s = COLS[r] + s; i = Math.floor((i - 1) / 26); }
+  return s;
+}
+function isNum(v) { return v !== "" && v != null && !isNaN(v) && !/^#/.test(String(v)); }
+
+// ── sheet list ────────────────────────────────────────────────────────
+async function loadList() {
+  var res = await EOS.api('/sheet/api/sheets');
+  var el = document.getElementById('sheet-list');
+  var sheets = (res && res.sheets) || [];
+  if (!sheets.length) { el.innerHTML = '<div class="sh-empty" style="padding:24px;font-size:13px">No sheets yet.</div>'; return; }
+  el.innerHTML = sheets.map(function(s) {
+    var active = SHEET && SHEET.id === s.id ? ' active' : '';
+    return '<div class="sh-list-item' + active + '" onclick="openSheet(\'' + encodeURIComponent(s.id) + '\')">' +
+      '<div>' + esc(s.title) + '</div>' +
+      '<div class="sh-sub">' + s.rows + '×' + s.cols + ' · ' + esc(s.updated || '') + '</div></div>';
+  }).join('');
+}
+
+function newSheet() {
+  EOS_UI.formModal('New sheet', [
+    {key: 'title', label: 'Sheet name', type: 'text', value: 'Untitled sheet', autofocus: true},
+  ], async function(vals) {
+    var title = (vals.title || '').trim() || 'Untitled sheet';
+    var res = await EOS.post('/sheet/api/sheets', { title: title });
+    if (res && res.ok) { await loadList(); openSheet(encodeURIComponent(res.id)); }
+    else EOS.toast((res && res.error) || 'create failed', 'error');
+  });
+}
+
+// ── open + render ─────────────────────────────────────────────────────
+async function openSheet(id) {
+  var res = await EOS.api('/sheet/api/sheets/' + id);
+  if (!res || res.error) { EOS.toast((res && res.error) || 'not found', 'error'); return; }
+  SHEET = res; SEL = null;
+  _route.set(SHEET.id);
+  document.getElementById('doc-title').textContent = SHEET.title;
+  document.getElementById('formula-bar').style.display = 'flex';
+  document.getElementById('btn-addrow').style.display = '';
+  document.getElementById('btn-addcol').style.display = '';
+  var csv = document.getElementById('btn-csv');
+  csv.style.display = ''; csv.href = '/sheet/api/sheets/' + encodeURIComponent(SHEET.id) + '/export.csv';
+  document.getElementById('btn-import').style.display = '';
+  renderGrid();
+  loadList();
+}
+
+// ── CSV import — propose (preview shape) → confirm (apply) ────────────
+function openImportCsv() {
+  if (!SHEET) return;
+  EOS_UI.modal({
+    title: 'Import CSV',
+    width: '520px',
+    body:
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' +
+        'Paste CSV data below, or choose a file. Cells fill starting at A1 and overwrite ' +
+        'any existing values in the overlapping region.</div>' +
+      '<input type="file" id="import-csv-file" accept=".csv,text/csv" style="margin-bottom:8px">' +
+      '<textarea id="import-csv-text" class="eos-input" rows="8" style="width:100%;font-family:var(--mono);font-size:12px" placeholder="a,b,c\n1,2,3"></textarea>' +
+      '<div id="import-csv-preview" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>' +
+      '<div class="eos-modal-actions" style="margin-top:12px">' +
+        '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+        '<button class="eos-btn eos-btn-primary" onclick="applyImportCsv()">Import</button>' +
+      '</div>',
+  });
+  document.getElementById('import-csv-file').addEventListener('change', function(e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function() { document.getElementById('import-csv-text').value = reader.result; previewImportCsv(); };
+    reader.readAsText(f);
+  });
+  document.getElementById('import-csv-text').addEventListener('input', debounce(previewImportCsv, 300));
+}
+
+var _importDebounceTimer = null;
+function debounce(fn, ms) {
+  return function() { clearTimeout(_importDebounceTimer); _importDebounceTimer = setTimeout(fn, ms); };
+}
+
+async function previewImportCsv() {
+  var text = (document.getElementById('import-csv-text') || {}).value || '';
+  var out = document.getElementById('import-csv-preview');
+  if (!out) return;
+  if (!text.trim()) { out.textContent = ''; return; }
+  var res = await EOS.post('/sheet/api/sheets/' + encodeURIComponent(SHEET.id) + '/import/preview', {csv: text});
+  if (!res || res.error) { out.textContent = (res && res.error) || 'preview failed'; return; }
+  var msg = res.import_rows + '×' + res.import_cols + ' cells will be imported';
+  if (res.truncated) {
+    msg += ' — source was ' + res.source_rows + '×' + res.source_cols + ', capped at the sheet limit (' + res.import_rows + '×' + res.import_cols + ')';
+  }
+  out.textContent = msg;
+}
+
+async function applyImportCsv() {
+  var text = (document.getElementById('import-csv-text') || {}).value || '';
+  if (!text.trim()) { EOS.toast('Paste or choose a CSV first', 'error'); return; }
+  var res = await EOS.post('/sheet/api/sheets/' + encodeURIComponent(SHEET.id) + '/import/apply', {csv: text});
+  if (!res || res.error) { EOS.toast((res && res.error) || 'import failed', 'error'); return; }
+  SHEET.rows = res.rows; SHEET.cols = res.cols;
+  SHEET.raw_grid = res.raw_grid; SHEET.computed_grid = res.computed_grid;
+  EOS_UI.closeModal();
+  renderGrid();
+  loadList();
+  EOS.toast('Imported ' + res.rows + '×' + res.cols, 'ok');
+}
+
+function renderGrid() {
+  var rows = SHEET.rows, cols = SHEET.cols;
+  var html = '<table class="sh-grid"><thead><tr><th class="sh-rowhdr"></th>';
+  for (var c = 0; c < cols; c++) html += '<th>' + colLabel(c) + '</th>';
+  html += '</tr></thead><tbody>';
+  for (var r = 1; r <= rows; r++) {
+    html += '<tr><td class="sh-rowhdr">' + r + '</td>';
+    for (var c2 = 0; c2 < cols; c2++) {
+      var ref = colLabel(c2) + r;
+      html += '<td class="sh-cell" id="td-' + ref + '" data-cell="' + ref + '">' +
+        '<input data-cell="' + ref + '" autocomplete="off" spellcheck="false"></td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('grid-scroll').innerHTML = html;
+  document.querySelectorAll('table.sh-grid input').forEach(function(inp) {
+    inp.addEventListener('focus', onCellFocus);
+    inp.addEventListener('blur', onCellBlur);
+    inp.addEventListener('keydown', onCellKey);
+  });
+  paintComputed();
+}
+
+function paintComputed() {
+  document.querySelectorAll('table.sh-grid input').forEach(function(inp) {
+    if (inp === document.activeElement) return;
+    var ref = inp.dataset.cell;
+    var v = SHEET.computed_grid[ref];
+    if (v === undefined) v = '';
+    inp.value = v;
+    inp.classList.toggle('sh-err', /^#/.test(String(v)));
+    inp.classList.toggle('sh-num', isNum(v));
+  });
+}
+
+// ── editing ───────────────────────────────────────────────────────────
+function onCellFocus(e) {
+  var ref = e.target.dataset.cell;
+  selectCell(ref);
+  e.target.value = SHEET.raw_grid[ref] || '';
+  e.target.classList.remove('sh-err', 'sh-num');
+  setTimeout(function() { try { e.target.select(); } catch (x) {} }, 0);
+}
+function onCellBlur(e) { commitCell(e.target.dataset.cell, e.target.value); }
+function onCellKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); moveSel(1, 0); }
+  else if (e.key === 'Tab') { /* native tab moves focus to next input */ }
+  else if (e.key === 'Escape') { e.preventDefault(); e.target.value = SHEET.raw_grid[e.target.dataset.cell] || ''; e.target.blur(); }
+}
+
+function selectCell(ref) {
+  SEL = ref;
+  document.querySelectorAll('td.sh-cell.sel').forEach(function(td){ td.classList.remove('sel'); });
+  var td = document.getElementById('td-' + ref);
+  if (td) td.classList.add('sel');
+  document.getElementById('cellref').textContent = ref;
+  document.getElementById('formula-input').value = SHEET.raw_grid[ref] || '';
+}
+function moveSel(dr, dc) {
+  if (!SEL) return;
+  var m = SEL.match(/^([A-Z]+)(\d+)$/); if (!m) return;
+  var r = parseInt(m[2], 10) + dr;
+  if (r < 1 || r > SHEET.rows) return;
+  var next = m[1] + r;
+  var inp = document.querySelector('input[data-cell="' + next + '"]');
+  if (inp) inp.focus();
+}
+
+async function commitCell(ref, raw) {
+  var prev = SHEET.raw_grid[ref] || '';
+  if (raw === prev) { paintComputed(); return; }
+  var res = await EOS.post('/sheet/api/sheets/' + encodeURIComponent(SHEET.id) + '/cell',
+    { cell: ref, raw: raw });
+  if (!res || res.error) { EOS.toast((res && res.error) || 'save failed', 'error'); paintComputed(); return; }
+  if (raw === '') delete SHEET.raw_grid[ref]; else SHEET.raw_grid[ref] = raw;
+  SHEET.computed_grid = res.computed_grid;
+  paintComputed();
+}
+
+// Bound on the scroll container, not per-input: the grid is re-rendered by
+// innerHTML on every open/resize, which would drop a per-cell listener.
+document.getElementById('grid-scroll').addEventListener('paste', onGridPaste);
+
+// ── paste a range ─────────────────────────────────────────────────────
+// The single most-used spreadsheet gesture: copy a block out of Excel/Sheets
+// and drop it in. Without this a 3x4 clipboard block landed entirely in one
+// cell. Tab-separated is what every spreadsheet puts on the clipboard; comma
+// is a fallback for CSV text and is used ONLY when the payload has no tabs at
+// all, so a sentence containing commas inside one cell is never split into
+// columns.
+function parseClipboardGrid(text) {
+  var t = String(text == null ? '' : text);
+  t = t.split('\r\n').join('\n').split('\r').join('\n');
+  while (t.slice(-1) === '\n') t = t.slice(0, -1);  // trailing NL is not a row
+  if (!t) return null;
+  var lines = t.split('\n');
+  var hasTab = t.indexOf('\t') !== -1;
+  if (!hasTab && lines.length < 2) return null;     // one plain value — native paste
+  var sep = hasTab ? '\t' : ',';
+  return lines.map(function(line) { return line.split(sep); });
+}
+
+// A1 + (dr, dc) -> A1. Returns '' for an off-sheet offset.
+function cellRef(anchorRef, dr, dc) {
+  var m = String(anchorRef || '').match(/^([A-Z]+)([0-9]+)$/);
+  if (!m) return '';
+  var col = 0;
+  for (var i = 0; i < m[1].length; i++) col = col * 26 + (m[1].charCodeAt(i) - 64);
+  col = col - 1 + dc;
+  var row = parseInt(m[2], 10) + dr;
+  if (col < 0 || row < 1) return '';
+  var name = '', n = col;
+  do { name = String.fromCharCode(65 + (n % 26)) + name; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return name + row;
+}
+
+async function onGridPaste(e) {
+  if (!SHEET || !SEL) return;
+  var cb = e.clipboardData || window.clipboardData;
+  if (!cb) return;
+  var rows = parseClipboardGrid(cb.getData('text'));
+  if (!rows) return;                        // single value — let the browser paste it
+  e.preventDefault();
+  var res = await EOS.post('/sheet/api/sheets/' + encodeURIComponent(SHEET.id) + '/cells',
+    { anchor: SEL, rows: rows });
+  if (!res || res.error) { EOS.toast((res && res.error) || 'paste failed', false); return; }
+  if (res.rows !== SHEET.rows || res.cols !== SHEET.cols) {
+    // The paste grew the sheet — the DOM table has to be rebuilt.
+    SHEET.rows = res.rows; SHEET.cols = res.cols;
+    openSheet(encodeURIComponent(SHEET.id));
+  } else {
+    for (var dr = 0; dr < rows.length; dr++) {
+      for (var dc = 0; dc < rows[dr].length; dc++) {
+        var ref = cellRef(SEL, dr, dc);
+        if (ref) SHEET.raw_grid[ref] = String(rows[dr][dc]);
+      }
+    }
+    SHEET.computed_grid = res.computed_grid;
+    // Re-sync the focused input. It still holds the value it had when it was
+    // focused (onCellFocus seeds it), and paintComputed leaves the cell being
+    // edited alone — so without this, blurring the anchor fires onCellBlur with
+    // the STALE pre-paste text and commits it back over what was just pasted.
+    // Caught in a browser walk: paste into A1, click away, A1 is empty again.
+    var active = document.activeElement;
+    if (active && active.dataset && active.dataset.cell) {
+      active.value = SHEET.raw_grid[active.dataset.cell] || '';
+    }
+    if (SEL) selectCell(SEL);   // formula bar mirrors the new anchor value
+    paintComputed();
+  }
+  if (res.clipped) {
+    EOS.toast('Pasted ' + res.written + ' cells; ' + res.clipped
+              + ' fell outside the sheet limit and were not written', false);
+  } else {
+    EOS.toast('Pasted ' + res.written + ' cells');
+  }
+}
+
+// Formula-bar commit mirrors the selected cell.
+document.getElementById('formula-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && SEL) {
+    e.preventDefault();
+    var ref = SEL, val = e.target.value;
+    commitCell(ref, val).then(function(){ moveSel(1, 0); });
+  }
+});
+
+async function resize(dim, delta) {
+  if (!SHEET) return;
+  var body = {};
+  body[dim] = (dim === 'rows' ? SHEET.rows : SHEET.cols) + delta;
+  var res = await EOS.post('/sheet/api/sheets/' + encodeURIComponent(SHEET.id) + '/resize', body);
+  if (res && res.ok) { SHEET.rows = res.rows; SHEET.cols = res.cols; openSheet(encodeURIComponent(SHEET.id)); }
+}
+
+// ── settings + routing ────────────────────────────────────────────────
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'sheet-settings-panel',
+  title: 'Sheet Settings',
+  fields: [
+    { key: 'sheet.default_rows', label: 'Default rows', type: 'number', default: 12 },
+    { key: 'sheet.default_cols', label: 'Default columns', type: 'number', default: 8 },
+  ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+var _route = EOS_UI.hashRoute({
+  onShow: function(id) { if (!SHEET || SHEET.id !== id) openSheet(encodeURIComponent(id)); },
+  onHide: function() {},
+});
+
+(async function init() {
+  await loadList();
+  _route.init();
+})();
+</script>
+</body>
+</html>

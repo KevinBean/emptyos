@@ -1,0 +1,71 @@
+[app]
+id = "requirements"
+store_category = "productivity"
+name = "Requirements"
+version = "0.1.0"
+description = "Requirement management — capture, trace to standards, verify, and track requirements for any project"
+icon = "📋"
+dimensions = ["occupational"]
+user_intent = [
+    "I want to track requirements for a project",
+    "manage the requirements of a design",
+    "what requirements does this project have",
+    "trace this requirement to a standard",
+    "which requirements are still unverified",
+    "记录一下这个项目的需求",
+    "这个需求对应哪条标准",
+]
+
+[app.entry]
+module = "app"
+class = "RequirementsApp"
+
+[requires]
+# `think` extracts obligation sentences from a registered source's clauses
+# (proposed rows only — a human approves every one).
+capabilities = ["read", "write", "think"]
+apps = []
+optional_apps = ["kb"]
+
+# Clause-first compliance matrix — a record of the project's declared position
+# per source clause, not a calculation sheet (app-reports.md: study-record).
+[provides.report]
+kind = "study-record"
+method = "compliance_markdown"
+formats = ["md", "pdf"]
+
+[provides.cli]
+commands = ["requirements"]
+
+[provides.web]
+prefix = "/requirements"
+
+[provides.events]
+emits = ["requirements:created", "requirements:updated", "requirements:verified"]
+
+# internal: CRUD churn; requirements:verified is the wired milestone
+internal = ["requirements:created", "requirements:updated"]
+[provides.timeline]
+entity_source = "requirement_path"
+
+[[contributes.boards.preset]]
+id = "requirements-boards"
+method = "board_presets"
+
+[[provides.verbs]]
+verb = "requirements.list"
+method = "list_all"
+summary = "List requirements across projects"
+args = {}
+eligibility = "stable"
+surfaces = ["assistant", "mcp"]
+assistant = { slash = "/requirements", method = "list_all" }
+
+[[provides.verbs]]
+verb = "requirements.add"
+method = "add"
+summary = "Capture a requirement for a project"
+args = { statement = "string", project = "string?" }
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/req-add", method = "add", arg = "statement" }

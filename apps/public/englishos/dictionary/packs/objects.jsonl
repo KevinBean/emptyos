@@ -1,0 +1,509 @@
+{"slug": "tiger", "name": "tiger", "chinese": "老虎", "pinyin": "lǎohǔ", "emoji": "🐯", "wiki": "Tiger", "hint": "Orange coat with black stripes; the biggest cat."}
+{"slug": "lion", "name": "lion", "chinese": "狮子", "pinyin": "shīzi", "emoji": "🦁", "wiki": "Lion", "hint": "The male has a thick mane."}
+{"slug": "elephant", "name": "elephant", "chinese": "大象", "pinyin": "dàxiàng", "emoji": "🐘", "wiki": "Elephant", "hint": "Long trunk and huge ears."}
+{"slug": "giraffe", "name": "giraffe", "chinese": "长颈鹿", "pinyin": "chángjǐnglù", "emoji": "🦒", "wiki": "Giraffe", "hint": "The tallest animal on land."}
+{"slug": "zebra", "name": "zebra", "chinese": "斑马", "pinyin": "bānmǎ", "emoji": "🦓", "wiki": "Zebra", "hint": "A horse in black-and-white stripes."}
+{"slug": "hippopotamus", "name": "hippopotamus", "chinese": "河马", "pinyin": "hémǎ", "emoji": "🦛", "wiki": "Hippopotamus", "hint": "Huge, grey, and lives in rivers."}
+{"slug": "rhinoceros", "name": "rhinoceros", "chinese": "犀牛", "pinyin": "xīniú", "emoji": "🦏", "wiki": "Rhinoceros", "hint": "Thick grey skin and a horn on its nose."}
+{"slug": "leopard", "name": "leopard", "chinese": "豹", "pinyin": "bào", "emoji": "🐆", "wiki": "Leopard", "hint": "Spotted cat that drags prey up trees."}
+{"slug": "cheetah", "name": "cheetah", "chinese": "猎豹", "pinyin": "lièbào", "emoji": "🐆", "wiki": "Cheetah", "hint": "The fastest land animal; black tear lines."}
+{"slug": "wolf", "name": "wolf", "chinese": "狼", "pinyin": "láng", "emoji": "🐺", "wiki": "Wolf", "hint": "A wild dog that hunts in a pack."}
+{"slug": "red-fox", "name": "red fox", "chinese": "红狐", "pinyin": "hóng hú", "emoji": "🦊", "wiki": "Red fox", "hint": "Rusty red with a white-tipped bushy tail."}
+{"slug": "brown-bear", "name": "brown bear", "chinese": "棕熊", "pinyin": "zōngxióng", "emoji": "🐻", "wiki": "Brown bear", "hint": "Big shoulder hump; catches salmon."}
+{"slug": "polar-bear", "name": "polar bear", "chinese": "北极熊", "pinyin": "běijíxióng", "emoji": "🐻‍❄️", "wiki": "Polar bear", "hint": "White bear of the Arctic ice."}
+{"slug": "giant-panda", "name": "giant panda", "chinese": "大熊猫", "pinyin": "dàxióngmāo", "emoji": "🐼", "wiki": "Giant panda", "hint": "Black-and-white; eats bamboo."}
+{"slug": "deer", "name": "deer", "chinese": "鹿", "pinyin": "lù", "emoji": "🦌", "wiki": "White-tailed deer", "hint": "Slender, and the male grows antlers."}
+{"slug": "rabbit", "name": "rabbit", "chinese": "兔子", "pinyin": "tùzi", "emoji": "🐰", "wiki": "Rabbit", "hint": "Long ears and a short fluffy tail."}
+{"slug": "squirrel", "name": "squirrel", "chinese": "松鼠", "pinyin": "sōngshǔ", "emoji": "🐿️", "wiki": "Eastern gray squirrel", "hint": "Bushy tail; hides nuts."}
+{"slug": "hedgehog", "name": "hedgehog", "chinese": "刺猬", "pinyin": "cìwei", "emoji": "🦔", "wiki": "Hedgehog", "hint": "Small and covered in spines."}
+{"slug": "bat", "name": "bat", "chinese": "蝙蝠", "pinyin": "biānfú", "emoji": "🦇", "wiki": "Bat", "hint": "The only mammal that truly flies."}
+{"slug": "mole", "name": "mole", "chinese": "鼹鼠", "pinyin": "yǎnshǔ", "emoji": "🐀", "wiki": "Mole (animal)", "hint": "Velvet fur and spade-like digging paws."}
+{"slug": "otter", "name": "otter", "chinese": "水獭", "pinyin": "shuǐtǎ", "emoji": "🦦", "wiki": "Otter", "hint": "Floats on its back in the water."}
+{"slug": "beaver", "name": "beaver", "chinese": "河狸", "pinyin": "hélí", "emoji": "🦫", "wiki": "Beaver", "hint": "Flat paddle tail; builds dams."}
+{"slug": "raccoon", "name": "raccoon", "chinese": "浣熊", "pinyin": "huànxióng", "emoji": "🦝", "wiki": "Raccoon", "hint": "Black mask and a ringed tail."}
+{"slug": "kangaroo", "name": "kangaroo", "chinese": "袋鼠", "pinyin": "dàishǔ", "emoji": "🦘", "wiki": "Kangaroo", "hint": "Hops, and carries young in a pouch."}
+{"slug": "koala", "name": "koala", "chinese": "考拉", "pinyin": "kǎolā", "emoji": "🐨", "wiki": "Koala", "hint": "Grey and round-eared; eats eucalyptus."}
+{"slug": "sloth", "name": "sloth", "chinese": "树懒", "pinyin": "shùlǎn", "emoji": "🦥", "wiki": "Sloth", "hint": "Hangs upside down and moves very slowly."}
+{"slug": "monkey", "name": "monkey", "chinese": "猴子", "pinyin": "hóuzi", "emoji": "🐒", "wiki": "Monkey", "hint": "Long tail; climbs and swings."}
+{"slug": "gorilla", "name": "gorilla", "chinese": "大猩猩", "pinyin": "dàxīngxing", "emoji": "🦍", "wiki": "Gorilla", "hint": "The largest primate; broad black chest."}
+{"slug": "chimpanzee", "name": "chimpanzee", "chinese": "黑猩猩", "pinyin": "hēixīngxing", "emoji": "🦧", "wiki": "Chimpanzee", "hint": "Black ape that uses simple tools."}
+{"slug": "camel", "name": "camel", "chinese": "骆驼", "pinyin": "luòtuo", "emoji": "🐫", "wiki": "Camel", "hint": "Humped back; crosses deserts."}
+{"slug": "mouse", "name": "mouse", "chinese": "老鼠", "pinyin": "lǎoshǔ", "emoji": "🐭", "wiki": "House mouse", "hint": "Tiny, with a long thin tail."}
+{"slug": "hyena", "name": "hyena", "chinese": "鬣狗", "pinyin": "liègǒu", "emoji": "🐺", "wiki": "Spotted hyena", "hint": "Sloping back and a laughing call."}
+{"slug": "meerkat", "name": "meerkat", "chinese": "狐獴", "pinyin": "húměng", "emoji": "🦫", "wiki": "Meerkat", "hint": "Stands upright to keep watch."}
+{"slug": "porcupine", "name": "porcupine", "chinese": "豪猪", "pinyin": "háozhū", "emoji": "🦔", "wiki": "Porcupine", "hint": "Long sharp quills along its back."}
+{"slug": "skunk", "name": "skunk", "chinese": "臭鼬", "pinyin": "chòuyòu", "emoji": "🦨", "wiki": "Skunk", "hint": "Black with a white stripe; sprays a smell."}
+{"slug": "bison", "name": "bison", "chinese": "野牛", "pinyin": "yěniú", "emoji": "🦬", "wiki": "Bison", "hint": "Shaggy shoulders and a heavy head."}
+{"slug": "moose", "name": "moose", "chinese": "驼鹿", "pinyin": "tuólù", "emoji": "🫎", "wiki": "Moose", "hint": "Huge deer with flat, broad antlers.", "image_hint": "Alces alces 1.jpg"}
+{"slug": "antelope", "name": "antelope", "chinese": "羚羊", "pinyin": "língyáng", "emoji": "🦌", "wiki": "Antelope", "hint": "Slim, fast, with ringed horns."}
+{"slug": "wild-boar", "name": "wild boar", "chinese": "野猪", "pinyin": "yězhū", "emoji": "🐗", "wiki": "Wild boar", "hint": "Bristly wild pig with tusks."}
+{"slug": "eagle", "name": "eagle", "chinese": "鹰", "pinyin": "yīng", "emoji": "🦅", "wiki": "Golden eagle", "hint": "Big hooked beak; soars and hunts."}
+{"slug": "owl", "name": "owl", "chinese": "猫头鹰", "pinyin": "māotóuyīng", "emoji": "🦉", "wiki": "Owl", "hint": "Flat face, huge eyes; flies at night."}
+{"slug": "penguin", "name": "penguin", "chinese": "企鹅", "pinyin": "qǐé", "emoji": "🐧", "wiki": "Penguin", "hint": "Cannot fly; swims and waddles."}
+{"slug": "parrot", "name": "parrot", "chinese": "鹦鹉", "pinyin": "yīngwǔ", "emoji": "🦜", "wiki": "Parrot", "hint": "Bright colours; can copy speech."}
+{"slug": "peacock", "name": "peacock", "chinese": "孔雀", "pinyin": "kǒngquè", "emoji": "🦚", "wiki": "Indian peafowl", "hint": "Fans a huge tail covered in eyespots."}
+{"slug": "swan", "name": "swan", "chinese": "天鹅", "pinyin": "tiāné", "emoji": "🦢", "wiki": "Swan", "hint": "White, with a long curved neck."}
+{"slug": "crane", "name": "crane", "chinese": "鹤", "pinyin": "hè", "emoji": "🐦", "wiki": "Crane (bird)", "hint": "Tall, long-legged, and dances."}
+{"slug": "sparrow", "name": "sparrow", "chinese": "麻雀", "pinyin": "máquè", "emoji": "🐦", "wiki": "House sparrow", "hint": "Small brown town bird."}
+{"slug": "swallow", "name": "swallow", "chinese": "燕子", "pinyin": "yànzi", "emoji": "🐦", "wiki": "Swallow", "hint": "Forked tail; catches insects in flight."}
+{"slug": "crow", "name": "crow", "chinese": "乌鸦", "pinyin": "wūyā", "emoji": "🐦‍⬛", "wiki": "Crow", "hint": "All black and very clever."}
+{"slug": "woodpecker", "name": "woodpecker", "chinese": "啄木鸟", "pinyin": "zhuómùniǎo", "emoji": "🐦", "wiki": "Woodpecker", "hint": "Drums on tree trunks."}
+{"slug": "flamingo", "name": "flamingo", "chinese": "火烈鸟", "pinyin": "huǒlièniǎo", "emoji": "🦩", "wiki": "Flamingo", "hint": "Pink, and stands on one leg."}
+{"slug": "ostrich", "name": "ostrich", "chinese": "鸵鸟", "pinyin": "tuóniǎo", "emoji": "🦤", "wiki": "Common ostrich", "hint": "The largest bird; runs, cannot fly."}
+{"slug": "pelican", "name": "pelican", "chinese": "鹈鹕", "pinyin": "tíhú", "emoji": "🐦", "wiki": "Pelican", "hint": "Huge throat pouch for scooping fish."}
+{"slug": "seagull", "name": "seagull", "chinese": "海鸥", "pinyin": "hǎiōu", "emoji": "🕊️", "wiki": "Gull", "hint": "Grey and white; noisy at the coast."}
+{"slug": "kingfisher", "name": "kingfisher", "chinese": "翠鸟", "pinyin": "cuìniǎo", "emoji": "🐦", "wiki": "Kingfisher", "hint": "Brilliant blue; dives for fish."}
+{"slug": "heron", "name": "heron", "chinese": "苍鹭", "pinyin": "cānglù", "emoji": "🐦", "wiki": "Grey heron", "hint": "Stands still in shallow water."}
+{"slug": "stork", "name": "stork", "chinese": "鹳", "pinyin": "guàn", "emoji": "🐦", "wiki": "Stork", "hint": "Long red legs; nests on roofs."}
+{"slug": "hummingbird", "name": "hummingbird", "chinese": "蜂鸟", "pinyin": "fēngniǎo", "emoji": "🐦", "wiki": "Anna's hummingbird", "hint": "Tiny; hovers and beats its wings fast."}
+{"slug": "robin", "name": "robin", "chinese": "知更鸟", "pinyin": "zhīgēngniǎo", "emoji": "🐦", "wiki": "European robin", "hint": "Small, with an orange-red breast."}
+{"slug": "falcon", "name": "falcon", "chinese": "隼", "pinyin": "sǔn", "emoji": "🦅", "wiki": "Falcon", "hint": "Pointed wings; dives at great speed."}
+{"slug": "vulture", "name": "vulture", "chinese": "秃鹫", "pinyin": "tūjiù", "emoji": "🦅", "wiki": "Vulture", "hint": "Bald head; eats dead animals."}
+{"slug": "pigeon", "name": "pigeon", "chinese": "鸽子", "pinyin": "gēzi", "emoji": "🕊️", "wiki": "Columbidae", "hint": "Grey city bird that coos."}
+{"slug": "shark", "name": "shark", "chinese": "鲨鱼", "pinyin": "shāyú", "emoji": "🦈", "wiki": "Shark", "hint": "Triangular fin and rows of teeth."}
+{"slug": "whale", "name": "whale", "chinese": "鲸", "pinyin": "jīng", "emoji": "🐋", "wiki": "Whale", "hint": "The largest animal; blows a spout."}
+{"slug": "dolphin", "name": "dolphin", "chinese": "海豚", "pinyin": "hǎitún", "emoji": "🐬", "wiki": "Dolphin", "hint": "Smiling beak; leaps from the water."}
+{"slug": "octopus", "name": "octopus", "chinese": "章鱼", "pinyin": "zhāngyú", "emoji": "🐙", "wiki": "Octopus", "hint": "Eight arms covered in suckers."}
+{"slug": "jellyfish", "name": "jellyfish", "chinese": "水母", "pinyin": "shuǐmǔ", "emoji": "🪼", "wiki": "Jellyfish", "hint": "Clear bell with trailing stingers."}
+{"slug": "seal", "name": "seal", "chinese": "海豹", "pinyin": "hǎibào", "emoji": "🦭", "wiki": "Harp seal", "hint": "Smooth, whiskered; hauls out on rocks."}
+{"slug": "sea-lion", "name": "sea lion", "chinese": "海狮", "pinyin": "hǎishī", "emoji": "🦭", "wiki": "Sea lion", "hint": "Barks, and walks on its front flippers."}
+{"slug": "walrus", "name": "walrus", "chinese": "海象", "pinyin": "hǎixiàng", "emoji": "🦭", "wiki": "Walrus", "hint": "Long white tusks and a moustache."}
+{"slug": "crab", "name": "crab", "chinese": "螃蟹", "pinyin": "pángxiè", "emoji": "🦀", "wiki": "Crab", "hint": "Sideways walk; two big claws."}
+{"slug": "lobster", "name": "lobster", "chinese": "龙虾", "pinyin": "lóngxiā", "emoji": "🦞", "wiki": "Lobster", "hint": "Long body, huge front claws."}
+{"slug": "shrimp", "name": "shrimp", "chinese": "虾", "pinyin": "xiā", "emoji": "🦐", "wiki": "Shrimp", "hint": "Small, curled, and almost see-through."}
+{"slug": "seahorse", "name": "seahorse", "chinese": "海马", "pinyin": "hǎimǎ", "emoji": "🐴", "wiki": "Seahorse", "hint": "Horse-shaped head; curled tail."}
+{"slug": "starfish", "name": "starfish", "chinese": "海星", "pinyin": "hǎixīng", "emoji": "⭐", "wiki": "Starfish", "hint": "Five arms; clings to rock."}
+{"slug": "squid", "name": "squid", "chinese": "鱿鱼", "pinyin": "yóuyú", "emoji": "🦑", "wiki": "Squid", "hint": "Torpedo body with two long tentacles."}
+{"slug": "clownfish", "name": "clownfish", "chinese": "小丑鱼", "pinyin": "xiǎochǒuyú", "emoji": "🐠", "wiki": "Clownfish", "hint": "Orange with white bands; lives in anemones."}
+{"slug": "manta-ray", "name": "manta ray", "chinese": "蝠鲼", "pinyin": "fúfèn", "emoji": "🐟", "wiki": "Manta ray", "hint": "Flat, wing-like, and glides."}
+{"slug": "sea-turtle", "name": "sea turtle", "chinese": "海龟", "pinyin": "hǎiguī", "emoji": "🐢", "wiki": "Sea turtle", "hint": "Flipper limbs and a smooth shell."}
+{"slug": "sea-urchin", "name": "sea urchin", "chinese": "海胆", "pinyin": "hǎidǎn", "emoji": "🦔", "wiki": "Sea urchin", "hint": "A ball of sharp spines."}
+{"slug": "eel", "name": "eel", "chinese": "鳗鱼", "pinyin": "mányú", "emoji": "🐟", "wiki": "Anguilla anguilla", "hint": "Long and snake-like."}
+{"slug": "salmon", "name": "salmon", "chinese": "三文鱼", "pinyin": "sānwényú", "emoji": "🐟", "wiki": "Salmon", "hint": "Silver fish that swims upriver."}
+{"slug": "pufferfish", "name": "pufferfish", "chinese": "河豚", "pinyin": "hétún", "emoji": "🐡", "wiki": "Guineafowl puffer", "hint": "Puffs into a spiky ball."}
+{"slug": "coral", "name": "coral", "chinese": "珊瑚", "pinyin": "shānhú", "emoji": "🪸", "wiki": "Coral", "hint": "Branching, stony, and alive."}
+{"slug": "snake", "name": "snake", "chinese": "蛇", "pinyin": "shé", "emoji": "🐍", "wiki": "Snake", "hint": "Long, legless, and scaly."}
+{"slug": "crocodile", "name": "crocodile", "chinese": "鳄鱼", "pinyin": "èyú", "emoji": "🐊", "wiki": "Crocodile", "hint": "Narrow snout; teeth show when shut."}
+{"slug": "alligator", "name": "alligator", "chinese": "短吻鳄", "pinyin": "duǎnwěnè", "emoji": "🐊", "wiki": "American alligator", "hint": "Broad rounded snout."}
+{"slug": "lizard", "name": "lizard", "chinese": "蜥蜴", "pinyin": "xīyì", "emoji": "🦎", "wiki": "Lizard", "hint": "Four legs, long tail, dry scales."}
+{"slug": "chameleon", "name": "chameleon", "chinese": "变色龙", "pinyin": "biànsèlóng", "emoji": "🦎", "wiki": "Chameleon", "hint": "Changes colour; eyes swivel apart."}
+{"slug": "gecko", "name": "gecko", "chinese": "壁虎", "pinyin": "bìhǔ", "emoji": "🦎", "wiki": "Gecko", "hint": "Sticky toes; walks up walls."}
+{"slug": "iguana", "name": "iguana", "chinese": "鬣蜥", "pinyin": "lièxī", "emoji": "🦎", "wiki": "Iguana", "hint": "Spiny crest along its back."}
+{"slug": "tortoise", "name": "tortoise", "chinese": "陆龟", "pinyin": "lùguī", "emoji": "🐢", "wiki": "Tortoise", "hint": "Domed shell; lives on land."}
+{"slug": "frog", "name": "frog", "chinese": "青蛙", "pinyin": "qīngwā", "emoji": "🐸", "wiki": "Frog", "hint": "Smooth wet skin; long jumping legs."}
+{"slug": "toad", "name": "toad", "chinese": "蟾蜍", "pinyin": "chánchú", "emoji": "🐸", "wiki": "Toad", "hint": "Dry warty skin; walks more than jumps."}
+{"slug": "salamander", "name": "salamander", "chinese": "蝾螈", "pinyin": "róngyuán", "emoji": "🦎", "wiki": "Salamander", "hint": "Damp skin, often bright markings."}
+{"slug": "newt", "name": "newt", "chinese": "水螈", "pinyin": "shuǐyuán", "emoji": "🦎", "wiki": "Newt", "hint": "Small water-loving salamander."}
+{"slug": "cobra", "name": "cobra", "chinese": "眼镜蛇", "pinyin": "yǎnjìngshé", "emoji": "🐍", "wiki": "Cobra", "hint": "Spreads a hood when threatened."}
+{"slug": "python", "name": "python", "chinese": "蟒蛇", "pinyin": "mǎngshé", "emoji": "🐍", "wiki": "Pythonidae", "hint": "Thick patterned snake that squeezes."}
+{"slug": "butterfly", "name": "butterfly", "chinese": "蝴蝶", "pinyin": "húdié", "emoji": "🦋", "wiki": "Butterfly", "hint": "Wide bright wings; flies by day."}
+{"slug": "bee", "name": "bee", "chinese": "蜜蜂", "pinyin": "mìfēng", "emoji": "🐝", "wiki": "Bee", "hint": "Fuzzy and striped; makes honey."}
+{"slug": "ant", "name": "ant", "chinese": "蚂蚁", "pinyin": "mǎyǐ", "emoji": "🐜", "wiki": "Ant", "hint": "Tiny; marches in a line."}
+{"slug": "spider", "name": "spider", "chinese": "蜘蛛", "pinyin": "zhīzhū", "emoji": "🕷️", "wiki": "Spider", "hint": "Eight legs; spins a web."}
+{"slug": "dragonfly", "name": "dragonfly", "chinese": "蜻蜓", "pinyin": "qīngtíng", "emoji": "🪰", "wiki": "Dragonfly", "hint": "Four clear wings; hovers over water."}
+{"slug": "snail", "name": "snail", "chinese": "蜗牛", "pinyin": "wōniú", "emoji": "🐌", "wiki": "Snail", "hint": "Carries a spiral shell."}
+{"slug": "ladybird", "name": "ladybird", "chinese": "瓢虫", "pinyin": "piáochóng", "emoji": "🐞", "wiki": "Coccinellidae", "hint": "Red dome with black spots."}
+{"slug": "grasshopper", "name": "grasshopper", "chinese": "蚱蜢", "pinyin": "zhàměng", "emoji": "🦗", "wiki": "Grasshopper", "hint": "Green, with big springing back legs."}
+{"slug": "cricket", "name": "cricket", "chinese": "蟋蟀", "pinyin": "xīshuài", "emoji": "🦗", "wiki": "Cricket (insect)", "hint": "Chirps at night by rubbing its wings."}
+{"slug": "mosquito", "name": "mosquito", "chinese": "蚊子", "pinyin": "wénzi", "emoji": "🦟", "wiki": "Mosquito", "hint": "Thin legs; bites and whines."}
+{"slug": "beetle", "name": "beetle", "chinese": "甲虫", "pinyin": "jiǎchóng", "emoji": "🪲", "wiki": "Stag beetle", "hint": "Hard shiny wing cases."}
+{"slug": "moth", "name": "moth", "chinese": "蛾", "pinyin": "é", "emoji": "🦋", "wiki": "Moth", "hint": "Dull wings; drawn to lamps at night."}
+{"slug": "caterpillar", "name": "caterpillar", "chinese": "毛毛虫", "pinyin": "máomaochóng", "emoji": "🐛", "wiki": "Caterpillar", "hint": "Soft segmented body; becomes a butterfly."}
+{"slug": "mantis", "name": "mantis", "chinese": "螳螂", "pinyin": "tángláng", "emoji": "🦗", "wiki": "Mantis", "hint": "Folded front legs held as if praying."}
+{"slug": "scorpion", "name": "scorpion", "chinese": "蝎子", "pinyin": "xiēzi", "emoji": "🦂", "wiki": "Scorpion", "hint": "Pincers and a stinging curled tail."}
+{"slug": "earthworm", "name": "earthworm", "chinese": "蚯蚓", "pinyin": "qiūyǐn", "emoji": "🪱", "wiki": "Earthworm", "hint": "Pink, ringed, and lives in soil."}
+{"slug": "centipede", "name": "centipede", "chinese": "蜈蚣", "pinyin": "wúgōng", "emoji": "🐛", "wiki": "Scolopendra gigantea", "hint": "Flat body with many legs."}
+{"slug": "horse", "name": "horse", "chinese": "马", "pinyin": "mǎ", "emoji": "🐴", "wiki": "Horse", "hint": "Long mane and tail; people ride it."}
+{"slug": "cow", "name": "cow", "chinese": "奶牛", "pinyin": "nǎiniú", "emoji": "🐮", "wiki": "Cattle", "hint": "Heavy body; gives milk."}
+{"slug": "pig", "name": "pig", "chinese": "猪", "pinyin": "zhū", "emoji": "🐷", "wiki": "Pig", "hint": "Pink, with a flat snout and curly tail."}
+{"slug": "sheep", "name": "sheep", "chinese": "绵羊", "pinyin": "miányáng", "emoji": "🐑", "wiki": "Sheep", "hint": "Thick woolly coat."}
+{"slug": "goat", "name": "goat", "chinese": "山羊", "pinyin": "shānyáng", "emoji": "🐐", "wiki": "Goat", "hint": "Horns and a beard; climbs well."}
+{"slug": "chicken", "name": "chicken", "chinese": "鸡", "pinyin": "jī", "emoji": "🐔", "wiki": "Orpington chicken", "hint": "Farm bird that lays eggs."}
+{"slug": "rooster", "name": "rooster", "chinese": "公鸡", "pinyin": "gōngjī", "emoji": "🐓", "wiki": "Rooster", "hint": "Male chicken; red comb, crows at dawn.", "image_hint": "Feral rooster on Kauaʻi.jpg"}
+{"slug": "duck", "name": "duck", "chinese": "鸭子", "pinyin": "yāzi", "emoji": "🦆", "wiki": "Duck", "hint": "Flat bill and webbed feet."}
+{"slug": "goose", "name": "goose", "chinese": "鹅", "pinyin": "é", "emoji": "🦢", "wiki": "Goose", "hint": "Bigger than a duck; long neck, honks."}
+{"slug": "turkey", "name": "turkey", "chinese": "火鸡", "pinyin": "huǒjī", "emoji": "🦃", "wiki": "Domestic turkey", "hint": "Fan tail and a red wattle."}
+{"slug": "donkey", "name": "donkey", "chinese": "驴", "pinyin": "lǘ", "emoji": "🫏", "wiki": "Donkey", "hint": "Small grey horse-like animal, long ears."}
+{"slug": "dog", "name": "dog", "chinese": "狗", "pinyin": "gǒu", "emoji": "🐶", "wiki": "Dog", "hint": "The loyal household animal that barks."}
+{"slug": "cat", "name": "cat", "chinese": "猫", "pinyin": "māo", "emoji": "🐱", "wiki": "Cat", "hint": "Whiskers and retractable claws; meows."}
+{"slug": "llama", "name": "llama", "chinese": "羊驼", "pinyin": "yángtuó", "emoji": "🦙", "wiki": "Llama", "hint": "Woolly neck; from the Andes."}
+{"slug": "ox", "name": "ox", "chinese": "公牛", "pinyin": "gōngniú", "emoji": "🐂", "wiki": "Ox", "hint": "Strong cattle used for pulling.", "image_hint": "Traditional ploughing - Karnataka (cropped).jpg"}
+{"slug": "carrot", "name": "carrot", "chinese": "胡萝卜", "pinyin": "húluóbo", "emoji": "🥕", "wiki": "Carrot", "hint": "Long orange root that tapers to a point."}
+{"slug": "potato", "name": "potato", "chinese": "土豆", "pinyin": "tǔdòu", "emoji": "🥔", "wiki": "Potato", "hint": "Brown-skinned tuber; the one that becomes chips."}
+{"slug": "sweet-potato", "name": "sweet potato", "chinese": "红薯", "pinyin": "hóngshǔ", "emoji": "🍠", "wiki": "Sweet potato", "hint": "Orange inside, sweeter than a potato."}
+{"slug": "onion", "name": "onion", "chinese": "洋葱", "pinyin": "yángcōng", "emoji": "🧅", "wiki": "Onion", "hint": "Papery skin, concentric layers, makes you cry."}
+{"slug": "garlic", "name": "garlic", "chinese": "大蒜", "pinyin": "dàsuàn", "emoji": "🧄", "wiki": "Garlic", "hint": "A white bulb that splits into cloves.", "image_hint": "Garlic bulbs and cloves.jpg"}
+{"slug": "ginger", "name": "ginger", "chinese": "姜", "pinyin": "jiāng", "emoji": "🫚", "wiki": "Ginger", "hint": "Knobbly tan root, hot and aromatic.", "image_hint": "Liat Portal for Foodie Disorder - Fresh Ginger Root.jpg"}
+{"slug": "beetroot", "name": "beetroot", "chinese": "甜菜根", "pinyin": "tiáncàigēn", "emoji": "🍠", "wiki": "Beetroot", "hint": "Deep purple-red root that stains everything."}
+{"slug": "radish", "name": "radish", "chinese": "萝卜", "pinyin": "luóbo", "emoji": "🥬", "wiki": "Radish", "hint": "Small round root, red skin, white inside, peppery."}
+{"slug": "turnip", "name": "turnip", "chinese": "芜菁", "pinyin": "wújīng", "emoji": "🥬", "wiki": "Turnip", "hint": "White root with a purple shoulder."}
+{"slug": "leek", "name": "leek", "chinese": "韭葱", "pinyin": "jiǔcōng", "emoji": "🥬", "wiki": "Leek", "hint": "Like a giant spring onion; white stem, flat leaves."}
+{"slug": "cabbage", "name": "cabbage", "chinese": "卷心菜", "pinyin": "juǎnxīncài", "emoji": "🥬", "wiki": "Cabbage", "hint": "A dense ball of tightly wrapped leaves."}
+{"slug": "lettuce", "name": "lettuce", "chinese": "生菜", "pinyin": "shēngcài", "emoji": "🥬", "wiki": "Lettuce", "hint": "Loose pale-green salad leaves."}
+{"slug": "spinach", "name": "spinach", "chinese": "菠菜", "pinyin": "bōcài", "emoji": "🥬", "wiki": "Spinach", "hint": "Dark green leaves on thin red-tinged stems.", "image_hint": "Fresh Spinach leaves.jpg"}
+{"slug": "broccoli", "name": "broccoli", "chinese": "西兰花", "pinyin": "xīlánhuā", "emoji": "🥦", "wiki": "Broccoli", "hint": "Green tree-shaped head of tight buds."}
+{"slug": "cauliflower", "name": "cauliflower", "chinese": "花椰菜", "pinyin": "huāyēcài", "emoji": "🥦", "wiki": "Cauliflower", "hint": "Broccoli's white cousin."}
+{"slug": "celery", "name": "celery", "chinese": "芹菜", "pinyin": "qíncài", "emoji": "🥬", "wiki": "Celery", "hint": "Long pale-green ribbed stalks."}
+{"slug": "asparagus", "name": "asparagus", "chinese": "芦笋", "pinyin": "lúsǔn", "emoji": "🥬", "wiki": "Asparagus", "hint": "Thin green spears with a scaly tip.", "image_hint": "Asparagus-Bundle.jpg"}
+{"slug": "tomato", "name": "tomato", "chinese": "番茄", "pinyin": "fānqié", "emoji": "🍅", "wiki": "Tomato", "hint": "Round, red, shiny; botanically a fruit."}
+{"slug": "cucumber", "name": "cucumber", "chinese": "黄瓜", "pinyin": "huángguā", "emoji": "🥒", "wiki": "Cucumber", "hint": "Long dark-green skin, pale watery flesh."}
+{"slug": "eggplant", "name": "eggplant", "chinese": "茄子", "pinyin": "qiézi", "emoji": "🍆", "wiki": "Eggplant", "hint": "Glossy deep-purple; called aubergine in the UK.", "image_hint": "Aubergines.jpg"}
+{"slug": "pumpkin", "name": "pumpkin", "chinese": "南瓜", "pinyin": "nánguā", "emoji": "🎃", "wiki": "Pumpkin", "hint": "Big ribbed orange squash with a thick stalk."}
+{"slug": "zucchini", "name": "zucchini", "chinese": "西葫芦", "pinyin": "xīhúlu", "emoji": "🥒", "wiki": "Zucchini", "hint": "Like a cucumber but matte; courgette in the UK."}
+{"slug": "bell-pepper", "name": "bell pepper", "chinese": "甜椒", "pinyin": "tiánjiāo", "emoji": "🫑", "wiki": "Bell pepper", "hint": "Blocky, hollow, glossy; red, yellow or green."}
+{"slug": "chili-pepper", "name": "chili pepper", "chinese": "辣椒", "pinyin": "làjiāo", "emoji": "🌶️", "wiki": "Chili pepper", "hint": "Small, tapering, hot."}
+{"slug": "mushroom", "name": "mushroom", "chinese": "蘑菇", "pinyin": "mógu", "emoji": "🍄", "wiki": "Edible mushroom", "hint": "Pale cap on a short stalk; gills underneath."}
+{"slug": "corn", "name": "corn", "chinese": "玉米", "pinyin": "yùmǐ", "emoji": "🌽", "wiki": "Sweet corn", "hint": "Yellow kernels in rows on a cob."}
+{"slug": "pea", "name": "pea", "chinese": "豌豆", "pinyin": "wāndòu", "emoji": "🫛", "wiki": "Pea", "hint": "Small round green seeds in a long pod."}
+{"slug": "green-bean", "name": "green bean", "chinese": "四季豆", "pinyin": "sìjìdòu", "emoji": "🫛", "wiki": "Green bean", "hint": "Slim green pods eaten whole."}
+{"slug": "apple", "name": "apple", "chinese": "苹果", "pinyin": "píngguǒ", "emoji": "🍎", "wiki": "Apple", "hint": "Round, firm, red or green, with a short stem."}
+{"slug": "banana", "name": "banana", "chinese": "香蕉", "pinyin": "xiāngjiāo", "emoji": "🍌", "wiki": "Banana", "hint": "Long yellow curve; peels in strips."}
+{"slug": "orange", "name": "orange", "chinese": "橙子", "pinyin": "chéngzi", "emoji": "🍊", "wiki": "Orange (fruit)", "hint": "Round citrus with a dimpled skin."}
+{"slug": "lemon", "name": "lemon", "chinese": "柠檬", "pinyin": "níngméng", "emoji": "🍋", "wiki": "Lemon", "hint": "Yellow citrus with pointed ends; very sour."}
+{"slug": "grape", "name": "grape", "chinese": "葡萄", "pinyin": "pútáo", "emoji": "🍇", "wiki": "Grape", "hint": "Small round berries in a hanging bunch."}
+{"slug": "strawberry", "name": "strawberry", "chinese": "草莓", "pinyin": "cǎoméi", "emoji": "🍓", "wiki": "Strawberry", "hint": "Red heart shape, seeds on the outside."}
+{"slug": "blueberry", "name": "blueberry", "chinese": "蓝莓", "pinyin": "lánméi", "emoji": "🫐", "wiki": "Blueberry", "hint": "Small dusty-blue berry with a crown."}
+{"slug": "watermelon", "name": "watermelon", "chinese": "西瓜", "pinyin": "xīguā", "emoji": "🍉", "wiki": "Watermelon", "hint": "Huge striped green rind, red flesh, black seeds."}
+{"slug": "pineapple", "name": "pineapple", "chinese": "菠萝", "pinyin": "bōluó", "emoji": "🍍", "wiki": "Pineapple", "hint": "Spiky diamond-patterned skin with a leafy crown.", "image_hint": "Pineapple and cross section.jpg"}
+{"slug": "mango", "name": "mango", "chinese": "芒果", "pinyin": "mángguǒ", "emoji": "🥭", "wiki": "Mango", "hint": "Oval, red-and-gold skin, one flat stone."}
+{"slug": "pear", "name": "pear", "chinese": "梨", "pinyin": "lí", "emoji": "🍐", "wiki": "Pear", "hint": "Narrow at the stem, wide at the base."}
+{"slug": "peach", "name": "peach", "chinese": "桃子", "pinyin": "táozi", "emoji": "🍑", "wiki": "Peach", "hint": "Fuzzy skin, a seam down one side.", "image_hint": "Liat Portal for Foodie Disorder - Peach.jpg"}
+{"slug": "cherry", "name": "cherry", "chinese": "樱桃", "pinyin": "yīngtáo", "emoji": "🍒", "wiki": "Cherry", "hint": "Tiny, deep red, on a long thin stalk."}
+{"slug": "avocado", "name": "avocado", "chinese": "牛油果", "pinyin": "niúyóuguǒ", "emoji": "🥑", "wiki": "Avocado", "hint": "Pear-shaped, bumpy dark skin, one big stone.", "image_hint": "Avocado with cross section edit.jpg"}
+{"slug": "kiwifruit", "name": "kiwifruit", "chinese": "猕猴桃", "pinyin": "míhóutáo", "emoji": "🥝", "wiki": "Kiwifruit", "hint": "Brown fuzzy skin, bright green inside.", "image_hint": "Kiwifruit halved.jpg"}
+{"slug": "car", "name": "car", "chinese": "汽车", "pinyin": "qìchē", "emoji": "🚗", "wiki": "Car", "hint": "A small four-wheeled vehicle with windows and doors."}
+{"slug": "taxi", "name": "taxi", "chinese": "出租车", "pinyin": "chūzūchē", "emoji": "🚕", "wiki": "Taxicab", "hint": "A city car with a roof sign.", "image_hint": "Yellow Cabs (59251312).jpeg"}
+{"slug": "bus", "name": "bus", "chinese": "公共汽车", "pinyin": "gōnggòng qìchē", "emoji": "🚌", "wiki": "Bus", "hint": "A long vehicle with many windows and seats."}
+{"slug": "truck", "name": "truck", "chinese": "卡车", "pinyin": "kǎchē", "emoji": "🚚", "wiki": "Truck", "hint": "A large vehicle with an open or boxy cargo area."}
+{"slug": "motorcycle", "name": "motorcycle", "chinese": "摩托车", "pinyin": "mótuōchē", "emoji": "🏍️", "wiki": "Motorcycle", "hint": "A two-wheeled vehicle with handlebars and a seat."}
+{"slug": "bicycle", "name": "bicycle", "chinese": "自行车", "pinyin": "zìxíngchē", "emoji": "🚲", "wiki": "Bicycle", "hint": "A pedal-powered two-wheeler with a frame and wheels."}
+{"slug": "tram", "name": "tram", "chinese": "有轨电车", "pinyin": "yǒuguǐ diànchē", "emoji": "🚋", "wiki": "Tram", "hint": "A rail vehicle that runs along city streets."}
+{"slug": "train", "name": "train", "chinese": "火车", "pinyin": "huǒchē", "emoji": "🚆", "wiki": "Train", "hint": "A long rail vehicle made of connected carriages."}
+{"slug": "subway", "name": "subway", "chinese": "地铁", "pinyin": "dìtiě", "emoji": "🚇", "wiki": "Rapid transit", "hint": "A metro train seen in a station or tunnel."}
+{"slug": "ferry", "name": "ferry", "chinese": "渡轮", "pinyin": "dùlún", "emoji": "⛴️", "wiki": "Ferry", "hint": "A broad passenger boat with decks and railings.", "image_hint": "Car ferry to Calais (5).jpg"}
+{"slug": "sailboat", "name": "sailboat", "chinese": "帆船", "pinyin": "fānchuán", "emoji": "⛵", "wiki": "Sailboat", "hint": "A boat with a tall mast and a fabric sail.", "image_hint": "Sloop under full sail, close reaching, showing its fractional rig.jpg"}
+{"slug": "speedboat", "name": "speedboat", "chinese": "快艇", "pinyin": "kuàitǐng", "emoji": "🚤", "wiki": "Motorboat", "hint": "A small boat shaped for going fast on water."}
+{"slug": "ship", "name": "ship", "chinese": "轮船", "pinyin": "lúnchuán", "emoji": "🚢", "wiki": "Ship", "hint": "A large ocean-going vessel with a high hull."}
+{"slug": "airplane", "name": "airplane", "chinese": "飞机", "pinyin": "fēijī", "emoji": "✈️", "wiki": "Airplane", "hint": "A flying vehicle with wings and a tail."}
+{"slug": "helicopter", "name": "helicopter", "chinese": "直升机", "pinyin": "zhíshēngjī", "emoji": "🚁", "wiki": "Helicopter", "hint": "A flying vehicle with spinning blades on top."}
+{"slug": "ambulance", "name": "ambulance", "chinese": "救护车", "pinyin": "jiùhùchē", "emoji": "🚑", "wiki": "Ambulance", "hint": "A white emergency van with flashing lights on top."}
+{"slug": "fire-engine", "name": "fire engine", "chinese": "消防车", "pinyin": "xiāofángchē", "emoji": "🚒", "wiki": "Fire engine", "hint": "A red emergency truck with hoses and ladders."}
+{"slug": "van", "name": "van", "chinese": "厢式货车", "pinyin": "xiāngshì huòchē", "emoji": "🚐", "wiki": "Van", "hint": "Boxy body, no back windows, for carrying goods."}
+{"slug": "pickup-truck", "name": "pickup truck", "chinese": "皮卡", "pinyin": "píkǎ", "emoji": "🛻", "wiki": "Pickup truck", "hint": "A cab in front, an open tray behind."}
+{"slug": "tractor", "name": "tractor", "chinese": "拖拉机", "pinyin": "tuōlājī", "emoji": "🚜", "wiki": "Tractor", "hint": "Huge rear wheels, small front ones; works a field."}
+{"slug": "scooter", "name": "scooter", "chinese": "踏板摩托车", "pinyin": "tàbǎn mótuōchē", "emoji": "🛵", "wiki": "Motor scooter", "hint": "Step-through frame, small wheels, a flat footboard."}
+{"slug": "police-car", "name": "police car", "chinese": "警车", "pinyin": "jǐngchē", "emoji": "🚓", "wiki": "Police car", "hint": "Marked car with a light bar on the roof."}
+{"slug": "garbage-truck", "name": "garbage truck", "chinese": "垃圾车", "pinyin": "lājīchē", "emoji": "🚛", "wiki": "Garbage truck", "hint": "Big rear hopper that swallows bins."}
+{"slug": "excavator", "name": "excavator", "chinese": "挖掘机", "pinyin": "wājuéjī", "emoji": "🚧", "wiki": "Excavator", "hint": "Tracked machine with a jointed arm and a bucket."}
+{"slug": "forklift", "name": "forklift", "chinese": "叉车", "pinyin": "chāchē", "emoji": "🏗️", "wiki": "Forklift", "hint": "Two steel prongs at the front for lifting pallets.", "image_hint": "Forklift.JPG"}
+{"slug": "locomotive", "name": "locomotive", "chinese": "机车", "pinyin": "jīchē", "emoji": "🚂", "wiki": "Locomotive", "hint": "The engine at the front; pulls, carries no passengers."}
+{"slug": "freight-train", "name": "freight train", "chinese": "货运列车", "pinyin": "huòyùn lièchē", "emoji": "🚋", "wiki": "Freight train", "hint": "A long line of goods wagons, no windows."}
+{"slug": "monorail", "name": "monorail", "chinese": "单轨列车", "pinyin": "dānguǐ lièchē", "emoji": "🚝", "wiki": "Monorail", "hint": "Rides a single beam, usually up on a viaduct."}
+{"slug": "cable-car", "name": "cable car", "chinese": "缆车", "pinyin": "lǎnchē", "emoji": "🚠", "wiki": "Aerial tramway", "hint": "A cabin hanging from an overhead cable."}
+{"slug": "funicular", "name": "funicular", "chinese": "缆索铁路", "pinyin": "lǎnsuǒ tiělù", "emoji": "🚞", "wiki": "Funicular", "hint": "A stepped carriage hauled up a steep slope."}
+{"slug": "canoe", "name": "canoe", "chinese": "独木舟", "pinyin": "dúmùzhōu", "emoji": "🛶", "wiki": "Canoe", "hint": "Open on top; you kneel and paddle one side."}
+{"slug": "kayak", "name": "kayak", "chinese": "皮划艇", "pinyin": "píhuátǐng", "emoji": "🛶", "wiki": "Kayak", "hint": "Enclosed deck, you sit inside with a two-bladed paddle."}
+{"slug": "yacht", "name": "yacht", "chinese": "游艇", "pinyin": "yóutǐng", "emoji": "🛥️", "wiki": "Yacht", "hint": "Sleek white pleasure boat with a cabin."}
+{"slug": "tugboat", "name": "tugboat", "chinese": "拖船", "pinyin": "tuōchuán", "emoji": "🚢", "wiki": "Tugboat", "hint": "Small, stubby and powerful; pushes big ships.", "image_hint": "Maui Tugboat In Viaduct Basin, Auckland.jpg"}
+{"slug": "submarine", "name": "submarine", "chinese": "潜艇", "pinyin": "qiántǐng", "emoji": "🚤", "wiki": "Submarine", "hint": "Long dark hull with a tower on top; goes under."}
+{"slug": "canal-boat", "name": "canal boat", "chinese": "运河船", "pinyin": "yùnhé chuán", "emoji": "🛳️", "wiki": "Narrowboat", "hint": "Very long and narrow, painted, sits low in a canal."}
+{"slug": "hot-air-balloon", "name": "hot air balloon", "chinese": "热气球", "pinyin": "rè qìqiú", "emoji": "🎈", "wiki": "Hot air balloon", "hint": "A huge striped envelope over a wicker basket."}
+{"slug": "glider", "name": "glider", "chinese": "滑翔机", "pinyin": "huáxiángjī", "emoji": "🛩️", "wiki": "Glider (aircraft)", "hint": "Very long thin wings, no engine."}
+{"slug": "seaplane", "name": "seaplane", "chinese": "水上飞机", "pinyin": "shuǐshàng fēijī", "emoji": "🛩️", "wiki": "Seaplane", "hint": "An aircraft standing on floats instead of wheels."}
+{"slug": "airship", "name": "airship", "chinese": "飞艇", "pinyin": "fēitǐng", "emoji": "🎈", "wiki": "Airship", "hint": "A long gas-filled body with a small cabin beneath."}
+{"slug": "drone", "name": "drone", "chinese": "无人机", "pinyin": "wúrénjī", "emoji": "🚁", "wiki": "Quadcopter", "hint": "Four small rotors on arms, no one aboard."}
+{"slug": "rocket", "name": "rocket", "chinese": "火箭", "pinyin": "huǒjiàn", "emoji": "🚀", "wiki": "Rocket", "hint": "A tall thin cylinder with fins and a pointed nose."}
+{"slug": "artichoke", "name": "artichoke", "chinese": "洋蓟", "pinyin": "yángjì", "emoji": "🌿", "wiki": "Artichoke", "hint": "Round green flower bud with layered leaves."}
+{"slug": "butternut-squash", "name": "butternut squash", "chinese": "奶油南瓜", "pinyin": "nǎiyóu nánguā", "emoji": "🎃", "wiki": "Butternut squash", "hint": "Pale tan squash with a bulb at one end."}
+{"slug": "chard", "name": "chard", "chinese": "瑞士甜菜", "pinyin": "ruìshì tiáncài", "emoji": "🥬", "wiki": "Chard", "hint": "Leafy greens with thick white or red stems."}
+{"slug": "fennel", "name": "fennel", "chinese": "茴香", "pinyin": "huíxiāng", "emoji": "🌿", "wiki": "Fennel", "hint": "White bulb with feathery green fronds.", "image_hint": "Fennel bulb.jpg"}
+{"slug": "kale", "name": "kale", "chinese": "羽衣甘蓝", "pinyin": "yǔyī gānlán", "emoji": "🥬", "wiki": "Kale", "hint": "Dark green crinkled leaves on stems."}
+{"slug": "okra", "name": "okra", "chinese": "秋葵", "pinyin": "qiūkui", "emoji": "🌿", "wiki": "Okra", "hint": "Short green pods with pointed tips."}
+{"slug": "parsnip", "name": "parsnip", "chinese": "欧防风", "pinyin": "ōufángfēng", "emoji": "🥕", "wiki": "Parsnip", "hint": "Cream-colored root shaped like a carrot.", "image_hint": "CDC parsnip.jpg"}
+{"slug": "radicchio", "name": "radicchio", "chinese": "菊苣", "pinyin": "jújù", "emoji": "🥬", "wiki": "Radicchio", "hint": "Small round head with deep red leaves and white veins."}
+{"slug": "rhubarb", "name": "rhubarb", "chinese": "大黄", "pinyin": "dàhuáng", "emoji": "🥬", "wiki": "Rhubarb", "hint": "Long pinkish red stalks with big green leaves."}
+{"slug": "savoy-cabbage", "name": "savoy cabbage", "chinese": "皱叶甘蓝", "pinyin": "zhòuyè gānlán", "emoji": "🥬", "wiki": "Savoy cabbage", "hint": "Round cabbage with wrinkled crinkly leaves."}
+{"slug": "shallot", "name": "shallot", "chinese": "红葱头", "pinyin": "hóngcōngtóu", "emoji": "🧅", "wiki": "Shallot", "hint": "Small onion-like bulb often sold in clusters."}
+{"slug": "spring-onion", "name": "spring onion", "chinese": "小葱", "pinyin": "xiǎocōng", "emoji": "🧅", "wiki": "Scallion", "hint": "Long green stalks with a white bulb at the base."}
+{"slug": "swede", "name": "swede", "chinese": "大头菜", "pinyin": "dàtóucài", "emoji": "🥔", "wiki": "Rutabaga", "hint": "Large round yellow-purple root with rough skin."}
+{"slug": "watercress", "name": "watercress", "chinese": "西洋菜", "pinyin": "xīyángcài", "emoji": "🥬", "wiki": "Watercress", "hint": "Small dark green leaves on thin stems in bunches."}
+{"slug": "yam", "name": "yam", "chinese": "山药", "pinyin": "shānyào", "emoji": "🥔", "wiki": "Yam (vegetable)", "hint": "Brown rough-skinned tuber, often long and tapered."}
+{"slug": "frying-pan", "name": "frying pan", "chinese": "煎锅", "pinyin": "jiānguō", "emoji": "🍳", "wiki": "Frying pan", "hint": "Shallow pan with a long handle and sloping sides."}
+{"slug": "saucepan", "name": "saucepan", "chinese": "平底深锅", "pinyin": "píngdǐ shēnguō", "emoji": "🍲", "wiki": "Saucepan", "hint": "Round metal pot with a long handle and a lid."}
+{"slug": "stockpot", "name": "stockpot", "chinese": "汤锅", "pinyin": "tāngguō", "emoji": "🍲", "wiki": "Stock pot", "hint": "Tall deep pot with two side handles.", "image_hint": "Hahn 20ck Stockpot.jpg"}
+{"slug": "baking-tray", "name": "baking tray", "chinese": "烤盘", "pinyin": "kǎopán", "emoji": "🥘", "wiki": "Baking tray", "hint": "Flat rectangular metal tray with a low rim.", "image_hint": "Baking tray.jpg"}
+{"slug": "cutting-board", "name": "cutting board", "chinese": "砧板", "pinyin": "zhēnbǎn", "emoji": "🔪", "wiki": "Cutting board", "hint": "Flat board used as a surface for chopping food."}
+{"slug": "chef-knife", "name": "chef knife", "chinese": "厨师刀", "pinyin": "chúshīdāo", "emoji": "🔪", "wiki": "Chef's knife", "hint": "Large kitchen knife with a broad blade."}
+{"slug": "wooden-spoon", "name": "wooden spoon", "chinese": "木勺", "pinyin": "mùsháo", "emoji": "🥄", "wiki": "Wooden spoon", "hint": "Simple spoon made of wood, often with a rounded bowl."}
+{"slug": "whisk", "name": "whisk", "chinese": "打蛋器", "pinyin": "dǎdànqì", "emoji": "🥄", "wiki": "Whisk", "hint": "Loops of wire on a handle for beating eggs or cream."}
+{"slug": "tongs", "name": "tongs", "chinese": "夹子", "pinyin": "jiāzi", "emoji": "🤏", "wiki": "Tongs", "hint": "Two metal arms joined together for gripping hot food."}
+{"slug": "grater", "name": "grater", "chinese": "刨丝器", "pinyin": "páosīqì", "emoji": "🧀", "wiki": "Grater", "hint": "Flat or boxy metal tool covered in small sharp holes."}
+{"slug": "colander", "name": "colander", "chinese": "滤锅", "pinyin": "lǜguō", "emoji": "🥣", "wiki": "Colander", "hint": "Perforated bowl for draining water off food."}
+{"slug": "kitchen-sponge", "name": "kitchen sponge", "chinese": "厨房海绵", "pinyin": "chúfáng hǎimián", "emoji": "🧽", "wiki": "Kitchen sponge", "hint": "Small soft rectangle used for scrubbing dirty dishes."}
+{"slug": "dish-soap", "name": "dish soap", "chinese": "洗洁精", "pinyin": "xǐjiéjīng", "emoji": "🧴", "wiki": "Dishwashing liquid", "hint": "Bottle of liquid cleaner for washing plates and pans."}
+{"slug": "kettle", "name": "kettle", "chinese": "水壶", "pinyin": "shuǐhú", "emoji": "🫖", "wiki": "Kettle", "hint": "Rounded container with a spout and handle for boiling water."}
+{"slug": "toaster", "name": "toaster", "chinese": "烤面包机", "pinyin": "kǎomiànbāojī", "emoji": "🍞", "wiki": "Toaster", "hint": "Small appliance with slots for slices of bread."}
+{"slug": "microwave", "name": "microwave", "chinese": "微波炉", "pinyin": "wēibōlú", "emoji": "📺", "wiki": "Microwave oven", "hint": "Box-shaped appliance with a windowed door and control panel."}
+{"slug": "measuring-cup", "name": "measuring cup", "chinese": "量杯", "pinyin": "liángbēi", "emoji": "🥛", "wiki": "Measuring cup", "hint": "Cup with printed volume marks on the side."}
+{"slug": "measuring-spoon", "name": "measuring spoon", "chinese": "量勺", "pinyin": "liángsháo", "emoji": "🥄", "wiki": "Measuring spoon", "hint": "Small spoon with a marked size for cooking ingredients."}
+{"slug": "dishwasher", "name": "dishwasher", "chinese": "洗碗机", "pinyin": "xǐwǎnjī", "wiki": "Dishwasher", "hint": "A machine with a pull-down door, racks of plates inside."}
+{"slug": "dishcloth", "name": "dishcloth", "chinese": "抹布", "pinyin": "mābù", "wiki": "Dishcloth", "hint": "A small square cloth for wiping dishes and surfaces."}
+{"slug": "hammer", "name": "hammer", "chinese": "锤子", "pinyin": "chuí zi", "emoji": "🔨", "wiki": "Hammer", "hint": "Heavy metal head on a straight handle.", "image_hint": "Claw hammer.JPG"}
+{"slug": "screwdriver", "name": "screwdriver", "chinese": "螺丝刀", "pinyin": "luó sī dāo", "emoji": "🪛", "wiki": "Screwdriver", "hint": "Narrow metal shaft with a shaped tip and handle."}
+{"slug": "pliers", "name": "pliers", "chinese": "钳子", "pinyin": "qián zi", "emoji": "🔧", "wiki": "Pliers", "hint": "Two metal jaws joined by a pivoted handle.", "image_hint": "Klein lineman's pliers.jpg"}
+{"slug": "wrench", "name": "wrench", "chinese": "扳手", "pinyin": "bān shou", "emoji": "🔧", "wiki": "Wrench", "hint": "Metal handle with an open or adjustable jaw at one end."}
+{"slug": "handsaw", "name": "handsaw", "chinese": "手锯", "pinyin": "shǒu jù", "emoji": "🪚", "wiki": "Handsaw", "hint": "Long toothed blade with a handle for cutting wood."}
+{"slug": "chisel", "name": "chisel", "chinese": "凿子", "pinyin": "záo zi", "emoji": "🔧", "wiki": "Chisel", "hint": "Straight steel blade with a beveled cutting edge and handle.", "image_hint": "Wood chisel.JPG"}
+{"slug": "file", "name": "file", "chinese": "锉刀", "pinyin": "cuò dāo", "emoji": "🪚", "wiki": "File (tool)", "hint": "Flat rough metal bar with a handle for smoothing edges."}
+{"slug": "clamp", "name": "clamp", "chinese": "夹具", "pinyin": "jiā jù", "emoji": "🗜️", "wiki": "Clamp (tool)", "hint": "Rigid frame with a screw for squeezing things together."}
+{"slug": "drill", "name": "drill", "chinese": "电钻", "pinyin": "diàn zuàn", "emoji": "🛠️", "wiki": "Drill", "hint": "Pistol-shaped tool with a spinning bit at the front.", "image_hint": "Cordless Drill (8559707469).jpg"}
+{"slug": "circular-saw", "name": "circular saw", "chinese": "圆锯", "pinyin": "yuán jù", "emoji": "🪚", "wiki": "Circular saw", "hint": "Motorized saw with a round toothed blade."}
+{"slug": "jigsaw", "name": "jigsaw", "chinese": "曲线锯", "pinyin": "qū xiàn jù", "emoji": "🪚", "wiki": "Jigsaw (power tool)", "hint": "Compact saw with a short up-and-down blade under a handle."}
+{"slug": "sander", "name": "sander", "chinese": "砂光机", "pinyin": "shā guāng jī", "emoji": "🛠️", "wiki": "Sander", "hint": "Handheld power tool with a flat or round sanding pad."}
+{"slug": "angle-grinder", "name": "angle grinder", "chinese": "角磨机", "pinyin": "jiǎo mó jī", "emoji": "🛠️", "wiki": "Angle grinder", "hint": "Power tool with a side handle and exposed spinning disc."}
+{"slug": "nail-gun", "name": "nail gun", "chinese": "射钉枪", "pinyin": "shè dīng qiāng", "emoji": "🔫", "wiki": "Nail gun", "hint": "Gun-shaped tool with a nose for firing nails into wood."}
+{"slug": "rotary-tool", "name": "rotary tool", "chinese": "电磨", "pinyin": "diàn mó", "emoji": "🛠️", "wiki": "Rotary tool", "hint": "Small handheld motor tool with a tiny spinning tip."}
+{"slug": "heat-gun", "name": "heat gun", "chinese": "热风枪", "pinyin": "rè fēng qiāng", "emoji": "🔫", "wiki": "Heat gun", "hint": "Pistol-shaped tool with a short wide metal nozzle."}
+{"slug": "nail", "name": "nail", "chinese": "钉子", "pinyin": "dīng zi", "emoji": "📌", "wiki": "Nail (fastener)", "hint": "Thin metal pin with a flat head and pointed tip."}
+{"slug": "screw", "name": "screw", "chinese": "螺丝", "pinyin": "luó sī", "emoji": "🔩", "wiki": "Screw", "hint": "Metal fastener with spiral threads around its shaft."}
+{"slug": "bolt", "name": "bolt", "chinese": "螺栓", "pinyin": "luó shuān", "emoji": "🔩", "wiki": "Bolt (fastener)", "hint": "Threaded metal rod with a hex head."}
+{"slug": "nut", "name": "nut", "chinese": "螺母", "pinyin": "luó mǔ", "emoji": "🔩", "wiki": "Nut (hardware)", "hint": "Small metal block with a threaded hole through the middle."}
+{"slug": "washer", "name": "washer", "chinese": "垫圈", "pinyin": "diàn quān", "emoji": "⭕", "wiki": "Washer (hardware)", "hint": "Flat metal ring with a hole in the center."}
+{"slug": "wall-plug", "name": "wall plug", "chinese": "膨胀塞", "pinyin": "péng zhàng sāi", "wiki": "Wall plug", "hint": "Small ribbed plastic sleeve for a screw in a wall."}
+{"slug": "hook", "name": "hook", "chinese": "挂钩", "pinyin": "guà gōu", "emoji": "🪝", "wiki": "Hook", "hint": "Curved metal piece shaped to hang things on.", "image_hint": "Square bend screw hook - 59 x 22 mm.jpg"}
+{"slug": "hinge", "name": "hinge", "chinese": "合页", "pinyin": "hé yè", "emoji": "🚪", "wiki": "Hinge", "hint": "Two joined metal plates that let a door swing."}
+{"slug": "tape-measure", "name": "tape measure", "chinese": "卷尺", "pinyin": "juǎn chǐ", "emoji": "📏", "wiki": "Tape measure", "hint": "Retractable strip marked with numbers in a small case."}
+{"slug": "ruler", "name": "ruler", "chinese": "直尺", "pinyin": "zhí chǐ", "emoji": "📏", "wiki": "Ruler", "hint": "Straight flat strip marked with measurement lines."}
+{"slug": "spirit-level", "name": "spirit level", "chinese": "水平尺", "pinyin": "shuǐ píng chǐ", "emoji": "📏", "wiki": "Spirit level", "hint": "Long bar with small liquid bubble tubes inside."}
+{"slug": "try-square", "name": "try square", "chinese": "角尺", "pinyin": "jiǎo chǐ", "emoji": "📐", "wiki": "Try square", "hint": "L-shaped tool with a thick handle and straight blade."}
+{"slug": "caliper", "name": "caliper", "chinese": "卡尺", "pinyin": "kǎ chǐ", "emoji": "📏", "wiki": "Calipers", "hint": "Sliding measuring tool with two pairs of pointed jaws."}
+{"slug": "stud-finder", "name": "stud finder", "chinese": "探钉器", "pinyin": "tàn dīng qì", "wiki": "Stud finder", "hint": "Small handheld device used against a wall to locate beams."}
+{"slug": "laser-level", "name": "laser level", "chinese": "激光水平仪", "pinyin": "jī guāng shuǐ píng yí", "wiki": "Laser level", "hint": "Compact tool that projects a straight red line."}
+{"slug": "spade", "name": "spade", "chinese": "铁锹", "pinyin": "tiěqiāo", "emoji": "🪏", "wiki": "Spade", "hint": "A flat-bladed digging tool with a long handle."}
+{"slug": "fork", "name": "fork", "chinese": "园艺叉", "pinyin": "yuányìchā", "wiki": "Fork", "hint": "A long-handled tool with strong metal prongs.", "image_hint": "Garden fork.JPG"}
+{"slug": "pruning-shears", "name": "pruning shears", "chinese": "修枝剪", "pinyin": "xiūzhījian", "emoji": "✂️", "wiki": "Secateurs", "hint": "Two short blades and handles for cutting stems."}
+{"slug": "loppers", "name": "loppers", "chinese": "高枝剪", "pinyin": "gāozhījiǎn", "wiki": "Loppers", "hint": "Long handles with chunky blades for thick branches."}
+{"slug": "broom", "name": "broom", "chinese": "扫帚", "pinyin": "sàozhou", "emoji": "🧹", "wiki": "Broom", "hint": "A long stick with stiff bristles at one end."}
+{"slug": "wheelbarrow", "name": "wheelbarrow", "chinese": "手推车", "pinyin": "shǒutuīchē", "emoji": "🛒", "wiki": "Wheelbarrow", "hint": "A one-wheeled tray with handles for pushing."}
+{"slug": "watering-can", "name": "watering can", "chinese": "洒水壶", "pinyin": "sǎshuǐhú", "emoji": "🚿", "wiki": "Watering can", "hint": "A handled can with a spout and sprinkler top."}
+{"slug": "hose", "name": "hose", "chinese": "水管", "pinyin": "shuǐguǎn", "wiki": "Garden hose", "hint": "A long flexible tube coiled on the ground."}
+{"slug": "sprinkler", "name": "sprinkler", "chinese": "洒水器", "pinyin": "sǎshuǐqì", "wiki": "Irrigation sprinkler", "hint": "A garden device with holes that sprays water around."}
+{"slug": "lawn-mower", "name": "lawn mower", "chinese": "割草机", "pinyin": "gēcǎojī", "wiki": "Lawn mower", "hint": "A wheeled machine pushed across grass.", "image_hint": "Viking MB 2 R lawn mower 01.jpg"}
+{"slug": "hedge-trimmer", "name": "hedge trimmer", "chinese": "修篱机", "pinyin": "xiūlíjī", "wiki": "Hedge trimmer", "hint": "A power tool with a long cutting bar for bushes.", "image_hint": "Makita BUH550RD 36V Cordless Hedge Trimmer (4887708972).jpg"}
+{"slug": "bucket", "name": "bucket", "chinese": "水桶", "pinyin": "shuǐtǒng", "emoji": "🪣", "wiki": "Bucket", "hint": "A round open container with a handle.", "image_hint": "Lime green bucket 1.jpg"}
+{"slug": "gloves", "name": "gloves", "chinese": "手套", "pinyin": "shǒutào", "emoji": "🧤", "wiki": "Glove", "hint": "A pair of fabric hand coverings often used outdoors.", "image_hint": "A hand wearing bright floral gardening gloves.jpg"}
+{"slug": "fridge", "name": "fridge", "chinese": "冰箱", "pinyin": "bīngxiāng", "emoji": "🧊", "wiki": "Refrigerator", "hint": "Keeps food cold. Also called a refrigerator."}
+{"slug": "oven", "name": "oven", "chinese": "烤箱", "pinyin": "kǎoxiāng", "emoji": "🔥", "wiki": "Oven", "hint": "A hot box you bake or roast food in."}
+{"slug": "stove", "name": "stove", "chinese": "炉灶", "pinyin": "lúzào", "emoji": "🍳", "wiki": "Kitchen stove", "hint": "The burners on top where pots sit. Also called a cooktop.", "image_hint": "none"}
+{"slug": "blender", "name": "blender", "chinese": "搅拌机", "pinyin": "jiǎobànjī", "emoji": "🥤", "wiki": "Blender (appliance)", "hint": "Spins sharp blades to make smoothies and soups."}
+{"slug": "rice-cooker", "name": "rice cooker", "chinese": "电饭锅", "pinyin": "diànfànguō", "emoji": "🍚", "wiki": "Rice cooker", "hint": "An electric pot that cooks rice by itself."}
+{"slug": "coffee-maker", "name": "coffee maker", "chinese": "咖啡机", "pinyin": "kāfēijī", "emoji": "☕", "wiki": "Coffeemaker", "hint": "A machine that brews coffee."}
+{"slug": "range-hood", "name": "range hood", "chinese": "抽油烟机", "pinyin": "chōuyóuyānjī", "emoji": "💨", "wiki": "Kitchen hood", "hint": "Hangs over the stove and sucks up smoke."}
+{"slug": "wok", "name": "wok", "chinese": "炒锅", "pinyin": "chǎoguō", "emoji": "🥘", "wiki": "Wok", "hint": "A deep round pan for stir-frying."}
+{"slug": "ladle", "name": "ladle", "chinese": "汤勺", "pinyin": "tāngsháo", "emoji": "🥄", "wiki": "Ladle (spoon)", "hint": "A big deep spoon for serving soup.", "image_hint": "none"}
+{"slug": "spatula", "name": "spatula", "chinese": "锅铲", "pinyin": "guōchǎn", "emoji": "🍳", "wiki": "Spatula", "hint": "A flat tool for flipping food in a pan."}
+{"slug": "peeler", "name": "peeler", "chinese": "削皮器", "pinyin": "xiāopíqì", "emoji": "🥔", "wiki": "Peeler", "hint": "Takes the skin off potatoes and carrots."}
+{"slug": "can-opener", "name": "can opener", "chinese": "开罐器", "pinyin": "kāiguànqì", "emoji": "🥫", "wiki": "Can opener", "hint": "Opens a tin. Also called a tin opener."}
+{"slug": "rolling-pin", "name": "rolling pin", "chinese": "擀面杖", "pinyin": "gǎnmiànzhàng", "emoji": "🥟", "wiki": "Rolling pin", "hint": "A wooden roller for flattening dough."}
+{"slug": "oven-mitt", "name": "oven mitt", "chinese": "隔热手套", "pinyin": "gérè shǒutào", "emoji": "🧤", "wiki": "Oven glove", "hint": "A thick glove for holding hot trays."}
+{"slug": "plate", "name": "plate", "chinese": "盘子", "pinyin": "pánzi", "emoji": "🍽️", "wiki": "Plate (dishware)", "hint": "The flat dish you eat your meal from.", "image_hint": "none"}
+{"slug": "bowl", "name": "bowl", "chinese": "碗", "pinyin": "wǎn", "emoji": "🥣", "wiki": "Bowl", "hint": "A deep round dish for rice, soup or cereal.", "image_hint": "none"}
+{"slug": "mug", "name": "mug", "chinese": "马克杯", "pinyin": "mǎkèbēi", "emoji": "☕", "wiki": "Mug", "hint": "A big cup with a handle for hot drinks."}
+{"slug": "drinking-glass", "name": "glass", "chinese": "玻璃杯", "pinyin": "bōlibēi", "emoji": "🥛", "wiki": "Drinking glass", "hint": "A clear cup for water or juice."}
+{"slug": "spoon", "name": "spoon", "chinese": "勺子", "pinyin": "sháozi", "emoji": "🥄", "wiki": "Spoon", "hint": "For soup, cereal and stirring tea."}
+{"slug": "table-knife", "name": "knife", "chinese": "餐刀", "pinyin": "cāndāo", "emoji": "🔪", "wiki": "Table knife", "hint": "The knife on the dinner table, not the sharp cooking one."}
+{"slug": "chopsticks", "name": "chopsticks", "chinese": "筷子", "pinyin": "kuàizi", "emoji": "🥢", "wiki": "Chopsticks", "hint": "A pair of sticks for eating."}
+{"slug": "teapot", "name": "teapot", "chinese": "茶壶", "pinyin": "cháhú", "emoji": "🫖", "wiki": "Teapot", "hint": "A pot with a spout for making tea."}
+{"slug": "jug", "name": "jug", "chinese": "水罐", "pinyin": "shuǐguàn", "emoji": "🫗", "wiki": "Jug", "hint": "Holds water or milk for pouring. Also called a pitcher.", "image_hint": "none"}
+{"slug": "sink", "name": "sink", "chinese": "水槽", "pinyin": "shuǐcáo", "emoji": "🚰", "wiki": "Sink", "hint": "The basin with a tap where you wash dishes or hands."}
+{"slug": "tap", "name": "tap", "chinese": "水龙头", "pinyin": "shuǐlóngtóu", "emoji": "🚰", "wiki": "Tap (valve)", "hint": "Turn it to get water. Also called a faucet."}
+{"slug": "cupboard", "name": "cupboard", "chinese": "橱柜", "pinyin": "chúguì", "emoji": "🗄️", "wiki": "Cupboard", "hint": "A cabinet with doors for storing things."}
+{"slug": "drawer", "name": "drawer", "chinese": "抽屉", "pinyin": "chōuti", "emoji": "🗃️", "wiki": "Drawer", "hint": "A box that slides out of a cupboard or desk."}
+{"slug": "bin", "name": "bin", "chinese": "垃圾桶", "pinyin": "lājītǒng", "emoji": "🗑️", "wiki": "Waste container", "hint": "Where rubbish goes. Also called a trash can."}
+{"slug": "paper-towel", "name": "paper towel", "chinese": "厨房纸", "pinyin": "chúfángzhǐ", "emoji": "🧻", "wiki": "Paper towel", "hint": "A roll of paper for wiping up spills."}
+{"slug": "aluminium-foil", "name": "foil", "chinese": "锡纸", "pinyin": "xīzhǐ", "emoji": "✨", "wiki": "Aluminium foil", "hint": "Thin shiny metal sheet for wrapping food."}
+{"slug": "cling-film", "name": "cling film", "chinese": "保鲜膜", "pinyin": "bǎoxiānmó", "emoji": "🎞️", "wiki": "Plastic wrap", "hint": "Thin clear plastic that sticks to bowls."}
+{"slug": "dish-rack", "name": "dish rack", "chinese": "碗架", "pinyin": "wǎnjià", "emoji": "🍽️", "wiki": "Dish drying cabinet", "hint": "Where washed dishes stand to dry.", "image_hint": "none"}
+{"slug": "toilet", "name": "toilet", "chinese": "马桶", "pinyin": "mǎtǒng", "emoji": "🚽", "wiki": "Toilet", "hint": "You sit on it and flush it."}
+{"slug": "bathtub", "name": "bathtub", "chinese": "浴缸", "pinyin": "yùgāng", "emoji": "🛁", "wiki": "Bathtub", "hint": "A long tub you lie in to wash."}
+{"slug": "shower", "name": "shower", "chinese": "淋浴", "pinyin": "línyù", "emoji": "🚿", "wiki": "Shower", "hint": "Water sprays down on you from above."}
+{"slug": "mirror", "name": "mirror", "chinese": "镜子", "pinyin": "jìngzi", "emoji": "🪞", "wiki": "Mirror", "hint": "Glass that shows your reflection."}
+{"slug": "towel-rail", "name": "towel rail", "chinese": "毛巾架", "pinyin": "máojīnjià", "emoji": "🧺", "wiki": "Towel warmer", "hint": "A bar on the wall to hang towels. Some are heated."}
+{"slug": "shower-cap", "name": "shower cap", "chinese": "浴帽", "pinyin": "yùmào", "emoji": "🚿", "wiki": "Shower cap", "hint": "A plastic cap that keeps your hair dry."}
+{"slug": "rubber-duck", "name": "rubber duck", "chinese": "橡皮鸭", "pinyin": "xiàngpíyā", "emoji": "🦆", "wiki": "Rubber duck", "hint": "A yellow toy duck for the bath."}
+{"slug": "perfume", "name": "perfume", "chinese": "香水", "pinyin": "xiāngshuǐ", "emoji": "🌸", "wiki": "Perfume", "hint": "A liquid that makes you smell nice."}
+{"slug": "medicine-cabinet", "name": "medicine cabinet", "chinese": "药柜", "pinyin": "yàoguì", "emoji": "💊", "wiki": "Medicine cabinet", "hint": "A small cupboard, often behind the mirror.", "image_hint": "none"}
+{"slug": "toilet-brush", "name": "toilet brush", "chinese": "马桶刷", "pinyin": "mǎtǒngshuā", "emoji": "🧹", "wiki": "Toilet brush", "hint": "For scrubbing the inside of the toilet."}
+{"slug": "plunger", "name": "plunger", "chinese": "马桶搋子", "pinyin": "mǎtǒng chuāizi", "emoji": "🪠", "wiki": "Plunger", "hint": "A rubber cup on a stick for clearing a blocked drain."}
+{"slug": "toothbrush", "name": "toothbrush", "chinese": "牙刷", "pinyin": "yáshuā", "emoji": "🪥", "wiki": "Toothbrush", "hint": "For brushing your teeth."}
+{"slug": "toothpaste", "name": "toothpaste", "chinese": "牙膏", "pinyin": "yágāo", "emoji": "🪥", "wiki": "Toothpaste", "hint": "The paste you put on a toothbrush."}
+{"slug": "dental-floss", "name": "dental floss", "chinese": "牙线", "pinyin": "yáxiàn", "emoji": "🦷", "wiki": "Dental floss", "hint": "Thin thread for cleaning between teeth."}
+{"slug": "mouthwash", "name": "mouthwash", "chinese": "漱口水", "pinyin": "shùkǒushuǐ", "emoji": "🫧", "wiki": "Mouthwash", "hint": "Liquid you rinse your mouth with."}
+{"slug": "soap", "name": "soap", "chinese": "肥皂", "pinyin": "féizào", "emoji": "🧼", "wiki": "Soap", "hint": "Makes bubbles and gets you clean."}
+{"slug": "shampoo", "name": "shampoo", "chinese": "洗发水", "pinyin": "xǐfàshuǐ", "emoji": "🧴", "wiki": "Shampoo", "hint": "For washing your hair."}
+{"slug": "conditioner", "name": "conditioner", "chinese": "护发素", "pinyin": "hùfàsù", "emoji": "🧴", "wiki": "Hair conditioner", "hint": "Makes hair soft after shampoo."}
+{"slug": "shower-gel", "name": "shower gel", "chinese": "沐浴露", "pinyin": "mùyùlù", "emoji": "🧴", "wiki": "Shower gel", "hint": "Liquid soap for your body."}
+{"slug": "deodorant", "name": "deodorant", "chinese": "除臭剂", "pinyin": "chúchòujì", "emoji": "🧴", "wiki": "Deodorant", "hint": "Stops underarms smelling."}
+{"slug": "sunscreen", "name": "sunscreen", "chinese": "防晒霜", "pinyin": "fángshàishuāng", "emoji": "🧴", "wiki": "Sunscreen", "hint": "Cream that protects skin from the sun."}
+{"slug": "moisturiser", "name": "moisturiser", "chinese": "润肤霜", "pinyin": "rùnfūshuāng", "emoji": "🧴", "wiki": "Moisturizer", "hint": "Cream that stops skin drying out."}
+{"slug": "cotton-bud", "name": "cotton bud", "chinese": "棉签", "pinyin": "miánqiān", "emoji": "🦻", "wiki": "Cotton swab", "hint": "A small stick with cotton on each end."}
+{"slug": "tissue", "name": "tissue", "chinese": "纸巾", "pinyin": "zhǐjīn", "emoji": "🤧", "wiki": "Facial tissue", "hint": "Soft paper for blowing your nose."}
+{"slug": "toilet-paper", "name": "toilet paper", "chinese": "卫生纸", "pinyin": "wèishēngzhǐ", "emoji": "🧻", "wiki": "Toilet paper", "hint": "The roll next to the toilet."}
+{"slug": "razor", "name": "razor", "chinese": "剃须刀", "pinyin": "tìxūdāo", "emoji": "🪒", "wiki": "Razor", "hint": "A blade for shaving."}
+{"slug": "shaving-cream", "name": "shaving cream", "chinese": "剃须膏", "pinyin": "tìxūgāo", "emoji": "🫧", "wiki": "Shaving cream", "hint": "Foam you put on before shaving."}
+{"slug": "hairdryer", "name": "hairdryer", "chinese": "吹风机", "pinyin": "chuīfēngjī", "emoji": "💨", "wiki": "Hair dryer", "hint": "Blows hot air to dry your hair."}
+{"slug": "comb", "name": "comb", "chinese": "梳子", "pinyin": "shūzi", "emoji": "🪮", "wiki": "Comb", "hint": "A flat row of teeth for tidying hair."}
+{"slug": "hairbrush", "name": "hairbrush", "chinese": "发刷", "pinyin": "fàshuā", "emoji": "🪮", "wiki": "Hairbrush", "hint": "A brush with bristles for your hair.", "image_hint": "none"}
+{"slug": "nail-clippers", "name": "nail clippers", "chinese": "指甲刀", "pinyin": "zhǐjiadāo", "emoji": "💅", "wiki": "Nail clipper", "hint": "Cuts your fingernails."}
+{"slug": "tweezers", "name": "tweezers", "chinese": "镊子", "pinyin": "nièzi", "emoji": "🔬", "wiki": "Tweezers", "hint": "Tiny tongs for pulling out hairs or splinters."}
+{"slug": "scissors", "name": "scissors", "chinese": "剪刀", "pinyin": "jiǎndāo", "emoji": "✂️", "wiki": "Scissors", "hint": "Two blades for cutting paper or hair."}
+{"slug": "towel", "name": "towel", "chinese": "毛巾", "pinyin": "máojīn", "emoji": "🧺", "wiki": "Towel", "hint": "You dry yourself with it."}
+{"slug": "bathrobe", "name": "bathrobe", "chinese": "浴袍", "pinyin": "yùpáo", "emoji": "👘", "wiki": "Bathrobe", "hint": "A soft robe you wear after a bath.", "image_hint": "none"}
+{"slug": "scales", "name": "scales", "chinese": "秤", "pinyin": "chèng", "emoji": "⚖️", "wiki": "Weighing scale", "hint": "Tells you how heavy something is.", "image_hint": "none"}
+{"slug": "laundry-basket", "name": "laundry basket", "chinese": "脏衣篮", "pinyin": "zāngyīlán", "emoji": "🧺", "wiki": "Laundry basket", "hint": "Where dirty clothes wait to be washed."}
+{"slug": "washing-machine", "name": "washing machine", "chinese": "洗衣机", "pinyin": "xǐyījī", "emoji": "🫧", "wiki": "Washing machine", "hint": "Washes your clothes."}
+{"slug": "bed", "name": "bed", "chinese": "床", "pinyin": "chuáng", "emoji": "🛏️", "wiki": "Bed", "hint": "Where you sleep.", "image_hint": "none"}
+{"slug": "mattress", "name": "mattress", "chinese": "床垫", "pinyin": "chuángdiàn", "emoji": "🛏️", "wiki": "Mattress", "hint": "The thick soft part of a bed."}
+{"slug": "wardrobe", "name": "wardrobe", "chinese": "衣柜", "pinyin": "yīguì", "emoji": "🚪", "wiki": "Wardrobe", "hint": "A tall cupboard for hanging clothes."}
+{"slug": "chest-of-drawers", "name": "chest of drawers", "chinese": "五斗柜", "pinyin": "wǔdǒuguì", "emoji": "🗄️", "wiki": "Chest of drawers", "hint": "Furniture with drawers for folded clothes."}
+{"slug": "bedside-table", "name": "bedside table", "chinese": "床头柜", "pinyin": "chuángtóuguì", "emoji": "🛏️", "wiki": "Nightstand", "hint": "A small table next to the bed."}
+{"slug": "dressing-table", "name": "dressing table", "chinese": "梳妆台", "pinyin": "shūzhuāngtái", "emoji": "🪞", "wiki": "Dressing table", "hint": "A table with a mirror for doing hair and make-up.", "image_hint": "none"}
+{"slug": "bookcase", "name": "bookcase", "chinese": "书架", "pinyin": "shūjià", "emoji": "📚", "wiki": "Bookcase", "hint": "Shelves for books."}
+{"slug": "desk", "name": "desk", "chinese": "书桌", "pinyin": "shūzhuō", "emoji": "🖥️", "wiki": "Desk", "hint": "A table you work or study at.", "image_hint": "none"}
+{"slug": "chair", "name": "chair", "chinese": "椅子", "pinyin": "yǐzi", "emoji": "🪑", "wiki": "Chair", "hint": "A seat for one person, with a back.", "image_hint": "none"}
+{"slug": "bunk-bed", "name": "bunk bed", "chinese": "双层床", "pinyin": "shuāngcéngchuáng", "emoji": "🛏️", "wiki": "Bunk bed", "hint": "One bed on top of another."}
+{"slug": "cot", "name": "cot", "chinese": "婴儿床", "pinyin": "yīng'érchuáng", "emoji": "👶", "wiki": "Infant bed", "hint": "A baby's bed with bars. Also called a crib."}
+{"slug": "pillow", "name": "pillow", "chinese": "枕头", "pinyin": "zhěntou", "emoji": "🛌", "wiki": "Pillow", "hint": "Your head rests on it in bed."}
+{"slug": "duvet", "name": "duvet", "chinese": "被子", "pinyin": "bèizi", "emoji": "🛌", "wiki": "Duvet", "hint": "A thick soft cover for the bed. Also called a doona."}
+{"slug": "blanket", "name": "blanket", "chinese": "毯子", "pinyin": "tǎnzi", "emoji": "🛌", "wiki": "Blanket", "hint": "A warm cloth cover.", "image_hint": "none"}
+{"slug": "bed-sheet", "name": "sheet", "chinese": "床单", "pinyin": "chuángdān", "emoji": "🛏️", "wiki": "Bed sheet", "hint": "Thin cloth you lie on, over the mattress."}
+{"slug": "quilt", "name": "quilt", "chinese": "绗缝被", "pinyin": "hángféngbèi", "emoji": "🧵", "wiki": "Quilt", "hint": "A bed cover made of stitched layers."}
+{"slug": "hot-water-bottle", "name": "hot-water bottle", "chinese": "热水袋", "pinyin": "rèshuǐdài", "emoji": "🔥", "wiki": "Hot water bottle", "hint": "A rubber bag of hot water for warming the bed."}
+{"slug": "alarm-clock", "name": "alarm clock", "chinese": "闹钟", "pinyin": "nàozhōng", "emoji": "⏰", "wiki": "Alarm clock", "hint": "Rings to wake you up."}
+{"slug": "curtain", "name": "curtain", "chinese": "窗帘", "pinyin": "chuānglián", "emoji": "🪟", "wiki": "Curtain", "hint": "Cloth you pull across a window."}
+{"slug": "blind", "name": "blind", "chinese": "百叶窗", "pinyin": "bǎiyèchuāng", "emoji": "🪟", "wiki": "Window blind", "hint": "Slats or a roll that cover a window."}
+{"slug": "carpet", "name": "carpet", "chinese": "地毯", "pinyin": "dìtǎn", "emoji": "🟥", "wiki": "Carpet", "hint": "Soft covering on the floor. A small one is a rug."}
+{"slug": "coat-hanger", "name": "coat hanger", "chinese": "衣架", "pinyin": "yījià", "emoji": "👔", "wiki": "Clothes hanger", "hint": "Holds a shirt or coat in the wardrobe."}
+{"slug": "power-point", "name": "power point", "chinese": "插座", "pinyin": "chāzuò", "emoji": "🔌", "wiki": "AC power plugs and sockets", "hint": "Where you plug things in. Also called a socket."}
+{"slug": "light-switch", "name": "light switch", "chinese": "电灯开关", "pinyin": "diàndēng kāiguān", "emoji": "💡", "wiki": "Light switch", "hint": "Turns the light on and off."}
+{"slug": "light-bulb", "name": "light bulb", "chinese": "灯泡", "pinyin": "dēngpào", "emoji": "💡", "wiki": "Electric light", "hint": "The glass part of a lamp that glows."}
+{"slug": "lamp", "name": "lamp", "chinese": "台灯", "pinyin": "táidēng", "emoji": "🪔", "wiki": "Light fixture", "hint": "A small light on a table."}
+{"slug": "air-conditioner", "name": "air conditioner", "chinese": "空调", "pinyin": "kōngtiáo", "emoji": "❄️", "wiki": "Air conditioning", "hint": "Makes a room cool."}
+{"slug": "fan", "name": "fan", "chinese": "电风扇", "pinyin": "diànfēngshàn", "emoji": "🌀", "wiki": "Mechanical fan", "hint": "Spinning blades that move air."}
+{"slug": "heater", "name": "heater", "chinese": "取暖器", "pinyin": "qǔnuǎnqì", "emoji": "🔥", "wiki": "Space heater", "hint": "Warms up a room."}
+{"slug": "window", "name": "window", "chinese": "窗户", "pinyin": "chuānghu", "emoji": "🪟", "wiki": "Window", "hint": "Glass in the wall you look out of.", "image_hint": "none"}
+{"slug": "door", "name": "door", "chinese": "门", "pinyin": "mén", "emoji": "🚪", "wiki": "Door", "hint": "You open it to go into a room.", "image_hint": "none"}
+{"slug": "door-handle", "name": "door handle", "chinese": "门把手", "pinyin": "mén bǎshou", "emoji": "🚪", "wiki": "Door handle", "hint": "You turn or push it to open a door.", "image_hint": "none"}
+{"slug": "key", "name": "key", "chinese": "钥匙", "pinyin": "yàoshi", "emoji": "🔑", "wiki": "Key (lock)", "hint": "Opens a lock."}
+{"slug": "charger", "name": "charger", "chinese": "充电器", "pinyin": "chōngdiànqì", "emoji": "🔌", "wiki": "Battery charger", "hint": "Charges your phone."}
+{"slug": "headphones", "name": "headphones", "chinese": "耳机", "pinyin": "ěrjī", "emoji": "🎧", "wiki": "Headphones", "hint": "You wear them to listen to music."}
+{"slug": "glasses", "name": "glasses", "chinese": "眼镜", "pinyin": "yǎnjìng", "emoji": "👓", "wiki": "Glasses", "hint": "Lenses you wear to see clearly."}
+{"slug": "wallet", "name": "wallet", "chinese": "钱包", "pinyin": "qiánbāo", "emoji": "👛", "wiki": "Wallet", "hint": "Holds your cards and money."}
+{"slug": "watch", "name": "watch", "chinese": "手表", "pinyin": "shǒubiǎo", "emoji": "⌚", "wiki": "Watch", "hint": "A small clock on your wrist."}
+{"slug": "backpack", "name": "backpack", "chinese": "双肩包", "pinyin": "shuāngjiānbāo", "emoji": "🎒", "wiki": "Backpack", "hint": "A bag you carry on your back."}
+{"slug": "suitcase", "name": "suitcase", "chinese": "行李箱", "pinyin": "xínglixiāng", "emoji": "🧳", "wiki": "Suitcase", "hint": "A case for clothes when you travel."}
+{"slug": "umbrella", "name": "umbrella", "chinese": "雨伞", "pinyin": "yǔsǎn", "emoji": "☂️", "wiki": "Umbrella", "hint": "Keeps the rain off you."}
+{"slug": "slippers", "name": "slippers", "chinese": "拖鞋", "pinyin": "tuōxié", "emoji": "🥿", "wiki": "Slipper", "hint": "Soft shoes for wearing at home."}
+{"slug": "pyjamas", "name": "pyjamas", "chinese": "睡衣", "pinyin": "shuìyī", "emoji": "👕", "wiki": "Pajamas", "hint": "Clothes you sleep in.", "image_hint": "none"}
+{"slug": "laptop", "name": "laptop", "chinese": "笔记本电脑", "pinyin": "bǐjìběn diànnǎo", "emoji": "💻", "wiki": "Laptop", "hint": "A computer that folds shut."}
+{"slug": "book", "name": "book", "chinese": "书", "pinyin": "shū", "emoji": "📖", "wiki": "Book", "hint": "Pages you read.", "image_hint": "none"}
+{"slug": "picture-frame", "name": "picture frame", "chinese": "相框", "pinyin": "xiàngkuàng", "emoji": "🖼️", "wiki": "Picture frame", "hint": "Holds a photo on a wall or shelf."}
+{"slug": "teddy-bear", "name": "teddy bear", "chinese": "泰迪熊", "pinyin": "tàidíxióng", "emoji": "🧸", "wiki": "Teddy bear", "hint": "A soft toy bear."}
+{"slug": "road", "name": "road", "chinese": "马路", "pinyin": "mǎlù", "emoji": "🛣️", "wiki": "Road", "hint": "Where cars drive."}
+{"slug": "footpath", "name": "footpath", "chinese": "人行道", "pinyin": "rénxíngdào", "emoji": "🚶", "wiki": "Sidewalk", "hint": "Where people walk beside the road. Also called a sidewalk.", "image_hint": "none"}
+{"slug": "kerb", "name": "kerb", "chinese": "路缘", "pinyin": "lùyuán", "emoji": "🛣️", "wiki": "Curb", "hint": "The raised edge between footpath and road.", "image_hint": "none"}
+{"slug": "pedestrian-crossing", "name": "pedestrian crossing", "chinese": "人行横道", "pinyin": "rénxíng héngdào", "emoji": "🚸", "wiki": "Pedestrian crossing", "hint": "Stripes on the road where you cross."}
+{"slug": "traffic-lights", "name": "traffic lights", "chinese": "红绿灯", "pinyin": "hónglǜdēng", "emoji": "🚦", "wiki": "Traffic light", "hint": "Red, yellow, green lights at a crossing."}
+{"slug": "road-sign", "name": "road sign", "chinese": "交通标志", "pinyin": "jiāotōng biāozhì", "emoji": "🪧", "wiki": "Traffic sign", "hint": "A sign that tells drivers the rules."}
+{"slug": "stop-sign", "name": "stop sign", "chinese": "停车标志", "pinyin": "tíngchē biāozhì", "emoji": "🛑", "wiki": "Stop sign", "hint": "A red eight-sided sign."}
+{"slug": "roundabout", "name": "roundabout", "chinese": "环岛", "pinyin": "huándǎo", "emoji": "🔄", "wiki": "Roundabout", "hint": "Cars drive around a circle in the middle of a junction.", "image_hint": "none"}
+{"slug": "intersection", "name": "intersection", "chinese": "十字路口", "pinyin": "shízì lùkǒu", "emoji": "➕", "wiki": "Intersection (road)", "hint": "Where two roads cross."}
+{"slug": "speed-bump", "name": "speed bump", "chinese": "减速带", "pinyin": "jiǎnsùdài", "emoji": "〰️", "wiki": "Speed bump", "hint": "A hump in the road that slows cars down."}
+{"slug": "parking-meter", "name": "parking meter", "chinese": "停车计时器", "pinyin": "tíngchē jìshíqì", "emoji": "🅿️", "wiki": "Parking meter", "hint": "You pay it to park."}
+{"slug": "car-park", "name": "car park", "chinese": "停车场", "pinyin": "tíngchēchǎng", "emoji": "🅿️", "wiki": "Parking lot", "hint": "An area for parking cars. Also called a parking lot.", "image_hint": "none"}
+{"slug": "bridge", "name": "bridge", "chinese": "桥", "pinyin": "qiáo", "emoji": "🌉", "wiki": "Bridge", "hint": "Crosses over a river or road."}
+{"slug": "tunnel", "name": "tunnel", "chinese": "隧道", "pinyin": "suìdào", "emoji": "🚇", "wiki": "Tunnel", "hint": "A passage under the ground or through a hill."}
+{"slug": "streetlight", "name": "streetlight", "chinese": "路灯", "pinyin": "lùdēng", "emoji": "💡", "wiki": "Street light", "hint": "A tall light beside the road."}
+{"slug": "bench", "name": "bench", "chinese": "长椅", "pinyin": "chángyǐ", "emoji": "🪑", "wiki": "Bench (furniture)", "hint": "A long seat in a park or street."}
+{"slug": "post-box", "name": "post box", "chinese": "邮筒", "pinyin": "yóutǒng", "emoji": "📮", "wiki": "Post box", "hint": "Where you drop letters to be sent."}
+{"slug": "phone-box", "name": "phone box", "chinese": "电话亭", "pinyin": "diànhuàtíng", "emoji": "☎️", "wiki": "Telephone booth", "hint": "A small booth with a public phone."}
+{"slug": "fire-hydrant", "name": "fire hydrant", "chinese": "消防栓", "pinyin": "xiāofángshuān", "emoji": "🚒", "wiki": "Fire hydrant", "hint": "Firefighters connect hoses to it."}
+{"slug": "bus-stop", "name": "bus stop", "chinese": "公交车站", "pinyin": "gōngjiāo chēzhàn", "emoji": "🚏", "wiki": "Bus stop", "hint": "Where you wait for the bus."}
+{"slug": "fountain", "name": "fountain", "chinese": "喷泉", "pinyin": "pēnquán", "emoji": "⛲", "wiki": "Fountain", "hint": "Water shooting up in a square or park."}
+{"slug": "statue", "name": "statue", "chinese": "雕像", "pinyin": "diāoxiàng", "emoji": "🗽", "wiki": "Statue", "hint": "A carved or cast figure of a person."}
+{"slug": "billboard", "name": "billboard", "chinese": "广告牌", "pinyin": "guǎnggàopái", "emoji": "🪧", "wiki": "Billboard", "hint": "A huge advertising sign."}
+{"slug": "traffic-cone", "name": "traffic cone", "chinese": "路锥", "pinyin": "lùzhuī", "emoji": "🚧", "wiki": "Traffic cone", "hint": "An orange cone that blocks off part of the road."}
+{"slug": "manhole", "name": "manhole cover", "chinese": "井盖", "pinyin": "jǐnggài", "emoji": "⚫", "wiki": "Manhole cover", "hint": "A round metal lid in the road."}
+{"slug": "drain", "name": "drain", "chinese": "下水道口", "pinyin": "xiàshuǐdào kǒu", "emoji": "🌧️", "wiki": "Storm drain", "hint": "Where rainwater runs off the street."}
+{"slug": "fence", "name": "fence", "chinese": "栅栏", "pinyin": "zhàlan", "emoji": "🚧", "wiki": "Fence", "hint": "A barrier around a garden or field."}
+{"slug": "gate", "name": "gate", "chinese": "大门", "pinyin": "dàmén", "emoji": "🚪", "wiki": "Gate", "hint": "A door in a fence or wall."}
+{"slug": "cafe", "name": "café", "chinese": "咖啡馆", "pinyin": "kāfēiguǎn", "emoji": "☕", "wiki": "Coffeehouse", "hint": "A small shop that sells coffee and snacks."}
+{"slug": "restaurant", "name": "restaurant", "chinese": "餐厅", "pinyin": "cāntīng", "emoji": "🍽️", "wiki": "Restaurant", "hint": "A place where you sit down and order a meal."}
+{"slug": "bank", "name": "bank", "chinese": "银行", "pinyin": "yínháng", "emoji": "🏦", "wiki": "Bank", "hint": "Where people keep and borrow money."}
+{"slug": "atm", "name": "ATM", "chinese": "自动取款机", "pinyin": "zìdòng qǔkuǎnjī", "emoji": "🏧", "wiki": "Automated teller machine", "hint": "A machine in the wall that gives out cash."}
+{"slug": "pharmacy", "name": "pharmacy", "chinese": "药店", "pinyin": "yàodiàn", "emoji": "💊", "wiki": "Pharmacy", "hint": "A shop that sells medicine. Also called a chemist.", "image_hint": "none"}
+{"slug": "post-office", "name": "post office", "chinese": "邮局", "pinyin": "yóujú", "emoji": "🏤", "wiki": "Post office", "hint": "Where you send parcels and letters."}
+{"slug": "petrol-station", "name": "petrol station", "chinese": "加油站", "pinyin": "jiāyóuzhàn", "emoji": "⛽", "wiki": "Filling station", "hint": "Where cars fill up with fuel. Also called a gas station.", "image_hint": "none"}
+{"slug": "train-station", "name": "train station", "chinese": "火车站", "pinyin": "huǒchēzhàn", "emoji": "🚉", "wiki": "Train station", "hint": "Where you get on and off trains."}
+{"slug": "school", "name": "school", "chinese": "学校", "pinyin": "xuéxiào", "emoji": "🏫", "wiki": "School", "hint": "Where children learn."}
+{"slug": "park", "name": "park", "chinese": "公园", "pinyin": "gōngyuán", "emoji": "🌳", "wiki": "Park", "hint": "A green public space with grass and trees."}
+{"slug": "playground", "name": "playground", "chinese": "儿童游乐场", "pinyin": "értóng yóulèchǎng", "emoji": "🛝", "wiki": "Playground", "hint": "Swings and slides for children."}
+{"slug": "apartment-building", "name": "apartment building", "chinese": "公寓楼", "pinyin": "gōngyùlóu", "emoji": "🏢", "wiki": "Apartment building", "hint": "A building with many flats."}
+{"slug": "house", "name": "house", "chinese": "房子", "pinyin": "fángzi", "emoji": "🏠", "wiki": "House", "hint": "A building a family lives in.", "image_hint": "none"}
+{"slug": "skyscraper", "name": "skyscraper", "chinese": "摩天大楼", "pinyin": "mótiān dàlóu", "emoji": "🏙️", "wiki": "Skyscraper", "hint": "A very tall building."}
+{"slug": "pram", "name": "pram", "chinese": "婴儿车", "pinyin": "yīng'érchē", "emoji": "👶", "wiki": "Baby transport", "hint": "A baby's carriage you push. Also called a stroller."}
+{"slug": "e-scooter", "name": "e-scooter", "chinese": "电动滑板车", "pinyin": "diàndòng huábǎnchē", "emoji": "🛴", "wiki": "Electric kick scooter", "hint": "A standing scooter with a motor."}
+{"slug": "skateboard", "name": "skateboard", "chinese": "滑板", "pinyin": "huábǎn", "emoji": "🛹", "wiki": "Skateboard", "hint": "A board on four small wheels."}
+{"slug": "shopping-trolley", "name": "trolley", "chinese": "购物车", "pinyin": "gòuwùchē", "emoji": "🛒", "wiki": "Shopping cart", "hint": "You push it around the supermarket. Also called a cart."}
+{"slug": "shopping-basket", "name": "basket", "chinese": "购物篮", "pinyin": "gòuwùlán", "emoji": "🧺", "wiki": "Shopping basket", "hint": "A basket you carry for a few items."}
+{"slug": "checkout", "name": "checkout", "chinese": "收银台", "pinyin": "shōuyíntái", "emoji": "🧾", "wiki": "Point of sale", "hint": "Where you pay for your shopping."}
+{"slug": "cash-register", "name": "cash register", "chinese": "收银机", "pinyin": "shōuyínjī", "emoji": "💰", "wiki": "Cash register", "hint": "The machine that adds up what you buy."}
+{"slug": "receipt", "name": "receipt", "chinese": "小票", "pinyin": "xiǎopiào", "emoji": "🧾", "wiki": "Receipt", "hint": "The paper that shows what you paid.", "image_hint": "none"}
+{"slug": "barcode", "name": "barcode", "chinese": "条形码", "pinyin": "tiáoxíngmǎ", "emoji": "📊", "wiki": "Barcode", "hint": "Black lines a scanner reads."}
+{"slug": "price-tag", "name": "price tag", "chinese": "价签", "pinyin": "jiàqiān", "emoji": "🏷️", "wiki": "Price tag", "hint": "A label showing how much something costs."}
+{"slug": "shelf", "name": "shelf", "chinese": "货架", "pinyin": "huòjià", "emoji": "🗄️", "wiki": "Shelf (storage)", "hint": "A flat board things sit on.", "image_hint": "none"}
+{"slug": "shopping-bag", "name": "shopping bag", "chinese": "购物袋", "pinyin": "gòuwùdài", "emoji": "🛍️", "wiki": "Shopping bag", "hint": "A bag for carrying your shopping home."}
+{"slug": "self-checkout", "name": "self-checkout", "chinese": "自助收银机", "pinyin": "zìzhù shōuyínjī", "emoji": "🧾", "wiki": "Self-checkout", "hint": "A machine where you scan and pay yourself."}
+{"slug": "debit-card", "name": "card", "chinese": "银行卡", "pinyin": "yínhángkǎ", "emoji": "💳", "wiki": "Debit card", "hint": "A plastic card you tap to pay."}
+{"slug": "coin", "name": "coin", "chinese": "硬币", "pinyin": "yìngbì", "emoji": "🪙", "wiki": "Coin", "hint": "A small round piece of metal money.", "image_hint": "none"}
+{"slug": "banknote", "name": "note", "chinese": "纸币", "pinyin": "zhǐbì", "emoji": "💵", "wiki": "Banknote", "hint": "Paper money. Also called a bill.", "image_hint": "none"}
+{"slug": "beef", "name": "beef", "chinese": "牛肉", "pinyin": "niúròu", "emoji": "🥩", "wiki": "Beef", "hint": "Meat from a cow."}
+{"slug": "pork", "name": "pork", "chinese": "猪肉", "pinyin": "zhūròu", "emoji": "🥓", "wiki": "Pork", "hint": "Meat from a pig."}
+{"slug": "mince", "name": "mince", "chinese": "肉馅", "pinyin": "ròuxiàn", "emoji": "🥩", "wiki": "Ground meat", "hint": "Finely chopped meat. Also called ground beef.", "image_hint": "none"}
+{"slug": "sausage", "name": "sausage", "chinese": "香肠", "pinyin": "xiāngcháng", "emoji": "🌭", "wiki": "Sausage", "hint": "Minced meat in a long skin."}
+{"slug": "egg", "name": "egg", "chinese": "鸡蛋", "pinyin": "jīdàn", "emoji": "🥚", "wiki": "Egg as food", "hint": "Laid by a hen; sold by the dozen."}
+{"slug": "bread", "name": "bread", "chinese": "面包", "pinyin": "miànbāo", "emoji": "🍞", "wiki": "Bread", "hint": "Baked from flour; you slice it for toast."}
+{"slug": "milk", "name": "milk", "chinese": "牛奶", "pinyin": "niúnǎi", "emoji": "🥛", "wiki": "Milk", "hint": "A white drink from cows."}
+{"slug": "cheese", "name": "cheese", "chinese": "奶酪", "pinyin": "nǎilào", "emoji": "🧀", "wiki": "Cheese", "hint": "Made from milk; yellow or white."}
+{"slug": "butter", "name": "butter", "chinese": "黄油", "pinyin": "huángyóu", "emoji": "🧈", "wiki": "Butter", "hint": "Yellow fat you spread on bread.", "image_hint": "none"}
+{"slug": "yoghurt", "name": "yoghurt", "chinese": "酸奶", "pinyin": "suānnǎi", "emoji": "🥛", "wiki": "Yogurt", "hint": "Thick, slightly sour milk food."}
+{"slug": "cream", "name": "cream", "chinese": "奶油", "pinyin": "nǎiyóu", "emoji": "🥛", "wiki": "Cream", "hint": "The thick fatty part of milk.", "image_hint": "none"}
+{"slug": "tofu", "name": "tofu", "chinese": "豆腐", "pinyin": "dòufu", "emoji": "🧊", "wiki": "Tofu", "hint": "Soft white blocks made from soybeans."}
+{"slug": "ice-cream", "name": "ice cream", "chinese": "冰淇淋", "pinyin": "bīngqílín", "emoji": "🍨", "wiki": "Ice cream", "hint": "A sweet frozen dessert."}
+{"slug": "rice", "name": "rice", "chinese": "大米", "pinyin": "dàmǐ", "emoji": "🍚", "wiki": "Rice", "hint": "Small grains you cook and eat.", "image_hint": "none"}
+{"slug": "noodles", "name": "noodles", "chinese": "面条", "pinyin": "miàntiáo", "emoji": "🍜", "wiki": "Noodle", "hint": "Long thin strips of dough."}
+{"slug": "pasta", "name": "pasta", "chinese": "意大利面", "pinyin": "yìdàlìmiàn", "emoji": "🍝", "wiki": "Pasta", "hint": "Italian noodles in many shapes."}
+{"slug": "flour", "name": "flour", "chinese": "面粉", "pinyin": "miànfěn", "emoji": "🌾", "wiki": "Flour", "hint": "White powder for baking.", "image_hint": "none"}
+{"slug": "sugar", "name": "sugar", "chinese": "糖", "pinyin": "táng", "emoji": "🍬", "wiki": "Sugar", "hint": "Makes food sweet."}
+{"slug": "salt", "name": "salt", "chinese": "盐", "pinyin": "yán", "emoji": "🧂", "wiki": "Salt", "hint": "White crystals that make food salty.", "image_hint": "none"}
+{"slug": "cooking-oil", "name": "cooking oil", "chinese": "食用油", "pinyin": "shíyòngyóu", "emoji": "🫗", "wiki": "Cooking oil", "hint": "Oil for frying."}
+{"slug": "soy-sauce", "name": "soy sauce", "chinese": "酱油", "pinyin": "jiàngyóu", "emoji": "🍶", "wiki": "Soy sauce", "hint": "A dark salty sauce."}
+{"slug": "vinegar", "name": "vinegar", "chinese": "醋", "pinyin": "cù", "emoji": "🍶", "wiki": "Vinegar", "hint": "A sour liquid."}
+{"slug": "tomato-sauce", "name": "tomato sauce", "chinese": "番茄酱", "pinyin": "fānqiéjiàng", "emoji": "🥫", "wiki": "Ketchup", "hint": "Red sauce for chips. Also called ketchup."}
+{"slug": "honey", "name": "honey", "chinese": "蜂蜜", "pinyin": "fēngmì", "emoji": "🍯", "wiki": "Honey", "hint": "Sweet, sticky, made by bees."}
+{"slug": "jam", "name": "jam", "chinese": "果酱", "pinyin": "guǒjiàng", "emoji": "🍓", "wiki": "Fruit preserves", "hint": "Sweet fruit spread for toast."}
+{"slug": "cereal", "name": "cereal", "chinese": "麦片", "pinyin": "màipiàn", "emoji": "🥣", "wiki": "Breakfast cereal", "hint": "Flakes you eat with milk for breakfast."}
+{"slug": "tin", "name": "tin", "chinese": "罐头", "pinyin": "guàntou", "emoji": "🥫", "wiki": "Steel and tin cans", "hint": "A metal can of food. Also called a can."}
+{"slug": "coffee", "name": "coffee", "chinese": "咖啡", "pinyin": "kāfēi", "emoji": "☕", "wiki": "Coffee", "hint": "A hot drink made from roasted beans."}
+{"slug": "tea", "name": "tea", "chinese": "茶", "pinyin": "chá", "emoji": "🍵", "wiki": "Tea", "hint": "A hot drink made from leaves."}
+{"slug": "biscuit", "name": "biscuit", "chinese": "饼干", "pinyin": "bǐnggān", "emoji": "🍪", "wiki": "Biscuit", "hint": "A small crunchy baked snack. Also called a cookie."}
+{"slug": "chocolate", "name": "chocolate", "chinese": "巧克力", "pinyin": "qiǎokèlì", "emoji": "🍫", "wiki": "Chocolate", "hint": "A sweet brown treat."}
+{"slug": "chips", "name": "chips", "chinese": "薯片", "pinyin": "shǔpiàn", "emoji": "🥔", "wiki": "Potato chip", "hint": "Thin crispy potato slices in a packet. Also called crisps."}
+{"slug": "bottled-water", "name": "bottled water", "chinese": "瓶装水", "pinyin": "píngzhuāngshuǐ", "emoji": "💧", "wiki": "Bottled water", "hint": "Drinking water in a plastic bottle."}
+{"slug": "juice", "name": "juice", "chinese": "果汁", "pinyin": "guǒzhī", "emoji": "🧃", "wiki": "Juice", "hint": "A drink squeezed from fruit."}
+{"slug": "soft-drink", "name": "soft drink", "chinese": "汽水", "pinyin": "qìshuǐ", "emoji": "🥤", "wiki": "Soft drink", "hint": "A sweet fizzy drink."}
+{"slug": "laundry-detergent", "name": "laundry detergent", "chinese": "洗衣液", "pinyin": "xǐyīyè", "emoji": "🧴", "wiki": "Laundry detergent", "hint": "Soap for the washing machine."}
+{"slug": "nappy", "name": "nappy", "chinese": "尿布", "pinyin": "niàobù", "emoji": "👶", "wiki": "Diaper", "hint": "What a baby wears. Also called a diaper."}
+{"slug": "bin-bag", "name": "bin bag", "chinese": "垃圾袋", "pinyin": "lājīdài", "emoji": "🗑️", "wiki": "Bin bag", "hint": "A plastic bag that lines the bin.", "image_hint": "none"}
+{"slug": "chicken-meat", "name": "chicken", "chinese": "鸡肉", "pinyin": "jīròu", "emoji": "🍗", "wiki": "Chicken as food", "hint": "Chicken sold as meat — breast, thighs, drumsticks.", "image_hint": "none"}
+{"slug": "fish-fillet", "name": "fish", "chinese": "鱼肉", "pinyin": "yúròu", "emoji": "🐟", "wiki": "Fish as food", "hint": "Fish sold as food, often as fillets."}

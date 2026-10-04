@@ -1,0 +1,37 @@
+[app]
+id = "notebook"
+name = "Notebook"
+version = "0.1.0"
+description = "Note-first vault workspace — browse folders, open any note at its own URL, follow links in and out"
+store_category = "core"
+dimensions = ["intellectual"]
+user_intent = [
+    "browse my notes",
+    "open a note",
+    "read my vault",
+    "what links to this note",
+    "翻看我的笔记",
+]
+
+[app.entry]
+module = "app"
+class = "NotebookApp"
+
+[provides.cli]
+commands = ["notebook"]
+
+[provides.web]
+prefix = "/notebook"
+
+# The open note is a vault entity: the page stamps `data-entity-path` and the
+# platform mounts the 4D timeline button (.claude/rules/app-ui-patterns.md).
+[provides.timeline]
+entity_source = "note_path"
+
+[requires]
+capabilities = ["read"]
+services = []
+events = []
+# `link` owns the vault-wide backlink index. Optional: without it the backlinks
+# panel says so and everything else works.
+optional_apps = ["link"]

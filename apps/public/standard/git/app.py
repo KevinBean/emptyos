@@ -1,0 +1,284 @@
+"""Git — version control for EmptyOS and vault repos."""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+from emptyos.sdk import BaseApp, cli_command, web_route
+
+
+GIT_SUMMARY_SYSTEM = (
+    "You are a release-notes assistant. Given a list of recent git commit "
+    "subjects, write 2-3 plain-prose sentences naming the main themes of "
+    "work.\n\n"
+    "Do NOT:\n"
+    "- Use bullet points, headings, or markdown.\n"
+    "- List individual commits — group them into themes.\n"
+    "- Speculate about why a change was made when it isn't in the subject.\n"
+    "- Begin with 'These commits' or 'Recently'."
+)
+
+
+# Upper bound on commits a log request may ask for: a local sanity cap on
+# subprocess output, not a sourced value (the page asks for 20).
+LOG_COUNT_MAX = 500
+
+
+def _count_arg(raw, default: int) -> tuple[int | None, str | None]:
+    """A caller-supplied commit count, clamped to 1..LOG_COUNT_MAX, or an error.
+
+    Every route that puts a count into `git log` argv parses it here: an
+    unconverted value would be spliced in as an option (`-output=x` becomes
+    `git log --output=x`, a file write).
+    """
+    if raw is None or raw == "":
+        return default, None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None, f"count must be an integer (clamped to 1-{LOG_COUNT_MAX})"
+    return max(1, min(n, LOG_COUNT_MAX)), None
+
+
+class GitApp(BaseApp):
+    def _project_dir(self) -> str:
+        return str(self.kernel.config.path.parent)
+
+    def _vault_dir(self) -> str | None:
+        p = self.kernel.config.notes_path
+        return str(p) if p else None
+
+    def _repos(self) -> list[dict]:
+        repos = [{"id": "emptyos", "label": "EmptyOS", "path": self._project_dir()}]
+        vault = self._vault_dir()
+        if vault and Path(vault).exists():
+            repos.append({"id": "vault", "label": "Vault", "path": vault})
+        return repos
+
+    def _resolve_repo(self, repo_id: str | None) -> str:
+        if repo_id == "vault":
+            return self._vault_dir() or self._project_dir()
+        return self._project_dir()
+
+    def _repo_path(self, request) -> str:
+        return self._resolve_repo(request.query_params.get("repo"))
+
+    async def _git_at(self, repo_path: str, *args: str) -> tuple[str, str, int]:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=repo_path,
+        )
+        stdout, stderr = await proc.communicate()
+        return (
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
+            proc.returncode or 0,
+        )
+
+    def _parse_status_files(self, output: str) -> list[dict]:
+        """Parse `git status --short` porcelain output into per-file entries
+        (git-no-selective-staging). Each line is `XY path` (index status,
+        worktree status); a rename shows as `old -> new` — the new path is
+        what `git add` needs. `staged` reflects the index column only (a
+        file already staged, before any UI selection)."""
+        files = []
+        for line in (output or "").split("\n"):
+            if not line or len(line) < 4:
+                continue
+            code = line[:2]
+            path = line[3:].strip()
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            files.append({"path": path, "code": code, "staged": code[0] not in (" ", "?")})
+        return files
+
+    def _parse_branches(self, output: str) -> list[dict]:
+        branches = []
+        for line in output.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            current = line.startswith("*")
+            name = line.lstrip("* ").strip()
+            branches.append({"name": name, "current": current})
+        return branches
+
+    # --- Methods used by project-tools (manifest) ---
+
+    async def status_at(self, repo_path: str) -> str:
+        out, err, _ = await self._git_at(repo_path, "status", "--short")
+        return out or err
+
+    async def status_files_at(self, repo_path: str) -> list[dict]:
+        out, _, _ = await self._git_at(repo_path, "status", "--short")
+        return self._parse_status_files(out)
+
+    async def log_at(self, repo_path: str, count: int = 10) -> str:
+        # Also clamped here for direct callers (projects' extended.py); routes
+        # parse through _count_arg first. Lands in argv, so never unconverted.
+        n = max(1, min(int(count), LOG_COUNT_MAX))
+        out, _, _ = await self._git_at(repo_path, "log", "--oneline", f"-{n}")
+        return out
+
+    async def branches_at(self, repo_path: str, all: bool = False) -> list[dict]:
+        args = ["branch", "--no-color"]
+        if all:
+            args.append("-a")
+        out, _, _ = await self._git_at(repo_path, *args)
+        return self._parse_branches(out)
+
+    # --- Actions ---
+
+    async def save(self, message: str, repo_id: str | None = None, paths: list[str] | None = None) -> str:
+        """Commit. Stages only `paths` when given (git-no-selective-staging)
+        — `git add -A` (every changed file) otherwise, unchanged default."""
+        path = self._resolve_repo(repo_id)
+        if paths:
+            await self._git_at(path, "add", "--", *paths)
+        else:
+            await self._git_at(path, "add", "-A")
+        out, err, code = await self._git_at(path, "commit", "-m", message)
+        if code != 0:
+            return err or "Nothing to commit"
+        await self.emit("git:saved", {"message": message, "repo": repo_id or "emptyos"})
+        return out
+
+    async def push(self, repo_id: str | None = None) -> str:
+        path = self._resolve_repo(repo_id)
+        out, err, code = await self._git_at(path, "push")
+        if code != 0:
+            return err or "Push failed"
+        await self.emit("git:pushed", {"repo": repo_id or "emptyos"})
+        return out or "Pushed successfully"
+
+    async def pull(self, repo_id: str | None = None) -> str:
+        path = self._resolve_repo(repo_id)
+        out, err, code = await self._git_at(path, "pull")
+        if code != 0:
+            return err or "Pull failed"
+        await self.emit("git:pulled", {"repo": repo_id or "emptyos"})
+        return out or "Already up to date"
+
+    @cli_command("git", help="Version control operations")
+    async def cmd_git(self, action: str = "status", message: str = "", count: int = 10):
+        path = self._project_dir()
+        if action == "status":
+            print(await self.status_at(path))
+        elif action == "log":
+            print(await self.log_at(path, count))
+        elif action == "diff":
+            out, _, _ = await self._git_at(path, "diff")
+            print(out)
+        elif action == "save" and message:
+            result = await self.save(message)
+            self.print_rich(f"[green]{result}[/green]")
+        else:
+            self.print_rich("[dim]Usage: eos git {status|log|diff|save} [--message MSG][/dim]")
+
+    @web_route("GET", "/api/repos", operator=True)
+    async def api_repos(self, request):
+        return self._repos()
+
+    @web_route("GET", "/api/status", operator=True)
+    async def api_status(self, request):
+        path = self._repo_path(request)
+        return {"status": await self.status_at(path), "files": await self.status_files_at(path)}
+
+    @web_route("GET", "/api/log", operator=True)
+    async def api_log(self, request):
+        count, err = _count_arg(request.query_params.get("count"), 10)
+        if err:
+            return {"error": err}
+        return {"log": await self.log_at(self._repo_path(request), count)}
+
+    @web_route("GET", "/api/diff", operator=True)
+    async def api_diff(self, request):
+        out, _, _ = await self._git_at(self._repo_path(request), "diff")
+        return {"diff": out}
+
+    @web_route("POST", "/api/push", operator=True)
+    async def api_push(self, request):
+        body = await request.json()
+        return {"result": await self.push(body.get("repo"))}
+
+    @web_route("POST", "/api/pull", operator=True)
+    async def api_pull(self, request):
+        body = await request.json()
+        return {"result": await self.pull(body.get("repo"))}
+
+    @web_route("POST", "/api/save", operator=True)
+    async def api_save(self, request):
+        body = await request.json()
+        message = body.get("message", "")
+        if not message:
+            return {"error": "message is required"}
+        paths = body.get("paths")
+        paths = [str(p) for p in paths if str(p or "").strip()] if isinstance(paths, list) else None
+        return {"result": await self.save(message, body.get("repo"), paths=paths or None)}
+
+    @web_route("GET", "/api/branches", operator=True)
+    async def api_branches(self, request):
+        return await self.branches_at(self._repo_path(request), all=True)
+
+    @web_route("GET", "/api/stats", operator=True)
+    async def api_stats(self, request):
+        path = self._repo_path(request)
+        (log_out, _, _), (status_out, err, _), (branch_out, _, _) = await asyncio.gather(
+            self._git_at(path, "log", "--oneline", "-100"),
+            self._git_at(path, "status", "--short"),
+            self._git_at(path, "rev-parse", "--abbrev-ref", "HEAD"),
+        )
+        commits = len([l for l in log_out.strip().split("\n") if l.strip()])
+        text = (status_out or err).strip()
+        changed = len([l for l in text.split("\n") if l.strip()]) if text else 0
+        return {
+            "branch": branch_out.strip(),
+            "recent_commits": commits,
+            "uncommitted_changes": changed,
+        }
+
+    @web_route("GET", "/api/summary", operator=True)
+    async def api_summary(self, request):
+        """AI summary of recent commits."""
+        path = self._repo_path(request)
+        count, err = _count_arg(request.query_params.get("count"), 20)
+        if err:
+            return {"error": err}
+        out, _, _ = await self._git_at(path, "log", "--oneline", f"-{count}")
+        if not out.strip():
+            return {"summary": "No commits found."}
+        result = await self.think(
+            out,
+            system=GIT_SUMMARY_SYSTEM,
+            domain="text",
+            temperature=0.4,
+        )
+        return {"summary": result, "commit_count": count}
+
+    @web_route("GET", "/api/log-detail", operator=True)
+    async def api_log_detail(self, request):
+        path = self._repo_path(request)
+        count, err = _count_arg(request.query_params.get("count"), 20)
+        if err:
+            return {"error": err}
+        out, _, _ = await self._git_at(path, "log", f"-{count}", "--pretty=format:%H|%h|%an|%ar|%s")
+        commits = []
+        for line in out.strip().split("\n"):
+            if "|" not in line:
+                continue
+            parts = line.split("|", 4)
+            if len(parts) >= 5:
+                commits.append(
+                    {
+                        "hash": parts[0],
+                        "short": parts[1],
+                        "author": parts[2],
+                        "ago": parts[3],
+                        "message": parts[4],
+                    }
+                )
+        return commits

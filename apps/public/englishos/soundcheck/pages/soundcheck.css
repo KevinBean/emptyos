@@ -1,0 +1,175 @@
+/* Sound Check — every colour is a theme token, so all six themes hold.
+ * Status colour comes from --success/--danger/--warning; surfaces from
+ * --bg-card/--border. No hardcoded hex anywhere in this file.
+ *
+ * Sizes are px on the design-language scales (FRONTEND-DESIGN-LANGUAGE.md
+ * §1 radius, §2 spacing, §3 type). This file was written in rem, which the
+ * scale checks cannot read — clean meant unmeasured, and several values sat
+ * off-scale once converted (.9rem = 14.4px, 2.4rem = 38.4px). px keeps it
+ * measurable and keeps this app's text the same size as every other app's.
+ */
+
+.sc-head { display: flex; align-items: flex-start; justify-content: space-between;
+           gap: 16px; flex-wrap: wrap; }
+.sc-head .right { display: flex; align-items: center; gap: 8px; }
+.sc-sub { color: var(--text-muted); margin: 4px 0 0; }
+
+/* The tab bar is .eos-tabs/.eos-tab (eos-components.css) — it carries the
+   active-tab styling and picks up role="tab" from EOS_UI._initTabA11y. An
+   author `display` beats the UA stylesheet's [hidden] rule, so a bare `hidden`
+   attribute does nothing to a flex container; the bar must genuinely disappear
+   during a round. */
+.eos-tabs[hidden], .sc-dims[hidden] { display: none; }
+
+/* ── home ─────────────────────────────────────────────────── */
+
+.sc-dims { display: grid; gap: 12px; margin: 16px 0;
+           grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.sc-dim { display: flex; flex-direction: column; gap: 4px; text-align: left;
+          padding: 14px 16px; border: 1px solid var(--border);
+          border-radius: var(--radius); background: var(--bg-card);
+          color: var(--text); font: inherit; cursor: pointer;
+          transition: border-color .15s; }
+.sc-dim:hover:not(:disabled) { border-color: var(--accent); }
+.sc-dim-empty, .sc-dim:disabled { opacity: .5; cursor: default; }
+.sc-dim-icon { font-size: 22px; }
+.sc-dim-label { font-weight: 600; }
+.sc-dim-blurb { color: var(--text-muted); font-size: 14px; }
+.sc-dim-stat { color: var(--text-muted); font-size: 13px; margin-top: 6px; }
+.sc-dim-none { color: var(--text-muted); }
+
+.sc-start { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            margin: 20px 0; }
+.sc-hint { color: var(--text-muted); font-size: 14px; }
+kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
+      font-size: 12px; background: var(--bg-card); }
+
+/* ── play ─────────────────────────────────────────────────── */
+
+.sc-hud { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+          margin-bottom: 8px; }
+.sc-lives { font-size: 18px; color: var(--danger); letter-spacing: .1em; }
+.sc-lost { opacity: .35; }
+.sc-chip { color: var(--text-muted); font-size: 14px; }
+
+.sc-clock { height: 4px; background: var(--border); border-radius: 999px;
+            overflow: hidden; margin-bottom: 24px; }
+#sc-clock-bar { height: 100%; width: 100%; transform-origin: left; transform: scaleX(0); background: var(--accent); }
+
+.sc-prompt { font-size: 17px; color: var(--text-muted); margin: 0 0 16px; }
+.sc-round { position: relative; outline: none; min-height: 192px; }
+
+.sc-word { font-size: 40px; font-weight: 600; text-align: center;
+           margin: 16px 0 24px; letter-spacing: .01em; }
+.sc-stim { display: flex; justify-content: center; margin: 16px 0 24px; }
+
+.sc-play { font-size: 16px; padding: 12px 24px; cursor: pointer;
+           border: 1px solid var(--border); border-radius: var(--radius);
+           background: var(--bg-card); color: var(--text);
+           font-family: inherit; }
+.sc-play:hover { border-color: var(--accent); }
+.sc-noaudio { color: var(--text-muted); font-size: 14px; }
+
+.sc-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+            margin-bottom: 16px; }
+.sc-tile { display: flex; align-items: center; justify-content: center;
+           min-height: 64px; border: 1px solid var(--border);
+           border-radius: var(--radius); background: var(--bg-card);
+           font-size: 18px; }
+
+.sc-opts { display: grid; gap: 8px; }
+.sc-opts-2 { grid-template-columns: repeat(2, 1fr); }
+.sc-opts-row { grid-auto-flow: column; grid-auto-columns: 1fr; }
+
+/* .sc-opt is a real <button> — font/text-align have to be reclaimed from the
+   UA button styles, and min-height keeps it a phone-sized tap target (§9). */
+.sc-opt { display: flex; align-items: center; gap: 10px; cursor: pointer;
+          padding: 12px 16px; border: 1px solid var(--border);
+          border-radius: var(--radius); background: var(--bg-card);
+          color: var(--text); font: inherit; text-align: left;
+          min-height: 44px;
+          transition: border-color .12s, background .12s; }
+.sc-opt:hover:not(.sc-locked) { border-color: var(--accent); }
+.sc-opt:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.sc-opt-num { justify-content: center; font-size: 18px; }
+.sc-key { display: inline-flex; align-items: center; justify-content: center;
+          min-width: 22px; height: 22px; border-radius: 4px;
+          background: var(--bg); color: var(--text-muted); font-size: 12px; }
+.sc-opt-label { flex: 1; }
+
+/* The "all the same" option is separated by a rule so it never reads as a
+   fifth sibling of the four words. */
+.sc-rule { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.sc-opt-special { justify-content: center; }
+
+.sc-locked { cursor: default; }
+.sc-right { border-color: var(--success);
+            background: color-mix(in srgb, var(--success) 12%, transparent); }
+.sc-wrong { border-color: var(--danger);
+            background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+.sc-verdict { margin-top: 20px; padding: 16px; border-radius: var(--radius);
+              border: 1px solid var(--border); background: var(--bg-card); }
+.sc-verdict.ok { border-color: var(--success); }
+.sc-verdict.no { border-color: var(--danger); }
+.sc-verdict p { color: var(--text-muted); margin: 8px 0 16px; }
+.sc-accent { color: var(--warning) !important; }
+.sc-next { margin-top: 4px; }
+
+/* ── celebration ──────────────────────────────────────────── */
+
+/* A decorative particle, not UI chrome — its 6x10px/1px geometry is the shape
+   of the confetti bit itself and is not on the spacing or radius scales by
+   design (same carve-out as a categorical chart palette). */
+.sc-confetti { position: absolute; top: 0; width: 6px; height: 10px;
+               background: var(--accent); border-radius: 1px;
+               animation: sc-fall 1.2s ease-in forwards; pointer-events: none; }
+@keyframes sc-fall {
+  to { transform: translateY(224px) rotate(540deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-confetti { display: none; }
+  #sc-clock-bar { transition: none !important; }
+}
+
+/* ── summary ──────────────────────────────────────────────── */
+
+.sc-headline { font-size: 17px; margin: 8px 0 20px; }
+.sc-cleared { color: var(--success); }
+.sc-eyeear { color: var(--text-muted); margin-top: 16px; }
+.sc-matrix-cap { color: var(--text-muted); font-size: 14px; margin-bottom: 6px; }
+.sc-matrix-wrap { overflow-x: auto; }
+.sc-matrix { border-collapse: collapse; font-size: 14px; }
+.sc-matrix th, .sc-matrix td { border: 1px solid var(--border);
+                               padding: 6px 10px; text-align: center; }
+.sc-matrix th { color: var(--text-muted); font-weight: 500; }
+.sc-diag { background: color-mix(in srgb, var(--success) 14%, transparent); }
+.sc-miss { background: color-mix(in srgb, var(--danger) 18%, transparent);
+           font-weight: 600; }
+
+/* ── rows ─────────────────────────────────────────────────── */
+
+.sc-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px;
+          padding: 8px 4px; border-bottom: 1px solid var(--border);
+          font-size: 14px; }
+.sc-state { color: var(--text-muted); }
+.sc-kindnote { color: var(--text-muted); font-size: 14px; margin: 2px 0 10px; }
+
+/* ── narrow screens ───────────────────────────────────────── */
+
+/* 640px, not 600 — that is the design language's phone breakpoint, and §9 asks
+   for one column below it. Collapsing at 640 keeps everything that was already
+   single-column single-column and adds the 600-640 band to it. */
+@media (max-width: 640px) {
+  .sc-word { font-size: 28px; }
+  .sc-opts-2, .sc-opts-row { grid-template-columns: 1fr; grid-auto-flow: row; }
+  .sc-dims { grid-template-columns: 1fr; }
+  .sc-row { grid-template-columns: 1fr auto; }
+}
+
+/* ── the second pass ──────────────────────────────────────── */
+
+.sc-second { margin: 24px 0; padding: 16px; border-radius: var(--radius);
+             border: 1px solid var(--accent);
+             background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.sc-second p { color: var(--text-muted); margin: 0 0 12px; }

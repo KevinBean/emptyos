@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Voice Assistant — EmptyOS</title>
+<!-- eos-ui: exempt — Aura is a deliberate visual island and ships its own card renderers — see .claude/rules/voice-intents.md -->
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/voice-assistant/pages/aura.css">
+</head>
+<body class="state-idle" data-no-nav>
+
+<div class="console">
+
+  <!-- Left rail (rack-mount edge) -->
+  <aside class="rail" id="rail" aria-label="Open companion picker">
+    <div class="rail-stack">
+      <div class="rail-text" id="rail-day">—</div>
+      <div class="rail-text" id="rail-date">—</div>
+      <div class="rail-sep"></div>
+      <div class="rail-text rail-companion" id="rail-companion">AURA</div>
+    </div>
+  </aside>
+
+  <!-- Brand bar -->
+  <header class="brand">
+    <span class="lamp"></span>
+    <span class="brand-name">AURA</span>
+    <span class="brand-meta" id="brand-meta">01·AURA·MK1 · companion: <strong id="brand-companion">AURA</strong> · <span id="brand-time">—</span></span>
+    <div class="brand-actions">
+      <button class="autopilot-chip" id="btn-autopilot" title="Auto-accept low-risk actions for this session" aria-label="Toggle auto-accept">
+        <span class="ap-icon">⚡</span><span class="ap-state">auto-accept · off</span>
+      </button>
+      <button class="icon-btn" data-act="text-toggle" id="btn-text-toggle" title="Toggle text mode" aria-label="Toggle text mode">⌨</button>
+      <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
+      <button class="icon-btn" id="btn-back" title="Back" aria-label="Back" onclick="window.history.back()">×</button>
+    </div>
+  </header>
+
+  <!-- Capability gap banner — populated by checkCapabilities() at boot -->
+  <div class="cap-gap-banner" id="cap-gap-banner" role="status">
+    <span class="lamp-warn"></span>
+    <span id="cap-gap-msg">Voice features need setup.</span>
+    <a id="cap-gap-fix" href="/system">Fix this →</a>
+  </div>
+
+  <!-- Transcript -->
+  <main class="transcript-wrap">
+    <div class="transcript" id="transcript">
+      <div class="turn turn-aura">
+        <div class="turn-ts">—</div>
+        <div class="turn-body"><span class="turn-role">Aura</span>Hello. Press REC to speak — or hit ⌨ to type. I'll listen, think, and try to help without getting in the way.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Instrument bar -->
+  <section class="instrument">
+    <div class="instrument-head">Instrument</div>
+    <div class="instrument-row">
+      <div class="rec-cluster">
+        <button class="rec-btn" id="rec-btn" aria-label="Record">
+          <span class="rec-dot"></span>
+          <span>REC</span>
+        </button>
+        <span class="rec-hint" id="rec-hint">tap to talk</span>
+      </div>
+
+      <div class="scope">
+        <div class="scope-readout">LVL <span class="v" id="scope-lvl">—</span></div>
+        <canvas id="scope-canvas"></canvas>
+      </div>
+
+      <div class="lamps">
+        <div class="lamp-row l-listen"><span class="lamp-dot"></span>Listening</div>
+        <div class="lamp-row l-think"><span class="lamp-dot"></span>Thinking</div>
+        <div class="lamp-row l-speak"><span class="lamp-dot"></span>Speaking</div>
+      </div>
+    </div>
+
+    <div class="text-area">
+      <textarea id="text-input" placeholder="type a message…" rows="1"></textarea>
+      <button class="send-btn" id="text-send">Send</button>
+    </div>
+  </section>
+</div>
+
+<!-- Companion picker (slides out of rail) -->
+<aside class="picker" id="picker">
+  <div class="picker-label">Channel</div>
+  <div class="picker-list" id="picker-list">
+    <div class="picker-row active" data-companion=""><span class="ch">CH 0</span><span>Aura</span></div>
+  </div>
+</aside>
+
+<!-- Settings drawer -->
+<div class="settings-drawer" id="settings-drawer">
+  <div class="settings-header">
+    <h3>Aura · Settings</h3>
+    <button class="icon-btn" id="settings-close" aria-label="Close">×</button>
+  </div>
+  <div class="settings-tabs">
+    <button class="settings-tab active" data-tab="history">History</button>
+    <button class="settings-tab" data-tab="about">About</button>
+  </div>
+
+  <div class="settings-panel active" data-panel="history">
+    <div class="history-controls">
+      <label>Channel</label>
+      <select id="history-filter"><option value="">All</option></select>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+
+  <div class="settings-panel" data-panel="about">
+    <div class="settings-section">
+      <p>Aura is the EmptyOS voice companion — a mind-companion, not a smart speaker.</p>
+      <p>She can capture notes, journal entries, and tasks, and step aside for specialist companions when the conversation needs one.</p>
+    </div>
+    <div class="settings-section">
+      <button class="autopilot-chip" id="barge-toggle" aria-pressed="false"
+              title="Speak over Aura to interrupt her (experimental — needs a quiet room)">🎙 barge-in: off</button>
+      <p class="small">Barge-in lets you cut Aura off by talking over her, instead of tapping to stop. Experimental: works best with headphones in a quiet room (browsers can't fully cancel her own voice).</p>
+    </div>
+  </div>
+</div>
+
+<!-- Shared scripts: eos.js drags in eos-tour.js + realtime.js + theme + nav -->
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+
+<script src="/voice-assistant/pages/voice-assistant.js"></script>
+</body>
+</html>

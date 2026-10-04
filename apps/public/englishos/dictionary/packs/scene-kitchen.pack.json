@@ -1,0 +1,81 @@
+{
+  "id": "scene-kitchen",
+  "groups": [
+    {
+      "id": "appliances",
+      "label": "Appliances",
+      "members": [
+        "fridge",
+        "oven",
+        "stove",
+        "microwave",
+        "kettle",
+        "toaster",
+        "dishwasher",
+        "blender",
+        "rice-cooker",
+        "coffee-maker",
+        "range-hood"
+      ]
+    },
+    {
+      "id": "cooking",
+      "label": "Cooking",
+      "members": [
+        "frying-pan",
+        "saucepan",
+        "stockpot",
+        "wok",
+        "baking-tray",
+        "cutting-board",
+        "chef-knife",
+        "wooden-spoon",
+        "whisk",
+        "tongs",
+        "grater",
+        "ladle",
+        "spatula",
+        "peeler",
+        "can-opener",
+        "rolling-pin",
+        "measuring-cup",
+        "measuring-spoon",
+        "oven-mitt"
+      ]
+    },
+    {
+      "id": "tableware",
+      "label": "On the table",
+      "members": [
+        "plate",
+        "bowl",
+        "mug",
+        "drinking-glass",
+        "spoon",
+        "table-knife",
+        "chopsticks",
+        "teapot",
+        "jug"
+      ]
+    },
+    {
+      "id": "sink-storage",
+      "label": "Sink and storage",
+      "members": [
+        "sink",
+        "tap",
+        "cupboard",
+        "drawer",
+        "bin",
+        "colander",
+        "kitchen-sponge",
+        "dish-soap",
+        "dishcloth",
+        "dish-rack",
+        "paper-towel",
+        "aluminium-foil",
+        "cling-film"
+      ]
+    }
+  ]
+}

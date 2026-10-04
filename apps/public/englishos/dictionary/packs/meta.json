@@ -1,0 +1,79 @@
+{
+  "schema": 2,
+  "objects": "objects.jsonl",
+  "packs": [
+    {
+      "id": "animals",
+      "title": "Animals",
+      "emoji": "🐾",
+      "members": "animals.pack.json"
+    },
+    {
+      "id": "food",
+      "title": "Food",
+      "emoji": "🥕",
+      "members": "food.pack.json"
+    },
+    {
+      "id": "transport",
+      "title": "Transport",
+      "emoji": "🚗",
+      "members": "transport.pack.json"
+    },
+    {
+      "id": "vegetables-supermarket",
+      "title": "Vegetables in the supermarket",
+      "emoji": "🥕",
+      "members": "vegetables-supermarket.pack.json"
+    },
+    {
+      "id": "kitchen-utensils-cookware",
+      "title": "In the kitchen",
+      "emoji": "🍳",
+      "members": "kitchen-utensils-cookware.pack.json"
+    },
+    {
+      "id": "hand-tools-power",
+      "title": "Tools and hardware",
+      "emoji": "🧰",
+      "members": "hand-tools-power.pack.json"
+    },
+    {
+      "id": "garden-tools-outdoor",
+      "title": "Garden tools and outdoor equipment",
+      "emoji": "🌿",
+      "members": "garden-tools-outdoor.pack.json"
+    },
+    {
+      "id": "scene-kitchen",
+      "title": "Kitchen",
+      "emoji": "🍳",
+      "members": "scene-kitchen.pack.json"
+    },
+    {
+      "id": "scene-bathroom",
+      "title": "Bathroom",
+      "emoji": "🛁",
+      "members": "scene-bathroom.pack.json"
+    },
+    {
+      "id": "scene-bedroom",
+      "title": "Bedroom",
+      "emoji": "🛏️",
+      "members": "scene-bedroom.pack.json"
+    },
+    {
+      "id": "scene-street",
+      "title": "On the street",
+      "emoji": "🚦",
+      "members": "scene-street.pack.json"
+    },
+    {
+      "id": "scene-supermarket",
+      "title": "At the supermarket",
+      "emoji": "🛒",
+      "members": "scene-supermarket.pack.json"
+    }
+  ],
+  "attribution": "Photographs come from Wikimedia Commons. Each downloaded photo stores its own artist, licence and source page, shown on that animal's card."
+}

@@ -1,0 +1,42 @@
+[app]
+id = "system-log"
+store_category = "core"
+name = "System Log"
+version = "1.0.0"
+description = "System activity feed — all events in one place"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "SystemLogApp"
+
+[requires]
+capabilities = ["think"]
+
+[provides.cli]
+commands = ["syslog"]
+
+[provides.web]
+prefix = "/system-log"
+
+[provides.events]
+emits = ["system-log:feed_viewed", "system-log:posted"]
+# The feed IS the surface — no cross-app listener by design.
+internal = [
+    "system-log:posted",
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/syslog", method = "summary"},
+]
+
+# Agent-only: the machine breadcrumb verb (e.g. an agent's empty-run line)
+# that keeps machine output out of the human task inbox.
+[[provides.verbs]]
+verb = "system-log.add"
+method = "add"
+summary = "Post a line to the system activity feed"
+args = { text = "string", source = "string?" }
+eligibility = "stable"
+surfaces = ["agent"]

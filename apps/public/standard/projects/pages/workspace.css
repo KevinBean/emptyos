@@ -1,0 +1,375 @@
+/* Projects — shared styles for the list page (index.html) AND the standalone
+   project workspace (workspace.html). Extracted from index.html's inline <style>
+   so both hosts render the detail/tab/stage/doc/card surfaces identically.
+   Kanban layout lives in eos-components.css; settings-panel (.eos-settings-panel
+   / .sf-* / .sp-*) is shared from eos-components.css too. */
+
+/* View toggle */
+.view-toggle { display: flex; gap: 4px; }
+.view-btn { padding: 8px 12px; font-size: 12px; border-radius: 8px; cursor: pointer; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); transition: all 0.15s; }
+.view-btn.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+
+#projects-kanban-mount[data-show-archived="true"] { /* hook for archived-only tweaks */ }
+
+/* Project card tweaks (shared .eos-entity-card styles come from eos-components.css) */
+.project-name { font-weight: 600; color: var(--text-heading); font-size: 14px; margin-bottom: 4px; }
+.project-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.project-deadline { font-size: 11px; }
+.project-deadline.overdue { color: var(--danger); font-weight: 600; }
+.project-deadline.soon { color: var(--warning); }
+
+/* Progress bar */
+.progress-bar { height: 4px; background: var(--border); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+.progress-fill.done { background: var(--success); }
+
+/* List view */
+.project-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.list-card { padding: 16px; }
+.list-card .eec-title { font-size: 15px; }
+
+/* Detail panel */
+.detail-back { font-size: 13px; color: var(--accent); cursor: pointer; margin-bottom: 12px; }
+.detail-title { font-size: 22px; font-weight: 700; color: var(--text-heading); margin-bottom: 4px; }
+.detail-goal { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; padding: 12px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border); }
+.task-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.task-item:hover { background: var(--bg-card); }
+.task-check { width: 18px; height: 18px; border: 2px solid var(--border-strong); border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; }
+.task-check.done { background: var(--success); border-color: var(--success); color: var(--accent-ink); }
+.task-text { font-size: 14px; flex: 1; }
+.task-text.done { text-decoration: line-through; color: var(--text-muted); }
+
+/* Detail tabs */
+.detail-tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
+.detail-tab { padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+.detail-tab:hover { color: var(--text); }
+.detail-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.detail-tab .tab-count { font-weight: 400; font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+
+/* Doc list */
+.doc-item { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; border-radius: 6px; }
+.doc-item:hover { background: var(--bg-card); }
+.doc-icon { font-size: 16px; flex-shrink: 0; }
+.doc-name { font-size: 14px; font-weight: 500; flex: 1; color: var(--text-heading); }
+.doc-name.main { color: var(--accent); }
+.doc-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.doc-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: var(--accent-bg); color: var(--accent); }
+
+/* Type badge */
+.type-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+.type-engineering { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+.type-development { background: color-mix(in srgb, var(--blue) 15%, transparent); color: var(--blue); }
+.type-personal { background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); }
+
+/* Stage progress */
+.stage-bar { display: flex; gap: 2px; margin: 8px 0; }
+.stage-step { flex: 1; text-align: center; padding: 4px 4px; font-size: 10px; border-radius: 6px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage-step.completed { background: var(--success); color: var(--accent-ink); border-color: var(--success); opacity: 0.7; }
+.stage-step.current { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+
+/* Task meta */
+.task-meta { margin-left: 32px; padding: 2px 0 4px 0; }
+.task-meta-item { font-size: 11px; color: var(--text-muted); padding: 2px 0; }
+.task-meta-item .meta-type { font-weight: 600; color: var(--text-secondary); }
+.meta-type-need { color: var(--warning); }
+.meta-type-calc { color: var(--accent); }
+
+/* Dependency styling */
+.task-item.task-blocked { opacity: 0.5; }
+.task-item.task-ready { border-left: 3px solid var(--success); padding-left: 8px; }
+.blocked-label { font-size: 10px; color: var(--danger); margin-top: 2px; }
+.dep-badge { display: inline-block; font-size: 10px; padding: 0 4px; border-radius: 4px; margin-right: 4px; }
+.dep-badge-blocks { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.dep-badge-depends { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+
+/* Calc results */
+.calc-item { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border-bottom: 1px solid var(--border); border-radius: 6px; }
+.calc-item:hover { background: var(--bg-card); }
+
+/* Dev status */
+.git-line { font-size: 12px; font-family: var(--mono); padding: 2px 0; color: var(--text-secondary); }
+.git-added { color: var(--success); }
+.git-modified { color: var(--warning); }
+.git-deleted { color: var(--danger); }
+
+/* Sprint cards */
+.sprint-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.sprint-card.active { border-color: var(--accent); }
+.sprint-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.sprint-name { font-weight: 600; font-size: 14px; color: var(--text-heading); }
+.sprint-dates { font-size: 11px; color: var(--text-muted); }
+.sprint-goal { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.sprint-stats { display: flex; gap: 12px; font-size: 12px; }
+.sprint-stat { color: var(--text-muted); }
+.sprint-stat strong { color: var(--text); }
+
+/* Milestone cards */
+.ms-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.ms-card.closed { opacity: 0.6; }
+.ms-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.ms-id { font-weight: 700; font-size: 14px; color: var(--accent); }
+.ms-name { font-size: 13px; color: var(--text-heading); }
+.ms-target { font-size: 11px; color: var(--text-muted); }
+
+/* Release cards */
+.rel-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.rel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.rel-version { font-weight: 700; font-size: 15px; color: var(--text-heading); }
+.rel-date { font-size: 11px; color: var(--text-muted); }
+.rel-notes { font-size: 12px; color: var(--text-secondary); }
+.rel-notes li { padding: 2px 0; }
+
+/* Feature settings */
+.feat-toggle { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.feat-toggle:last-child { border-bottom: none; }
+.feat-label { font-size: 13px; font-weight: 500; }
+.feat-switch { position: relative; width: 36px; height: 20px; cursor: pointer; }
+.feat-switch input { opacity: 0; width: 0; height: 0; }
+.feat-slider { position: absolute; inset: 0; background: var(--border); border-radius: 8px; transition: 0.2s; }
+.feat-slider:before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: var(--accent-ink); border-radius: 50%; transition: 0.2s; }
+.feat-switch input:checked + .feat-slider { background: var(--accent); }
+.feat-switch input:checked + .feat-slider:before { transform: translateX(16px); }
+
+/* Velocity chart */
+.vel-bar { display: inline-block; background: var(--accent); border-radius: 4px; min-width: 2px; vertical-align: bottom; margin-right: 4px; transition: height 0.3s; }
+
+/* Status dropdown */
+.status-select { padding: 4px 8px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); }
+
+/* Type-specific fields in create modal */
+.type-fields { margin-top: 8px; }
+.type-fields.hidden { display: none; }
+
+/* Timeline view */
+/* One source of truth for the label gutter: the CSS below, the axis offset and
+   the JS that positions the "today" marker all have to agree, and they were
+   three separate hardcoded 160px. */
+.timeline-container { overflow-x: auto; padding: 8px 0; --tl-label: 200px; }
+.timeline-row { display: flex; align-items: center; margin-bottom: 4px; height: 28px; }
+.timeline-label { width: var(--tl-label); flex-shrink: 0; font-size: 12px; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; cursor: pointer; }
+.timeline-bar-area { flex: 1; position: relative; height: 20px; }
+.timeline-bar { position: absolute; height: 16px; border-radius: 4px; top: 2px; cursor: pointer; transition: opacity 0.15s; min-width: 4px; }
+.timeline-bar:hover { opacity: 0.8; }
+.timeline-fill { height: 100%; border-radius: 4px; opacity: 0.4; }
+.timeline-axis { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 8px; padding-left: var(--tl-label); }
+.timeline-month { flex: 1; font-size: 10px; color: var(--text-muted); text-align: center; }
+.timeline-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); opacity: 0.6; z-index: 1; }
+
+/* Calendar view */
+.cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.cal-nav { cursor: pointer; padding: 4px 12px; border-radius: 6px; background: var(--bg-card); border: 1px solid var(--border); font-size: 13px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-day-header { text-align: center; font-size: 11px; color: var(--text-muted); font-weight: 600; padding: 4px 0; }
+.cal-cell { min-height: 80px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 4px; font-size: 11px; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.empty { background: transparent; border-color: transparent; }
+.cal-date { font-weight: 600; color: var(--text-heading); margin-bottom: 2px; }
+.cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 2px; }
+.cal-task { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; cursor: pointer; }
+.cal-task:hover { color: var(--accent); }
+.cal-task.is-deadline { color: var(--danger); font-weight: 600; }
+
+/* ── Standalone workspace page (workspace.html) ── */
+.ws-page { max-width: 1400px; }
+.ws-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.ws-back { font-size: 13px; color: var(--accent); text-decoration: none; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); white-space: nowrap; }
+.ws-back:hover { border-color: var(--accent); }
+.ws-brand { font-size: 13px; color: var(--text-muted); }
+
+/* Header */
+.ws-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.ws-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* Two-pane grid: rail + main. Collapses to one column on narrow screens. */
+.ws-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; margin-top: 12px; align-items: start; }
+.ws-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ws-main { min-width: 0; }
+@media (max-width: 900px) { .ws-grid { grid-template-columns: 1fr; } }
+
+/* Rail panels */
+.ws-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.ws-panel-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: 8px; }
+.ws-muted { font-size: 12px; color: var(--text-muted); }
+
+/* Overview */
+.ws-ov-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 2px 0; color: var(--text-secondary); }
+.ws-ov-row span:last-child { color: var(--text); font-weight: 500; }
+.ws-ov-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.ws-chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--text-secondary); }
+.ws-chip-ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+.ws-chip-bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.ws-ov-sub { font-size: 11px; font-weight: 600; color: var(--text-muted); margin: 10px 0 4px; }
+.ws-ov-note { font-size: 12px; color: var(--text-secondary); background: var(--bg); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.ws-move { font-size: 13px; padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; gap: 6px; align-items: flex-start; }
+.ws-move:hover { background: var(--bg); }
+.ws-move-check { color: var(--text-muted); }
+.ws-danger { color: var(--danger); font-weight: 600; }
+.ws-warn { color: var(--warning); font-weight: 600; }
+.ws-health { margin: 6px 0; }
+.ws-health-box { font-size: 12px; line-height: 1.5; white-space: pre-wrap; background: var(--bg); border-radius: 6px; padding: 8px; color: var(--text); }
+
+/* AI companion */
+.ws-chat-panel { display: flex; flex-direction: column; }
+.ws-chat-log { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.ws-msg { font-size: 13px; line-height: 1.5; padding: 8px 10px; border-radius: 10px; max-width: 100%; word-wrap: break-word; }
+.ws-msg-user { background: var(--accent-bg); color: var(--text); align-self: flex-end; border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.ws-msg-ai { background: var(--bg); color: var(--text); align-self: flex-start; border: 1px solid var(--border); }
+.ws-msg-ai :first-child { margin-top: 0; } .ws-msg-ai :last-child { margin-bottom: 0; }
+.ws-msg-prov { margin-top: 4px; }
+.ws-chat-input { display: flex; gap: 6px; align-items: flex-end; }
+.ws-chat-input textarea { flex: 1; resize: vertical; min-height: 38px; font-family: var(--font); font-size: 13px; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); }
+
+/* Timeline */
+.ws-tl-sub { font-size: 11px; font-weight: 600; color: var(--text-muted); margin: 8px 0 2px; }
+.ws-tl-item { font-size: 12px; padding: 3px 0; color: var(--text-secondary); display: flex; gap: 6px; }
+.ws-tl-when { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Related */
+.ws-links { display: flex; flex-direction: column; gap: 4px; }
+.ws-link { font-size: 13px; color: var(--accent); text-decoration: none; padding: 3px 0; }
+.ws-link:hover { text-decoration: underline; }
+.ws-link-wiki { color: var(--text-secondary); cursor: default; }
+
+/* Inline doc editor (main pane) */
+.ws-doc-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ws-doc-name { font-weight: 600; color: var(--text-heading); font-size: 14px; }
+.ws-doc-edit { width: 100%; min-height: 420px; resize: vertical; font-family: var(--mono); font-size: 13px; line-height: 1.6; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); }
+.ws-doc-preview { min-height: 420px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); font-size: 14px; line-height: 1.6; }
+.ws-doc-preview :first-child { margin-top: 0; }
+
+/* Kanban layout responsive behavior is owned by .eos-kanban in eos-components.css. */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Index-page shell (index.html only). The board/timeline/calendar views need
+   real width — .page is 900px in theme.css, which left ~2.5 kanban columns of
+   a 6-column board inside a horizontal scroller while a third of the viewport
+   sat empty. Matches .ws-page, this app's own precedent for a wide surface.
+   ───────────────────────────────────────────────────────────────────────── */
+.pj-page { max-width: 1400px; }
+
+/* Toolbar — three tiers so the primary action is not one of eight equals:
+   view switcher (segmented) | secondary icon buttons | + New. */
+.pj-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pj-toolbar-sec { display: flex; gap: 4px; align-items: center; padding-left: 10px; border-left: 1px solid var(--border); }
+.pj-toolbar-sec .eos-btn-sm { font-size: 11px; }
+.pj-toolbar-sec .eos-btn-sm[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+/* Scoped to this page: `.view-btn` / `.view-toggle` is a cross-app convention
+   (lightning, finance, music-studio, places, kb, eos-deck all use it) and this
+   sheet is shared with workspace.html, so an unscoped restyle would be a trap
+   for anything that grows a view toggle there later.
+   theme.css already supplies :focus-visible globally — no local copy needed. */
+.pj-page .view-toggle { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; gap: 2px; }
+.pj-page .view-btn { border: 1px solid transparent; background: transparent; padding: 6px 12px; font: inherit; font-size: 12px; }
+.pj-page .view-btn.active { background: var(--accent-bg); color: var(--accent); border-color: transparent; font-weight: 600; }
+
+/* Compact stat strip — replaces the 2-column .eos-hero grid, which turned five
+   cards into three rows (~310px) of chrome above the first project. */
+.pj-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.pj-stats .eos-stat-card { padding: 10px 12px; }
+.pj-stats .eos-stat-val { font-size: 22px; }   /* on the type scale; 20 is not */
+.pj-stats .eos-stat-card--click.is-on { border-color: var(--accent); background: var(--accent-bg); }
+
+/* Filter row — search + sort + the active quick-filter, which must be visible
+   or a stat-card click becomes invisible state the user cannot undo. */
+.pj-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+/* theme.css sets a global `input, textarea, select { width: 100% }`, which puts
+   the search box and the sort picker on two full-width rows of their own. */
+.pj-filters .pj-search { flex: 1 1 240px; width: auto; min-width: 0; border-radius: 14px; padding: 12px 16px; }
+.pj-sort { flex: 0 0 auto; width: auto; border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.pj-active-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 6px 10px; border-radius: 999px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); cursor: pointer; }
+.pj-active-filter::after { content: "\00d7"; font-size: 14px; line-height: 1; opacity: 0.7; }
+
+/* Category chips. Most of this vault's tags are used exactly once, so all of
+   them open as several wrapped rows of chrome between the search box and the
+   first project; only tags shared by 2+ projects stay open by default. (No
+   count quoted here on purpose — it moves every time a project is tagged.) */
+.pj-chipbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.pj-chip { cursor: pointer; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-family: inherit; background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); transition: border-color 0.15s, color 0.15s; }
+.pj-chip:hover { border-color: var(--accent); color: var(--accent); }
+.pj-chip.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pj-chip .pj-chip-n { opacity: 0.65; }
+.pj-chip-more { background: transparent; border-style: dashed; }
+.pj-chipbar-label { align-self: center; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 2px; }
+
+/* Card meta — the summary row has to answer "does this need me?" before the
+   click (.claude/rules/list-card-density.md); status colour alone never does. */
+.pj-stale { color: var(--warning); }
+.pj-stale.cold { color: var(--danger); }
+.pj-quiet { color: var(--text-muted); }
+
+/* Kanban, scoped to this board only — the shared .eos-kanban stays as-is.
+   Two things this board needs that a generic one does not:
+
+   1. Columns share the width instead of sitting at a fixed 280-320px.
+
+      The width budget is exact and worth writing down, because the first
+      attempt at this got it wrong by 40px and still shipped a scrollbar:
+      .pj-page is 1400px with 20px padding either side, so the content box is
+      1360px at ANY viewport >= 1400 (a wider monitor does not help). With
+      .eos-kanban's 1rem gap, six columns cost 6c + 5*16, so c <= 213px.
+      min-width was 220 -> 1400px of demand against 1360 -> a permanent 40px
+      overflow with "Done" clipped. 200px fits with room to spare, and columns
+      still flex up to ~213px each.
+
+      Seven columns (Archived on) need c <= 180 and DO still scroll: 180px is
+      too narrow to read a project card, so that state is a deliberate scroll,
+      not an oversight.
+
+   2. Each column scrolls on its own. Active holds 37 projects and Ideas holds
+      4; with the whole board growing to its tallest column, comparing them
+      meant scrolling past thirty cards to see whether Ideas had anything in it.
+      A column that scrolls itself keeps every status on one screen.
+
+      Its height is set by sizeKanbanColumns() in app.js, not by a constant
+      here: the chrome above the board is not a fixed height (expanding the tag
+      chips moves it 64px, the toolbar wraps at narrow widths) and body carries
+      80px of FAB-dock padding a constant cannot know about. --pj-col-max is the
+      measured value; the fallback only applies before the first paint. */
+.pj-page .eos-kanban { padding-inline: 0; }
+#projects-kanban-mount .eos-kanban-col { flex: 1 1 0; min-width: 200px; max-width: none; }
+#projects-kanban-mount .eos-kanban-items {
+    max-height: var(--pj-col-max, 60vh);
+    min-height: 120px;
+    overflow-y: auto;
+    padding-right: 2px;   /* room for the scrollbar so it never sits over a card */
+}
+
+/* ── Mobile / touch ──
+   LAST in the file on purpose: these are cascade overrides, and at equal
+   specificity source order decides. A later `.view-btn { padding: ... }`
+   elsewhere in this sheet silently undoes the touch target below.
+
+   Gated on `(pointer: coarse)` as well as width, matching how the platform
+   itself gates (eos-components.css). Width alone missed a touch tablet at
+   768px, which is precisely where .eos-header's nowrap row plus the platform's
+   44px buttons collide.
+
+   NOTE on touch targets: eos-components.css already applies
+   `@media(pointer:coarse) { button, .eos-btn, select, [onclick] { min-height:44px } }`,
+   and every control added here is a real <button>, so the floor is already in
+   place on any touch device. No min-height is repeated below — an earlier
+   revision did, on the strength of a 36px/33px measurement taken in a narrow
+   desktop window WITHOUT touch emulation, where `pointer:coarse` never matched
+   and the thumb-target rationale does not apply. What follows is the layout,
+   which the platform does not supply. */
+@media (max-width: 640px), (pointer: coarse) {
+    .view-btn         { padding-block: 13px; }
+    .detail-tab       { padding-block: 14px; }
+    .cal-nav          { padding-block: 12px; }
+    .feat-toggle      { padding-block: 12px; }
+
+    /* .eos-header is a no-wrap space-between flex row, so at phone width the
+       title and an eight-control toolbar fight over the same line. */
+    .pj-page .eos-header { flex-wrap: wrap; gap: 10px; }
+    .pj-page .pj-toolbar { width: 100%; }
+    .pj-page .view-toggle { flex: 1 1 100%; }
+    .pj-page .view-btn { flex: 1; text-align: center; }
+
+    /* Four columns of stats on a phone is four unreadable columns. */
+    .pj-stats { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+
+    /* The board is a horizontal scroller here; a per-column scroller nested
+       inside it is two scroll axes fighting for the same thumb. Let the
+       columns grow and let the page scroll. */
+    #projects-kanban-mount .eos-kanban-items { max-height: none; overflow-y: visible; }
+}

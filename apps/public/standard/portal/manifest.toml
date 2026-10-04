@@ -1,0 +1,59 @@
+[app]
+id = "portal"
+store_category = "meta"
+name = "Portal"
+version = "1.0.0"
+description = "The unified conversation door — one composer with switchable backend modes (Rooms multi-participant chat / Assistant vault Q&A / Agent tool-loop / Code workspace), plus capability verbs (Capture / Find / Learn) across apps, a sidebar that organises threads into Rooms with shared instructions, pinned threads, and day + session navigation."
+user_intent = [
+    "start a new chat",
+    "open a thread",
+    "what shall we think through",
+    "where do I begin",
+    "start a conversation",
+    "find a past thread",
+    "talk to the agent",
+    "open the assistant",
+    "chat with a room",
+]
+
+[app.entry]
+module = "app"
+class = "PortalApp"
+
+[requires]
+capabilities = []
+# Hard dep: rooms (Think chip creates threads, opens history). Soft deps are
+# listed too so the manifest is honest about Portal's verb surface — chips +
+# conversation modes fail with a toast / hidden button (not a crash) if any is
+# missing, but a fresh-clone install set should pull these in for the full
+# Capture/Find/Learn flow + the Rooms/Assistant/Agent conversation-door modes.
+apps = ["rooms", "assistant", "agent", "quick-action", "journal", "kb", "search", "video-digest"]
+# Home-strip chips degrade to hidden when these are absent. cockpit + code
+# (extension-track) are deliberately NOT named here — a public manifest must
+# not reference extension ids; the page feature-detects them at runtime.
+# hub + app-analytics: the home board under the composer reads /hub/api/digest,
+# /hub/api/panels and /app-analytics/api/vault/recent from the browser; each
+# lane hides when its source is absent.
+optional_apps = ["billing", "hub", "app-analytics"]
+connectors = []
+
+[provides.web]
+prefix = "/portal"
+
+[[contributes.tour.step]]
+id = "portal.door"
+group = "core"
+priority = 120
+route = "/portal/"
+spotlight = "#portal-backend-select"
+title = "One door, four modes"
+body = "Chat in Rooms, ask the vault Assistant, run the Agent tool-loop, or open the Code workspace — one composer, switchable backends."
+requires = ["think"]
+
+[provides.events]
+emits = ["portal:folder_created", "portal:folder_deleted"]
+# Folder CRUD observability — no cross-app listener by design.
+internal = [
+    "portal:folder_created",
+    "portal:folder_deleted",
+]

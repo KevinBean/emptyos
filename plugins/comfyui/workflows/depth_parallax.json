@@ -1,0 +1,20 @@
+{
+  "_comment": "Depth-only workflow for the parallax MV mode. Takes an input image (substituted via {image}) and outputs a grayscale depth map saved as 'eos-depth_*.png'. The actual parallax warp happens locally in apps/music-studio/assembler.py — this workflow only computes the depth.",
+  "_requires": "kijai/ComfyUI-DepthAnythingV2 — installs nodes 'DownloadAndLoadDepthAnythingV2Model' + 'DepthAnything_V2'. Restart ComfyUI after install.",
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "{image}"}
+  },
+  "2": {
+    "class_type": "DownloadAndLoadDepthAnythingV2Model",
+    "inputs": {"model": "depth_anything_v2_vits_fp16.safetensors"}
+  },
+  "3": {
+    "class_type": "DepthAnything_V2",
+    "inputs": {"da_model": ["2", 0], "images": ["1", 0]}
+  },
+  "4": {
+    "class_type": "SaveImage",
+    "inputs": {"filename_prefix": "eos-depth", "images": ["3", 0]}
+  }
+}

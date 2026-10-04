@@ -1,0 +1,65 @@
+# Export groups — named bundles of apps that ship together.
+#
+# `eos export-group build <id> --format dir|zip` (or the daemon's
+# `POST /api/export-groups/{id}/build`) produces a directory or zip bundle
+# containing every listed app (a group has no single-html form; both refuse it). `python scripts/build_standalone_release.py --group <id>`
+# packages the same group as a Chrome extension. Bundled apps call each other
+# via the in-page call_app RPC registry (see emptyos/web/static/eos-export-shim.js).
+# Apps NOT in the group gracefully degrade: call_app returns
+# {offline:true, unavailable:true}.
+#
+# Members MUST declare [provides.export].enabled = true in their manifests.
+# The group builder warns at build time on disabled members or on declared
+# requires.apps that aren't in the group (so graceful degradation is visible).
+#
+# This file ships in the public snapshot. A group that lists a closed app (one
+# outside apps/public/) must set `private = true`: the public release drops
+# private groups, and scripts/check_export_groups.py fails on an unmarked one.
+
+[[group]]
+id = "work-os"
+name = "EmptyOS Work OS"
+description = "Projects + boards + tasks + people — a self-contained project-management bundle."
+apps = ["projects", "task", "boards", "people", "quick-action"]
+entry = "projects"
+# work-os is text-and-data UI — no maps, no voice, no realtime stream needed.
+# Drops ~145 KB of unused JS from _assets/.
+assets = ["minimal", "keys"]
+fallbacks = [
+    "vault:indexeddb",
+    "think:byok-openai",
+    "events:local-bus",
+    "call_app:bundled",
+    "viewer:none",
+]
+
+
+[[group]]
+id = "personal-core"
+name = "Personal Core"
+description = "Journal + capture + task. The daily-loop essentials."
+apps = ["journal", "quick-action", "task"]
+entry = "journal"
+fallbacks = [
+    "vault:indexeddb",
+    "events:local-bus",
+    "call_app:bundled",
+    "viewer:none",
+    "speak:web-speech-api",
+]
+
+[[group]]
+id = "assistive"
+name = "Assistive"
+description = "Assistant + search. Conversational layer over your vault."
+apps = ["assistant", "search"]
+entry = "assistant"
+fallbacks = [
+    "vault:indexeddb",
+    "think:byok-openai",
+    "events:local-bus",
+    "call_app:bundled",
+    "viewer:none",
+    "speak:web-speech-api",
+    "listen:web-speech-api",
+]

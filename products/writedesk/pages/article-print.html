@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>打印文章</title>
+<!-- Paper view: white background, black ink, no app chrome. -->
+<style>
+  body { background: #fff; color: #000; margin: 0; padding: 28px;
+         font-family: 'Noto Sans SC', 'Microsoft YaHei', serif; }
+  .toolbar { margin-bottom: 20px; }
+  .toolbar button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+  h1 { text-align: center; font-size: 26px; margin: 0 0 6px; }
+  .meta { text-align: center; color: #666; font-size: 13px; margin-bottom: 26px; }
+  #body { font-size: 17px; line-height: 1.9; white-space: pre-wrap;
+          max-width: 720px; margin: 0 auto; }
+  .err { color: #a00; }
+  @media print { .toolbar { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button onclick="window.print()">&#128424; 打印 / 存为 PDF</button>
+</div>
+<h1 id="title"></h1>
+<div class="meta" id="meta"></div>
+<div id="body"><span class="err" id="status">加载中…</span></div>
+
+<script>
+(async function () {
+  var file = new URLSearchParams(location.search).get('file') || '';
+  var statusEl = document.getElementById('status');
+  if (!file) { statusEl.textContent = '未指定文章。'; return; }
+  try {
+    var res = await fetch('/writing-editor/api/articles/' + encodeURIComponent(file));
+    var a = await res.json();
+    if (!res.ok || a.error) { statusEl.textContent = a.error || ('加载失败: ' + res.status); return; }
+    document.getElementById('title').textContent = a.title || '';
+    document.getElementById('meta').textContent = (a.updated || '') + (a.words ? ' · ' + a.words + ' 字' : '');
+    document.getElementById('body').textContent = a.body || '';
+    document.title = a.title || '文章';
+  } catch (e) {
+    statusEl.textContent = '加载失败: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>
