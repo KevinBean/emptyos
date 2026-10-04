@@ -32,6 +32,33 @@ import living_master  # noqa: E402
 
 MUSIC_PROFILE = "music"
 
+# The package's `- **Language:**` bullet uses YouTube Studio's own wording;
+# these are the labels in use (measured across every release-package.md,
+# 2026-10-04). A label not listed here is refused, never guessed.
+LANGUAGE_TAGS = {
+    "chinese (traditional)": "zh-Hant",
+    "chinese (simplified)": "zh-Hans",
+    "english": "en",
+}
+_BCP47 = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+
+
+def language_tag(label: str) -> str | None:
+    """BCP-47 tag for a package Language label: "" when there is no label,
+    None when the label is not recognised. A bare tag (`zh-Hant`) passes."""
+    label = label.strip()
+    if not label:
+        return ""
+    if _BCP47.match(label):
+        return label
+    return LANGUAGE_TAGS.get(label.lower())
+
+
+def audio_language(tag: str) -> str:
+    """Spoken-audio tag for a text tag: the script subtag is about writing, not
+    speech, so zh-Hant and zh-Hans are both sung in `zh`."""
+    return tag.split("-")[0] if tag else ""
+
 
 def review_master(master: Path) -> bool:
     """Technical QA on the release master. True when it is safe to upload.
@@ -85,6 +112,7 @@ def parse_package(pkg: Path) -> dict:
     return {
         "title": _bullet_field(body, "Title"),
         "privacy": (_bullet_field(body, "Privacy") or "private").lower(),
+        "language": _bullet_field(body, "Language"),
         "description": _fenced_block(body, "Description"),
         "tags": [t.strip() for t in tags_raw.split(",") if t.strip()],
         "pinned_comment": _fenced_block(body, "Pinned comment"),
@@ -131,7 +159,9 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="upload even if the channel guard fails")
     ap.add_argument("--skip-qa", action="store_true", help="upload even if the master fails QA")
     ap.add_argument("--category", default="10", help="YouTube category id (10=Music)")
-    ap.add_argument("--language", default="zh-Hans", help="BCP-47 tag for the subtitle track")
+    ap.add_argument("--language", default="",
+                    help="BCP-47 tag for the video and its subtitle track "
+                         "(default: the package's Language bullet)")
     ap.add_argument("--profile", default=MUSIC_PROFILE, help="YouTube token profile")
     args = ap.parse_args()
 
@@ -155,6 +185,12 @@ def main() -> int:
         return 1
     if not pkg["title"]:
         print("Package has no **Title:** bullet — refusing to guess one.")
+        return 1
+    label = args.language or pkg["language"]
+    language = language_tag(label)
+    if language is None:
+        print(f"Unknown Language {label!r} — add it to LANGUAGE_TAGS "
+              "or pass --language <BCP-47 tag>.")
         return 1
 
     # A living-master review render carries PLACEHOLDER slots and must never
@@ -183,6 +219,8 @@ def main() -> int:
     print(f"\n  title:      {pkg['title']}")
     print(f"  privacy:    {privacy}")
     print(f"  category:   {args.category}")
+    print(f"  language:   {language} (audio {audio_language(language)})" if language
+          else "  language:   (not set — the package has no Language bullet)")
     print(f"  master:     {assets['master'].name}")
     print(f"  thumbnail:  {assets['thumbnail'].name if assets['thumbnail'] else '(none)'}")
     print(f"  subtitles:  {assets['subtitles'].name if assets['subtitles'] else '(none)'}")
@@ -203,6 +241,7 @@ def main() -> int:
         creds, assets["master"],
         title=pkg["title"], description=pkg["description"], tags=pkg["tags"],
         category_id=args.category, privacy=privacy,
+        language=language, audio_language=audio_language(language),
         progress=lambda pct: print(f"  {pct}%", end="\r", flush=True),
     )
     video_id = res["id"]
@@ -218,8 +257,9 @@ def main() -> int:
             print(f"  thumbnail: FAILED — attach it in Studio ({e})")
     if assets["subtitles"]:
         try:
-            client.upload_caption(creds, video_id, assets["subtitles"], language=args.language)
-            print(f"  subtitles: uploaded ({args.language})")
+            caption_language = language or "zh-Hans"
+            client.upload_caption(creds, video_id, assets["subtitles"], language=caption_language)
+            print(f"  subtitles: uploaded ({caption_language})")
         except Exception as e:
             print(f"  subtitles: FAILED — attach it in Studio ({e})")
 

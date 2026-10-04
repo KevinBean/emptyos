@@ -3,8 +3,9 @@ name: Docker — Publish
 # Builds a multi-arch (amd64 + arm64) image and pushes to GHCR.
 #
 # Tags:
-#   - Push to main:        ghcr.io/<owner>/emptyos:edge, :sha-<short>
-#   - Push of v* tag:      ghcr.io/<owner>/emptyos:latest, :X.Y.Z, :X.Y, :X
+#   - Push to main:        ghcr.io/<owner>/<repo>:edge, :sha-<short>
+#   - Push of v* tag:      ghcr.io/<owner>/<repo>:latest, :X.Y.Z, :X.Y, :X
+#   (<repo> = emptyos for the public repo, emptyos-private for the private one)
 #   - Manual dispatch:     uses whichever ref was selected; tags accordingly
 
 on:
@@ -37,13 +38,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # GHCR requires a lowercase repository path. github.repository_owner
-      # may be mixed-case; normalize once.
+      # GHCR requires a lowercase repository path. github.repository is
+      # owner/name and may be mixed-case; normalize once.
+      #
+      # Named after the repository, not a fixed "emptyos": this file ships in
+      # both the private repo and the public snapshot. The private build bakes
+      # in the whole tree (held engineering apps and engines included), so it
+      # must never share an image name with the public one, where making the
+      # package public would publish the private build's tags too.
       - name: Compute lowercase image name
         id: img
         run: |
-          owner_lc="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          echo "name=ghcr.io/${owner_lc}/emptyos" >> "$GITHUB_OUTPUT"
+          repo_lc="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          echo "name=ghcr.io/${repo_lc}" >> "$GITHUB_OUTPUT"
 
       - name: Extract image metadata
         id: meta

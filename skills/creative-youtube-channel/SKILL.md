@@ -120,6 +120,15 @@ python scripts/youtube_push_song.py "<歌曲文件夹或 release 文件夹>" --y
 - 播放清单：用 API 新建清单后马上加影片，可能返回 404（清单尚未生效）。先按标题重新列出、确认只有一个，再加入；不要重复创建。清单 ID 记到专辑笔记。
 - 720p 母带上传前先做 1080p 版，做法见 creative-mv-generator 的 `references/imagery-mv-production-lessons.md`。
 
+**注意**（〈在你說完以前〉MV 发布时学到的，2026-10-04）：
+- **影片语言由脚本自己设（2026-10-04 起）。** 脚本读 release-package 的 `- **Language:**`（`Chinese (Traditional)` → `zh-Hant`、`Chinese (Simplified)` → `zh-Hans`、`English` → `en`，也可直接写 BCP-47 标签），上传时设 `defaultLanguage`，`defaultAudioLanguage` 取主标签（`zh-Hant` → `zh`），字幕轨用同一个标签；`--language` 可覆盖。认不出的写法会直接拒绝，不会猜。dry run 会印出 `language:` 一行，上传前看一眼。插件的 `update_video` 改标题／描述时会先读回并保留这两个语言字段——但 YouTube 写后读有延迟（10-04 实测：刚设完语言的第一次读回仍是空），刚上传或刚改过语言就马上调它，可能读到空值而把语言清掉；改完要再读一次确认。要手动补设旧影片：用 `videos.update(part="snippet")`，body 带回原有的 `title`、`description`、`tags`、`categoryId`——`part=snippet` 整体替换，漏带的字段会被清空。
+- **release-package 的 `Privacy:` 只能写一个词**（`Private` 或 `Unlisted`）。后面加括号说明，脚本整串读进去后报 `Unusable privacy` 并退出（命令行 `--privacy private` 可以覆盖，但应该改包里那一行）。
+- **music token 大约一周就过期**（09-26 重新授权，10-04 又 `invalid_grant`）。每次发布都先跑 dry run，留时间让 Kevin 重新授权，不要等到排程当天。一周就失效通常是 OAuth 同意画面还在 Testing 模式（推测，未查 Google Cloud 设定）。
+- **缩略图候选放子文件夹** `release/thumb-candidates/`：脚本只扫 release 文件夹本层的 `*.png`，不会误选候选图。选定的那张复制到本层。
+- **Suno 页截图可以自己补**：Python Playwright 无头浏览器、不登录、`timezone_id="Australia/Sydney"`，打开公开歌曲页截图，并读页面文字核对歌名、Kevinbean、创建日期时间。存为 `<专辑>/<NN-歌名>/<NN-歌名>-suno-screenshot.png`，SHA-256 记进 release-package。**只在歌曲已有 `release/` 子文件夹时放这里**：没有 `release/` 时脚本把歌曲文件夹当 release 文件夹，截图会被当成缩略图候选。
+- **Rights 段要列出画面里每个工具的授权**，不只 Suno 和 Flow。例如本机对口型 InfiniteTalk 是 Apache-2.0，且声明不主张生成内容的权利。没有允许商用的授权就不能出现在发布版里。
+- 夏令时：雪梨 20:00 在 AEST 是 `10:00Z`，在 AEDT（10 月第一个周日起）是 `09:00Z`。排程前按发布日期重算。
+
 #### Step 2.3: 定时发布 (可选)
 
 发布时间照频道计划：**周三或周六 20:00（Australia/Sydney）**。AEST 是 UTC+10；10 月第一个周日起到 4 月第一个周日是 AEDT（UTC+11）。

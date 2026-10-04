@@ -256,3 +256,17 @@ def test_connect_survives_a_missing_read_capability():
     """A kernel without `read` must not take the whole plugin load down."""
     kernel = _StubKernel(raise_on_get=True)
     asyncio.run(_fresh_plugin(kernel).connect())  # must not raise
+
+
+def test_anydoc_is_a_declared_runtime_dependency():
+    """The plugin is dark without its wheel, and Docker installs only the main
+    `dependencies` (`pip install -e .`). Undeclared, it shipped off on every
+    Docker and fresh install from 2026-08-28 to v0.8.0 while the startup log
+    printed `No module named 'anydoc'` and nothing else noticed."""
+    import re
+    import tomllib
+
+    with open(ROOT / "pyproject.toml", "rb") as f:
+        deps = tomllib.load(f)["project"]["dependencies"]
+    names = {re.split(r"[<>=!~\[; ]", d, maxsplit=1)[0].lower() for d in deps}
+    assert "firecrawl-anydoc" in names

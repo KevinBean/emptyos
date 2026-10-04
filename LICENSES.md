@@ -84,6 +84,7 @@ Classifier metadata) and `scripts/check-licenses.py`.
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | (voice-api) | Local STT |
 | [prompt_toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit) | `>=3.0` | CLI prompt rendering |
 | [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) | (voice-api) | Kokoro TTS inference |
+| [firecrawl-anydoc](https://github.com/firecrawl/anydoc) | `>=0.2.4,<0.3` | Legacy-document to markdown (`legacy-doc` plugin); local only, OCR never requested |
 
 ### LGPL / weak-copyleft
 

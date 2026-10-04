@@ -129,6 +129,7 @@ IMPORT_ALIASES = {
     "uvicorn[standard]": "uvicorn",
     "pyzmq": "zmq",
     "prompt_toolkit": "prompt_toolkit",
+    "firecrawl-anydoc": "anydoc",
 }
 
 # Deps that are tools / runtime plugins / transitive consumers — they don't

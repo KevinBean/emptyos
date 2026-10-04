@@ -1549,7 +1549,9 @@ def check_docs_no_held_refs(temp_dir: Path) -> None:
             continue
         # Exact-file pin. A directory prefix would auto-accept any NEW held
         # reference under that tree — the blanket-promise failure mode.
-        (accepted if rel in HELD_REF_CODE_ALLOWLIST else hits).append((rel, found[0]))
+        # Report EVERY token: printing only the first hid a second held path in
+        # engines/provenance.py and cost the v0.8.0 cut a whole extra dry run.
+        (accepted if rel in HELD_REF_CODE_ALLOWLIST else hits).append((rel, ", ".join(found)))
     if accepted:
         print(f"    accepted exposure (name is load-bearing in code): {len(accepted)} file(s)")
         for rel, tok in accepted[:10]:
@@ -1755,12 +1757,25 @@ def _commit_and_push(
         run(["git", "tag", "-d", version], cwd=work)
     run(["git", "tag", "-a", version, "-m", f"EmptyOS {version}"], cwd=work, env=date_env)
 
+    stale_releases: list[str] = []
+    if reset_history:
+        # List the GitHub Release entries BEFORE the force-push (and on a dry
+        # run), so a missing or unauthenticated `gh` aborts while nothing public
+        # has been overwritten — and the dry run previews the irreversible part.
+        repo = _github_slug(PUBLIC_REMOTE)
+        stale_releases = [t for t in _list_github_releases(repo) if t != version]
+
     if dry_run:
         sha = run(["git", "rev-parse", "HEAD"], cwd=work, capture=True)
         print(
             f"\n  [DRY RUN] Would push commit {sha[:8]} to {PUBLIC_REMOTE} {PUBLIC_BRANCH} (fast-forward)"
         )
         print(f"  [DRY RUN] Would push tag {version}")
+        if reset_history:
+            tags = _stale_remote_tags(PUBLIC_REMOTE, version, cwd=work)
+            print(f"  [DRY RUN] Would delete {len(tags)} public tag(s): {', '.join(tags) or '-'}")
+            print(f"  [DRY RUN] Would delete {len(stale_releases)} GitHub release entr(y/ies) "
+                  f"and their assets: {', '.join(stale_releases) or '-'}")
         return
 
     step(f"Push to {PUBLIC_REMOTE}")
@@ -1774,15 +1789,7 @@ def _commit_and_push(
         # are purging fetchable via `git fetch --tags`. An orphan purge that
         # leaves the tags behind is theatre. Delete every remote tag except the
         # one we are about to push.
-        remote_tags = run(
-            ["git", "ls-remote", "--tags", "--refs", "origin"], cwd=work, capture=True
-        )
-        stale = [
-            line.split("refs/tags/", 1)[1]
-            for line in remote_tags.splitlines()
-            if "refs/tags/" in line
-        ]
-        stale = [t for t in stale if t != version]
+        stale = _stale_remote_tags("origin", version, cwd=work)
         if stale:
             step(f"Purge {len(stale)} stale public tag(s) — they still reach the old history")
             for tag in stale:
@@ -1796,6 +1803,54 @@ def _commit_and_push(
     # Tags can collide with previous attempts — force-push tag refs only
     run(["git", "push", "-f", "origin", version], cwd=work)
     print(f"    OK: pushed commit + tag {version}")
+    # A GitHub Release is a separate object from its tag: deleting the tag leaves
+    # the entry (notes + assets) behind as a draft — v0.8.0's reset left four to
+    # delete by hand, which `gh release delete <tag>` did with the tags already
+    # gone. Run last: the history and tag purge above is what closes the leak, so
+    # a `gh` failure here (a read-only token, a rate limit) leaves only stale
+    # entries, never a half-purged tag set.
+    if stale_releases:
+        step(f"Purge {len(stale_releases)} stale GitHub release entr(y/ies)")
+        for tag in stale_releases:
+            run(["gh", "release", "delete", tag, "--repo", repo, "--yes"])
+        print(f"    OK: deleted release(s) {', '.join(stale_releases)}")
+
+
+def _stale_remote_tags(remote: str, keep: str, cwd: Path) -> list[str]:
+    """Every tag on `remote` except `keep`."""
+    out = run(["git", "ls-remote", "--tags", "--refs", remote], cwd=cwd, capture=True)
+    tags = [line.split("refs/tags/", 1)[1] for line in out.splitlines() if "refs/tags/" in line]
+    return [t for t in tags if t != keep]
+
+
+def _github_slug(remote: str) -> str:
+    """`owner/repo` from an https or ssh GitHub remote URL.
+
+    Anchored on the scheme + host: an unanchored match read a local mirror at
+    `D:/mirrors/github.com/owner/repo` as the real repo, which would aim the
+    irreversible release purge at GitHub while the push went to the mirror.
+    """
+    m = re.match(
+        r"(?:https://(?:[^@/]+@)?github\.com/|git@github\.com:|ssh://git@github\.com/)"
+        r"([^/]+/[^/]+?)(?:\.git)?/?$",
+        remote,
+    )
+    if not m:
+        fail(f"--reset-history needs a GitHub remote to purge release entries; got {remote}")
+    return m.group(1)
+
+
+def _list_github_releases(repo: str) -> list[str]:
+    """Tag names of every GitHub Release (drafts included). Fails loud without `gh`."""
+    if shutil.which("gh") is None:
+        fail("--reset-history needs the `gh` CLI to purge GitHub release entries — "
+             "install and `gh auth login` first")
+    out = run(
+        ["gh", "release", "list", "--repo", repo, "--limit", "1000",
+         "--json", "tagName", "--jq", ".[].tagName"],
+        capture=True,
+    )
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 def tag_private(version: str) -> None:
@@ -1844,7 +1899,9 @@ def main() -> None:
         "--reset-history",
         action="store_true",
         help="Orphan purge: force-push a single fresh commit, wiping all prior public history/tags "
-        "(use when sensitive content must not remain reachable at an older commit).",
+        "and permanently deleting every other GitHub Release entry with its assets "
+        "(use when sensitive content must not remain reachable at an older commit). "
+        "Needs `gh` authenticated with write access; --dry-run lists what would go.",
     )
     parser.add_argument(
         "--strict-gates",

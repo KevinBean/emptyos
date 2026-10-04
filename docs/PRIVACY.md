@@ -71,8 +71,11 @@ something out of a pattern's reach; use a word boundary or a more specific shape
 >   `release-safe.yml` run has no personal patterns, so only its secret class
 >   is live there.
 >
-> Earlier public releases still contain those files in their history; that was
-> accepted rather than rewritten. A later step is to ship a redacted
+> Public tags v0.5.5–v0.6.4 still carried those files until 2026-10-05, when
+> the public history was reset to a single v0.8.0 commit (`--reset-history`)
+> and every older tag and release entry was deleted. A third-party fork made
+> in April 2026, before that history began, still holds a copy; a rewrite on
+> our side cannot reach it. A later step is to ship a redacted
 > `.eos-personal.example` so a fork gets a working template.
 
 ## Threat scenarios

@@ -235,7 +235,9 @@ def main():
         print("Exempt: plugin code, docs, CLAUDE.md, provider selectors\n", file=sys.stderr)
         sys.exit(1)
     else:
-        if staged_only:
+        if root_arg:
+            mode = f"every file under {root_arg}"
+        elif staged_only:
             mode = "staged files"
         elif include_untracked:
             mode = "all tracked + untracked files"

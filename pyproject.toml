@@ -7,7 +7,7 @@ name = "emptyos"
 # Keep in step with release.toml [release].version — that is the single source of
 # truth (package-release.py stamps it into every artifact's MANIFEST.json, and the
 # product's About panel reads it back). Pinned by tests/test_unit_package_release.py.
-version = "0.8.0"
+version = "0.8.1"
 description = "A mind companion. Think and create with you, not for you. A personal AI-powered operating system — empty by default, infinite by design."
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -39,6 +39,11 @@ dependencies = [
     "prompt_toolkit>=3.0",
     "psutil>=5.9",
     "defusedxml>=0.7",
+    # The legacy-doc read plugin (DOC/RTF/WPS/PPT/ODF). A zero-dependency abi3
+    # wheel; without it the plugin reports unavailable, so every Docker and
+    # fresh install had legacy-document reading silently off. Pre-1.0: the
+    # plugin calls `to_markdown` and catches `NeedsOcrError`, so cap the minor.
+    "firecrawl-anydoc>=0.2.4,<0.3",
 ]
 
 [project.optional-dependencies]

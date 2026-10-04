@@ -239,6 +239,20 @@ def public_app_ids() -> set[str]:
     return ids
 
 
+def public_plugin_ids() -> set[str]:
+    """Plugin ids that ship in the public version — PUBLIC_TIERS, as above."""
+    from emptyos.sdk.release_tiers import PUBLIC_TIERS
+
+    try:
+        rel = doc_data.scan_release()
+    except Exception:  # noqa: BLE001
+        return set()
+    ids: set[str] = set()
+    for tier in PUBLIC_TIERS:
+        ids.update(rel.get("tiers", {}).get(tier, {}).get("plugins", []) or [])
+    return ids
+
+
 def _pretty_category(store_category: str) -> str:
     sc = (store_category or "").strip()
     return sc.replace("-", " ").title() if sc else ""
@@ -737,13 +751,23 @@ def main():
         except Exception:
             continue
 
-    # Per-app detail pages: only the public version (PUBLIC_TIERS,
-    # public track) — never document extension/personal apps on the public site.
+    # Everything this site lists — the catalogue, the per-app pages, the counts —
+    # is the public version only (PUBLIC_TIERS, public track). Until 2026-10-05
+    # only the per-app pages were filtered, so apps.md named every held
+    # engineering app with a one-line description, and plugins.md the held
+    # plugins. An unreadable release.toml must not publish everything instead.
     _public_ids = public_app_ids()
-    page_apps = [a for a in apps if a.get("_track") == "public" and a.get("id") in _public_ids]
+    _public_plugins = public_plugin_ids()
+    if not _public_ids or not _public_plugins:
+        print("ERROR: could not resolve the public tiers from release.toml — "
+              "refusing to generate a public catalogue", file=sys.stderr)
+        sys.exit(1)
+    apps = [a for a in apps if a.get("_track") == "public" and a.get("id") in _public_ids]
+    page_apps = apps
     page_ids = {a["id"] for a in page_apps}
 
-    plugins = scan_manifests([PROJECT_ROOT / "plugins"], key="plugin")
+    plugins = [p for p in scan_manifests([PROJECT_ROOT / "plugins"], key="plugin")
+               if p.get("id") in _public_plugins]
 
     endpoints = count_endpoints()
 

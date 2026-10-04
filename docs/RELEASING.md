@@ -190,8 +190,10 @@ that aren't meant to ship:
   `code_archaeology` dispatch gate. Drop the doc or mark the section; don't widen
   the token list to pass.
 - **Purge:** `release-public.py --reset-history` force-pushes a single fresh orphan
-  commit, wiping all prior public history/tags — use when already-public IP must
-  not remain reachable at an older commit.
+  commit, wiping all prior public history/tags and deleting every other GitHub
+  Release entry with its assets — use when already-public IP must not remain
+  reachable at an older commit. Needs an authenticated `gh`; `--dry-run` lists
+  the tags and releases it would delete.
 
 When you add a new engineering app/engine/doc, keep it out of the public tier and
 (for docs) add it to `PUBLIC_DOC_DROP` or mark the section.
